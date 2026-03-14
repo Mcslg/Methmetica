@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Handle, Position } from '@xyflow/react';
+import { Handle, Position, useUpdateNodeInternals } from '@xyflow/react';
 import useStore, { type AppState, type CustomHandle, type HandleType } from '../store/useStore';
 
 interface DynamicHandlesProps {
@@ -13,7 +13,12 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({ nodeId, handles 
     const removeHandle = useStore((state: AppState) => state.removeHandle);
     const updateHandle = useStore((state: AppState) => state.updateHandle);
     const containerRef = useRef<HTMLDivElement>(null);
+    const updateNodeInternals = useUpdateNodeInternals();
 
+    // Trigger internal update whenever handles array changes meaningfully
+    useEffect(() => {
+        updateNodeInternals(nodeId);
+    }, [nodeId, handles, updateNodeInternals]);
     const [menu, setMenu] = useState<{ pX: number, pY: number, side: 'top' | 'bottom' | 'left' | 'right', percent: number } | null>(null);
     const [movingHandle, setMovingHandle] = useState<{ id: string, side: string, offset: number } | null>(null);
 
@@ -61,7 +66,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({ nodeId, handles 
     };
 
     const onHandleMouseDown = (e: React.MouseEvent, handle: CustomHandle) => {
-        if (e.shiftKey) {
+        if (e.metaKey || e.ctrlKey) {
             e.preventDefault();
             e.stopPropagation();
             setMovingHandle({ id: handle.id, side: handle.position, offset: handle.offset });
@@ -88,6 +93,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({ nodeId, handles 
 
             setMovingHandle(prev => prev ? { ...prev, side: closest.side, offset: clampedP } : null);
             updateHandle(nodeId, movingHandle.id, { position: closest.side as any, offset: clampedP });
+            updateNodeInternals(nodeId);
         };
 
         const onMouseUp = () => setMovingHandle(null);
@@ -159,7 +165,6 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({ nodeId, handles 
                 <div className={`moving-guide ${movingHandle.side === 'top' || movingHandle.side === 'bottom' ? 'guide-vertical' : 'guide-horizontal'}`}
                     style={{
                         [movingHandle.side === 'top' || movingHandle.side === 'bottom' ? 'left' : 'top']: `${movingHandle.offset}%`,
-                        [movingHandle.side === 'top' || movingHandle.side === 'bottom' ? 'width' : 'height']: '100%'
                     }}
                 />
             )}
