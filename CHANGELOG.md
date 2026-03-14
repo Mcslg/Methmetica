@@ -28,4 +28,4 @@
 - **數學引擎準備**: 安裝 MathLive, Nerdamer, KaTeX 為符號運算版本做準備。
 
 ---
-*本計畫初期由 McsmallGod 與 AI 助手共創而成。*
+*本計畫初期由 Mcslg 與 AI 助手共創而成。*

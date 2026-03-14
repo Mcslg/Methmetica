@@ -23,7 +23,8 @@ export type CustomHandle = {
 };
 
 export type NodeData = {
-    value?: number;
+    value?: string;
+    formula?: string; // For function nodes
     handles?: CustomHandle[];
 };
 
@@ -45,6 +46,7 @@ export type AppState = {
 };
 
 export const dataNodeHandles: CustomHandle[] = [
+    { id: 'h-in', type: 'input', position: 'left', offset: 50 },
     { id: 'h-out', type: 'output', position: 'right', offset: 50 }
 ];
 
@@ -59,13 +61,13 @@ const initialNodes: AppNode[] = [
         id: 'num1',
         type: 'numberNode',
         position: { x: 100, y: 100 },
-        data: { value: 10, handles: dataNodeHandles },
+        data: { value: '10', handles: dataNodeHandles },
     },
     {
         id: 'num2',
         type: 'numberNode',
         position: { x: 100, y: 350 },
-        data: { value: 20, handles: dataNodeHandles },
+        data: { value: '\\sqrt{2}', handles: dataNodeHandles },
     },
     {
         id: 'add1',
@@ -164,23 +166,102 @@ const useStore = create<AppState>((set, get) => ({
         const node = nodes.find(n => n.id === nodeId);
         if (!node) return;
 
-        if (node.type === 'addNode' || node.type === 'toolNode') { // toolNode generalized
+        if (node.type === 'addNode' || node.type === 'functionNode' || node.type === 'toolNode') {
+            const formula = node.data.formula || '';
             const inputs = edges.filter(e => e.target === nodeId);
-            const values = inputs.map(e => nodes.find(n => n.id === e.source)?.data?.value);
-            const numericValues = values.filter((v): v is number => v !== undefined);
 
-            let result: number | undefined = undefined;
-            if (numericValues.length > 0) {
-                result = numericValues.reduce((acc, curr) => acc + Number(curr), 0);
+            const handleResult = (res: string) => {
+                let currentNodes = get().nodes;
+                let currentEdges = get().edges;
+                const toolNode = currentNodes.find(n => n.id === nodeId);
+
+                currentNodes = currentNodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, value: res } } : n);
+
+                // Auto-create output data node if no outgoing edge
+                const outgoingEdges = currentEdges.filter(e => e.source === nodeId);
+                if (outgoingEdges.length === 0 && toolNode) {
+                    const newNodeId = `num-auto-${Date.now()}`;
+                    const targetHandleId = `h-in-${Date.now()}`;
+
+                    const newNode: AppNode = {
+                        id: newNodeId,
+                        type: 'numberNode',
+                        position: { x: toolNode.position.x + 350, y: toolNode.position.y },
+                        data: {
+                            value: res, // Initialize with result
+                            handles: [
+                                { id: targetHandleId, type: 'input', position: 'left', offset: 50 },
+                                { id: 'h-out', type: 'output', position: 'right', offset: 50 }
+                            ]
+                        }
+                    };
+
+                    currentNodes = [...currentNodes, newNode];
+
+                    const sourceHandleId = toolNode.data.handles?.find((h: CustomHandle) => h.type === 'output')?.id || 'h-out';
+                    currentEdges = [...currentEdges, {
+                        id: `e-auto-${Date.now()}`,
+                        source: nodeId,
+                        target: newNodeId,
+                        sourceHandle: sourceHandleId,
+                        targetHandle: targetHandleId
+                    }];
+                }
+
+                set({ nodes: currentNodes, edges: currentEdges });
+                get().evaluateGraph();
+            };
+
+            try {
+                // @ts-ignore
+                import('nerdamer/all.min').then((nerdamer: any) => {
+                    const ner = nerdamer.default || nerdamer;
+
+                    if (node.type === 'addNode' && !formula) {
+                        // Legacy AddNode behavior: just sum all inputs
+                        const latexValues = inputs.map(e => nodes.find(n => n.id === e.source)?.data?.value).filter(v => !!v);
+                        const sumExpr = latexValues.map(tex => ner.convertFromLaTeX(tex).toString()).join(' + ');
+                        if (sumExpr) {
+                            handleResult(ner(sumExpr).toTeX());
+                        } else {
+                            handleResult('?');
+                        }
+                        return;
+                    }
+
+                    // FunctionNode behavior: map handles to variables
+                    // 1. Convert LaTeX formula to nerdamer expressions
+                    const solver = ner.convertFromLaTeX(formula);
+                    const variables = solver.variables(); // ['x', 'y']
+
+                    // 2. Map current connected handles to these variables
+                    const varMap: Record<string, string> = {};
+                    variables.forEach((v: string) => {
+                        // Find the handle that has this variable name as ID or label
+                        const handle = node.data.handles?.find((h: any) => h.label === v || h.id === `h-in-${v}`);
+                        if (handle) {
+                            const edge = inputs.find(e => e.targetHandle === handle.id);
+                            if (edge) {
+                                const sourceValue = nodes.find(n => n.id === edge.source)?.data?.value;
+                                if (sourceValue) {
+                                    varMap[v] = ner.convertFromLaTeX(sourceValue).toString();
+                                }
+                            }
+                        }
+                    });
+
+                    // 3. Evaluate with variables
+                    const finalRes = solver.evaluate(varMap);
+                    handleResult(finalRes.toTeX());
+                });
+            } catch (e) {
+                console.error("Nerdamer Error", e);
+                handleResult('\\text{Error}');
             }
-
-            set({
-                nodes: nodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, value: result } } : n)
-            });
+        } else {
+            // Propagate down to number nodes right after execution
+            get().evaluateGraph();
         }
-
-        // Propagate down to number nodes right after execution
-        get().evaluateGraph();
     },
 
     evaluateGraph: () => {
@@ -194,7 +275,7 @@ const useStore = create<AppState>((set, get) => ({
                     if (inputs.length > 0) {
                         const values = inputs.map(e => nextNodes.find(n => n.id === e.source)?.data?.value);
                         const valIn = values.find(v => v !== undefined);
-                        return { ...node, data: { ...node.data, value: valIn as number | undefined } };
+                        return { ...node, data: { ...node.data, value: valIn as string | undefined } };
                     }
                     return node;
                 }

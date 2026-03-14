@@ -4,11 +4,11 @@ import '@xyflow/react/dist/style.css';
 
 import useStore, { dataNodeHandles, toolNodeHandles } from './store/useStore';
 import { NumberNode } from './nodes/NumberNode';
-import { AddNode } from './nodes/AddNode';
+import { FunctionNode } from './nodes/FunctionNode';
 
 const nodeTypes = {
   numberNode: NumberNode,
-  addNode: AddNode,
+  functionNode: FunctionNode,
 };
 
 function Flow() {
@@ -88,7 +88,7 @@ function Flow() {
         >
           <div className="menu-header">Add Node</div>
           <div className="menu-item" onClick={() => handleAddNode('numberNode')}>+ Number (Data)</div>
-          <div className="menu-item border-top" onClick={() => handleAddNode('addNode')}>+ Add (Tool)</div>
+          <div className="menu-item border-top" onClick={() => handleAddNode('functionNode')}>+ Function (Tool)</div>
         </div>
       )}
 

@@ -151,6 +151,18 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({ nodeId, handles 
                     <div style={{ transform: `rotate(${getRotation(h.type, h.position)}deg)`, display: 'flex' }}>
                         {getIconContent(h.type)}
                     </div>
+                    {(h as any).label && (
+                        <div className="handle-label" style={{
+                            position: 'absolute',
+                            [h.position === 'left' ? 'left' : h.position === 'right' ? 'right' : 'top']: '20px',
+                            whiteSpace: 'nowrap',
+                            fontSize: '0.6rem',
+                            color: 'var(--handle-color)',
+                            pointerEvents: 'none'
+                        }}>
+                            {(h as any).label}
+                        </div>
+                    )}
                 </Handle>
             ))}
 

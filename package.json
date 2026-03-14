@@ -2,7 +2,7 @@
   "version": "0.1.0",
   "name": "methmetica",
   "description": "A modular, node-based mathematical exploration tool.",
-  "author": "McsmallGod",
+  "author": "Mcslg",
   "private": true,
   "type": "module",
   "scripts": {

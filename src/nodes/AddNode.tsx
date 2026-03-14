@@ -1,6 +1,7 @@
 import { type NodeProps, type Node } from '@xyflow/react';
 import useStore, { type NodeData, type AppState } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
+import 'mathlive';
 
 export function AddNode({ id, data }: NodeProps<Node<NodeData>>) {
     const executeNode = useStore((state: AppState) => state.executeNode);
@@ -17,8 +18,15 @@ export function AddNode({ id, data }: NodeProps<Node<NodeData>>) {
                     EXEC
                 </button>
             </div>
-            <div className="node-content">
-                <span style={{ fontSize: '1.2rem', color: '#00f2fe' }}>{data.value !== undefined ? data.value : '?'}</span>
+            <div className="node-content math-input-container">
+                {/* @ts-ignore */}
+                <math-field
+                    read-only
+                    style={{ fontSize: '1.2rem', color: '#00f2fe', background: 'transparent', border: 'none', appearance: 'none' }}
+                >
+                    {data.value || '?'}
+                    {/* @ts-ignore */}
+                </math-field>
             </div>
         </div>
     );

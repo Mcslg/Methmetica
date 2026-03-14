@@ -32,4 +32,4 @@ npm run dev
 - **刪除 Handle**: 直接「左鍵單擊」該 Handle。
 
 ---
-Created with ❤️ by McsmallGod
+Vibe-coded by Mcslg
