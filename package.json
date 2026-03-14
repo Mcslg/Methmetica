@@ -1,7 +1,9 @@
 {
-  "name": "methmatic",
+  "version": "0.1.0",
+  "name": "methmetica",
+  "description": "A modular, node-based mathematical exploration tool.",
+  "author": "McsmallGod",
   "private": true,
-  "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
