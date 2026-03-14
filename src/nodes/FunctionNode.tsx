@@ -11,9 +11,17 @@ export function FunctionNode({ id, data }: NodeProps<Node<NodeData>>) {
 
     // Sync nerdamer variables to handles
     useEffect(() => {
-        if (!data.formula) return;
-
         const syncHandles = async () => {
+            if (!data.formula) {
+                // If no formula, ensure we have the default tool handle
+                const currentHandles = data.handles || [];
+                const hasDefaultIn = currentHandles.some(h => h.id === 'h-in');
+                if (!hasDefaultIn) {
+                    const outputHandle = currentHandles.find(h => h.type === 'output') || { id: 'h-out', type: 'output', position: 'right', offset: 50 };
+                    updateNodeData(id, { handles: [{ id: 'h-in', type: 'input', position: 'left', offset: 50 }, outputHandle] });
+                }
+                return;
+            }
             try {
                 // @ts-ignore
                 const nerdamer = (await import('nerdamer/all.min')).default || (await import('nerdamer/all.min'));
@@ -76,7 +84,7 @@ export function FunctionNode({ id, data }: NodeProps<Node<NodeData>>) {
 
     return (
         <div className="math-node op-node function-node">
-            <DynamicHandles nodeId={id} handles={data.handles} />
+            <DynamicHandles nodeId={id} handles={data.handles} locked={true} />
             <div className="node-header">
                 Function
                 <button
@@ -95,14 +103,6 @@ export function FunctionNode({ id, data }: NodeProps<Node<NodeData>>) {
                     style={{ fontSize: '1rem', width: '100%', background: 'rgba(0,0,0,0.2)', padding: '4px', borderRadius: '4px' }}
                 >
                     {data.formula || ''}
-                </math-field>
-
-                <div className="result-label" style={{ fontSize: '0.6rem', color: '#666', width: '100%', textAlign: 'left', marginTop: '4px' }}>RESULT:</div>
-                <math-field
-                    read-only
-                    style={{ fontSize: '1.2rem', color: '#00f2fe', background: 'transparent', border: 'none', width: '100%' }}
-                >
-                    {data.value || '?'}
                 </math-field>
             </div>
         </div>

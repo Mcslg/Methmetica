@@ -20,6 +20,7 @@ export type CustomHandle = {
     type: HandleType;
     position: 'top' | 'bottom' | 'left' | 'right';
     offset: number; // percentage 0-100
+    label?: string; // Optional label for variables
 };
 
 export type NodeData = {
@@ -39,6 +40,7 @@ export type AppState = {
     updateNodeData: (nodeId: string, data: NodeData) => void;
     addHandle: (nodeId: string, handle: CustomHandle) => void;
     removeHandle: (nodeId: string, handleId: string) => void;
+    updateHandle: (nodeId: string, handleId: string, patch: Partial<CustomHandle>) => void;
     addNode: (node: AppNode) => void;
     removeNode: (nodeId: string) => void;
     executeNode: (nodeId: string) => void;
@@ -61,32 +63,32 @@ const initialNodes: AppNode[] = [
         id: 'num1',
         type: 'numberNode',
         position: { x: 100, y: 100 },
-        data: { value: '10', handles: dataNodeHandles },
+        data: { value: '10', handles: [...dataNodeHandles] },
     },
     {
         id: 'num2',
         type: 'numberNode',
         position: { x: 100, y: 350 },
-        data: { value: '\\sqrt{2}', handles: dataNodeHandles },
+        data: { value: '\\sqrt{2}', handles: [...dataNodeHandles] },
     },
     {
-        id: 'add1',
-        type: 'addNode',
+        id: 'fn1',
+        type: 'functionNode',
         position: { x: 500, y: 200 },
-        data: { handles: toolNodeHandles },
-    },
-    {
-        id: 'num3',
-        type: 'numberNode',
-        position: { x: 900, y: 200 },
-        data: { handles: dataNodeHandles },
-    },
+        data: {
+            formula: 'x + y',
+            handles: [
+                { id: 'h-in-x', type: 'input', position: 'left', offset: 33, label: 'x' },
+                { id: 'h-in-y', type: 'input', position: 'left', offset: 66, label: 'y' },
+                { id: 'h-out', type: 'output', position: 'right', offset: 50 }
+            ]
+        },
+    }
 ];
 
 const initialEdges: Edge[] = [
-    { id: 'e1', source: 'num1', target: 'add1', sourceHandle: 'h-out', targetHandle: 'h-in' },
-    { id: 'e2', source: 'num2', target: 'add1', sourceHandle: 'h-out', targetHandle: 'h-in' },
-    { id: 'e3', source: 'add1', target: 'num3', sourceHandle: 'h-out', targetHandle: 'h-in' }, // Connected to a NumberNode acting as output
+    { id: 'e1', source: 'num1', target: 'fn1', sourceHandle: 'h-out', targetHandle: 'h-in-x' },
+    { id: 'e2', source: 'num2', target: 'fn1', sourceHandle: 'h-out', targetHandle: 'h-in-y' },
 ];
 
 const useStore = create<AppState>((set, get) => ({
@@ -143,6 +145,24 @@ const useStore = create<AppState>((set, get) => ({
                 if (node.id === nodeId) {
                     const handles = node.data.handles || [];
                     return { ...node, data: { ...node.data, handles: handles.filter(h => h.id !== handleId) } };
+                }
+                return node;
+            }),
+        });
+    },
+
+    updateHandle: (nodeId: string, handleId: string, patch: Partial<CustomHandle>) => {
+        set({
+            nodes: get().nodes.map((node) => {
+                if (node.id === nodeId) {
+                    const handles = node.data.handles || [];
+                    return {
+                        ...node,
+                        data: {
+                            ...node.data,
+                            handles: handles.map(h => (h.id === handleId ? { ...h, ...patch } : h))
+                        }
+                    };
                 }
                 return node;
             }),
@@ -217,15 +237,8 @@ const useStore = create<AppState>((set, get) => ({
                 import('nerdamer/all.min').then((nerdamer: any) => {
                     const ner = nerdamer.default || nerdamer;
 
-                    if (node.type === 'addNode' && !formula) {
-                        // Legacy AddNode behavior: just sum all inputs
-                        const latexValues = inputs.map(e => nodes.find(n => n.id === e.source)?.data?.value).filter(v => !!v);
-                        const sumExpr = latexValues.map(tex => ner.convertFromLaTeX(tex).toString()).join(' + ');
-                        if (sumExpr) {
-                            handleResult(ner(sumExpr).toTeX());
-                        } else {
-                            handleResult('?');
-                        }
+                    if (!formula) {
+                        handleResult('?');
                         return;
                     }
 
@@ -241,9 +254,11 @@ const useStore = create<AppState>((set, get) => ({
                         const handle = node.data.handles?.find((h: any) => h.label === v || h.id === `h-in-${v}`);
                         if (handle) {
                             const edge = inputs.find(e => e.targetHandle === handle.id);
+                            // CRITICAL: Only set if an edge exists AND source has a value
                             if (edge) {
-                                const sourceValue = nodes.find(n => n.id === edge.source)?.data?.value;
-                                if (sourceValue) {
+                                const sourceNode = nodes.find(n => n.id === edge.source);
+                                const sourceValue = sourceNode?.data?.value;
+                                if (sourceValue !== undefined && sourceValue !== null && sourceValue.trim() !== '') {
                                     varMap[v] = ner.convertFromLaTeX(sourceValue).toString();
                                 }
                             }
