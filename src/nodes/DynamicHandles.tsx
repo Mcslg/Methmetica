@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Handle, Position, useUpdateNodeInternals } from '@xyflow/react';
 import useStore, { type AppState, type CustomHandle, type HandleType } from '../store/useStore';
 
@@ -6,21 +7,48 @@ interface DynamicHandlesProps {
     nodeId: string;
     handles?: CustomHandle[];
     locked?: boolean;
+    allowedTypes?: HandleType[];
+    customDescriptions?: Partial<Record<HandleType, string>>;
+    touchingEdges?: { left?: boolean, right?: boolean, top?: boolean, bottom?: boolean };
 }
 
-export const DynamicHandles: React.FC<DynamicHandlesProps> = ({ nodeId, handles = [], locked = false }) => {
+export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
+    nodeId,
+    handles = [],
+    locked = false,
+    allowedTypes = [],
+    customDescriptions = {},
+    touchingEdges = {}
+}) => {
     const addHandle = useStore((state: AppState) => state.addHandle);
     const removeHandle = useStore((state: AppState) => state.removeHandle);
     const updateHandle = useStore((state: AppState) => state.updateHandle);
     const containerRef = useRef<HTMLDivElement>(null);
     const updateNodeInternals = useUpdateNodeInternals();
 
+
     // Trigger internal update whenever handles array changes meaningfully
     useEffect(() => {
         updateNodeInternals(nodeId);
     }, [nodeId, handles, updateNodeInternals]);
-    const [menu, setMenu] = useState<{ pX: number, pY: number, side: 'top' | 'bottom' | 'left' | 'right', percent: number } | null>(null);
+    const [menu, setMenu] = useState<{ pX: number, pY: number, side: 'top' | 'bottom' | 'left' | 'right', percent: number, screenX: number, screenY: number } | null>(null);
     const [movingHandle, setMovingHandle] = useState<{ id: string, side: string, offset: number } | null>(null);
+    const [cmdPressed, setCmdPressed] = useState(false);
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.metaKey || e.ctrlKey) setCmdPressed(true);
+        };
+        const handleKeyUp = (e: KeyboardEvent) => {
+            if (!e.metaKey && !e.ctrlKey) setCmdPressed(false);
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keyup', handleKeyUp);
+        };
+    }, []);
 
     const onEdgeContextMenu = useCallback((e: React.MouseEvent, side: 'top' | 'bottom' | 'left' | 'right') => {
         e.preventDefault();
@@ -34,18 +62,22 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({ nodeId, handles 
         const percent = Math.max(0, Math.min(100, (side === 'top' || side === 'bottom') ? pX : pY));
 
         // Direct-Add UX for Left/Right
-        if (side === 'left') {
+        if (side === 'left' && allowedTypes.includes('input')) {
             addHandle(nodeId, { id: `h-${Date.now()}`, type: 'input', position: 'left', offset: percent });
             return;
         }
-        if (side === 'right') {
+        if (side === 'right' && allowedTypes.includes('output')) {
             addHandle(nodeId, { id: `h-${Date.now()}`, type: 'output', position: 'right', offset: percent });
             return;
         }
 
+        // Filter panel items
+        const availablePanelItems = panelItems.filter(item => allowedTypes.includes(item.type));
+        if (availablePanelItems.length === 0) return;
+
         // Panel Menu for Top/Bottom
-        setMenu({ pX, pY, side, percent });
-    }, [nodeId, locked, addHandle]);
+        setMenu({ pX, pY, side, percent, screenX: e.clientX, screenY: e.clientY });
+    }, [nodeId, locked, addHandle, allowedTypes]);
 
     const handleAdd = (type: HandleType) => {
         if (!menu) return;
@@ -118,7 +150,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({ nodeId, handles 
     const getIconContent = (type: HandleType) => {
         if (type === 'modify') return '×';
         if (type === 'trigger-in' || type === 'trigger-out' || type === 'trigger-err') return '▶';
-        return '›';
+        return '●';
     };
 
     const getRotation = (type: HandleType, side: string) => {
@@ -144,22 +176,28 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({ nodeId, handles 
     };
 
     const panelItems: { type: HandleType, label: string, desc: string }[] = [
-        { type: 'trigger-in', label: 'Trigger In', desc: '觸發輸入' },
-        { type: 'trigger-out', label: 'Success Out', desc: '成功觸發' },
-        { type: 'trigger-err', label: 'Error Out', desc: '錯誤觸發' },
+        { type: 'trigger-in', label: '電流輸入', desc: '接收電流時觸發節點運算' },
+        { type: 'trigger-out', label: '電流輸出', desc: '數值變動或運算成功時發出' },
+        { type: 'trigger-err', label: '錯誤偵測', desc: '運算錯誤時發出電流' },
         { type: 'modify', label: 'Modify Param', desc: '參數調整' },
     ];
+
+    const canAddAny = allowedTypes.length > 0;
 
     return (
         <div
             ref={containerRef}
             className="dynamic-handles-overlay"
-            style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 10 }}
+            style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: menu ? 1002 : 10 }}
         >
-            <div className="edge-hitbox edge-top" onContextMenu={(e) => onEdgeContextMenu(e, 'top')} />
-            <div className="edge-hitbox edge-bottom" onContextMenu={(e) => onEdgeContextMenu(e, 'bottom')} />
-            <div className="edge-hitbox edge-left" onContextMenu={(e) => onEdgeContextMenu(e, 'left')} />
-            <div className="edge-hitbox edge-right" onContextMenu={(e) => onEdgeContextMenu(e, 'right')} />
+            {canAddAny && (
+                <>
+                    <div className="edge-hitbox edge-top" onContextMenu={(e) => onEdgeContextMenu(e, 'top')} />
+                    <div className="edge-hitbox edge-bottom" onContextMenu={(e) => onEdgeContextMenu(e, 'bottom')} />
+                    <div className="edge-hitbox edge-left" onContextMenu={(e) => onEdgeContextMenu(e, 'left')} />
+                    <div className="edge-hitbox edge-right" onContextMenu={(e) => onEdgeContextMenu(e, 'right')} />
+                </>
+            )}
 
             {movingHandle && (
                 <div className={`moving-guide ${movingHandle.side === 'top' || movingHandle.side === 'bottom' ? 'guide-vertical' : 'guide-horizontal'}`}
@@ -169,59 +207,75 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({ nodeId, handles 
                 />
             )}
 
-            {handles.map((h) => (
-                <Handle
-                    key={h.id}
-                    id={h.id}
-                    type={h.type === 'input' || h.type === 'trigger-in' || h.type === 'modify' ? 'target' : 'source'}
-                    position={getPositionLiteral(h.position)}
-                    className={`${getShapeClass(h.type)} handle-${h.type} ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
-                    style={{
-                        [h.position === 'top' || h.position === 'bottom' ? 'left' : 'top']: `${h.offset}%`,
-                    }}
-                    onContextMenu={(e) => onHandleContextMenu(e, h.id)}
-                    onMouseDown={(e) => onHandleMouseDown(e, h)}
-                >
-                    <div style={{ transform: `rotate(${getRotation(h.type, h.position)}deg)`, display: 'flex' }}>
-                        {getIconContent(h.type)}
-                    </div>
-                    {h.label && (
-                        <div className="handle-label" style={{
-                            position: 'absolute',
-                            [h.position === 'left' ? 'left' : h.position === 'right' ? 'right' : 'top']: '20px',
-                            whiteSpace: 'nowrap',
-                            fontSize: '0.6rem',
-                            color: 'var(--handle-color)',
-                            pointerEvents: 'none'
-                        }}>
-                            {h.label}
-                        </div>
-                    )}
-                </Handle>
-            ))}
+            {handles.map((h) => {
+                // Hide input handles on the left if connected on the left
+                if (h.type === 'input' && h.position === 'left' && touchingEdges.left) return null;
+                // Hide output handles on the right if connected on the right
+                if (h.type === 'output' && h.position === 'right' && touchingEdges.right) return null;
 
-            {menu && (
+                return (
+                    <Handle
+                        key={h.id}
+                        id={h.id}
+                        type={h.type === 'input' || h.type === 'trigger-in' || h.type === 'modify' ? 'target' : 'source'}
+                        position={getPositionLiteral(h.position)}
+                        isConnectable={!cmdPressed}
+                        className={`${getShapeClass(h.type)} handle-${h.type} ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
+                        style={{
+                            [h.position === 'top' || h.position === 'bottom' ? 'left' : 'top']: `${h.offset}%`,
+                        }}
+                        onContextMenu={(e) => onHandleContextMenu(e, h.id)}
+                        onMouseDown={(e) => onHandleMouseDown(e, h)}
+                    >
+                        <div style={{ transform: `rotate(${getRotation(h.type, h.position)}deg)`, display: 'flex' }}>
+                            {getIconContent(h.type)}
+                        </div>
+                        {h.label && (
+                            <div className="handle-label" style={{
+                                position: 'absolute',
+                                [h.position === 'left' ? 'left' : h.position === 'right' ? 'right' : 'top']: '20px',
+                                whiteSpace: 'nowrap',
+                                fontSize: '0.6rem',
+                                color: 'var(--handle-color)',
+                                pointerEvents: 'none'
+                            }}>
+                                {h.label}
+                            </div>
+                        )}
+                    </Handle>
+                );
+            })}
+
+            {menu && createPortal(
                 <div
-                    className="handle-panel"
-                    style={{ left: `${menu.pX}%`, top: `${menu.pY}%`, transform: 'translate(-50%, -10px)' }}
+                    className="handle-panel nodrag"
+                    style={{ position: 'fixed', left: `${menu.screenX}px`, top: `${menu.screenY}px`, transform: 'translate(-50%, -5px)', zIndex: 999999 }}
                     onMouseLeave={() => setMenu(null)}
+                    onClick={(e) => e.stopPropagation()}
+                    onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 >
                     <div className="handle-panel-header">
-                        <span className="handle-panel-title">Add Extra Handle</span>
+                        <span className="handle-panel-title">電流系統 (Electric Current)</span>
                         <span className="handle-panel-close" onClick={() => setMenu(null)}>×</span>
                     </div>
-                    {panelItems.map((item) => (
-                        <div key={item.type} className="handle-panel-item" onClick={() => handleAdd(item.type)}>
+                    {panelItems.filter(item => allowedTypes.includes(item.type)).map((item) => (
+                        <div key={item.type} className="handle-panel-item" onClick={(e) => {
+                            e.stopPropagation();
+                            handleAdd(item.type);
+                        }}>
                             <div className={`handle-panel-icon handle-${item.type}`} style={{ transform: `rotate(${getRotation(item.type, menu.side)}deg)` }}>
                                 {getIconContent(item.type)}
                             </div>
                             <div className="handle-panel-info">
                                 <span className="handle-panel-label">{item.label}</span>
-                                <span className="handle-panel-desc">{item.desc}</span>
+                                <span className="handle-panel-desc">
+                                    {customDescriptions[item.type] || item.desc}
+                                </span>
                             </div>
                         </div>
                     ))}
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );

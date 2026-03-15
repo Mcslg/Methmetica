@@ -82,9 +82,27 @@ export function FunctionNode({ id, data }: NodeProps<Node<NodeData>>) {
         return () => mf.removeEventListener('input', handleInput);
     }, [id, data.formula, updateNodeData]);
 
+    const touchingClasses = data.touchingEdges
+        ? Object.entries(data.touchingEdges)
+            .filter(([_, touching]) => touching)
+            .map(([edge]) => `edge-touch-${edge}`)
+            .join(' ')
+        : '';
+
     return (
-        <div className="math-node op-node function-node">
-            <DynamicHandles nodeId={id} handles={data.handles} locked={true} />
+        <div className={`math-node function-node ${touchingClasses}`} style={{ paddingBottom: '15px' }}>
+            <DynamicHandles
+                nodeId={id}
+                handles={data.handles}
+                locked={true}
+                allowedTypes={['input', 'output', 'trigger-in', 'trigger-out', 'trigger-err', 'modify']}
+                touchingEdges={data.touchingEdges}
+                customDescriptions={{
+                    'trigger-in': '接收電流時自動執行運算',
+                    'trigger-out': '運算成功後發出電流',
+                    'trigger-err': '公式出錯或無效時發出電流'
+                }}
+            />
             <div className="node-header">
                 Function
                 <button

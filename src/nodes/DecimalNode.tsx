@@ -1,0 +1,77 @@
+import { type NodeProps, type Node } from '@xyflow/react';
+import { useEffect } from 'react'; // Import useEffect
+import useStore, { type AppState, type NodeData } from '../store/useStore';
+import { DynamicHandles } from './DynamicHandles';
+
+export function DecimalNode({ id, data }: NodeProps<Node<NodeData>>) {
+    const updateNodeData = useStore((state: AppState) => state.updateNodeData);
+
+    const handleToDecimal = (inputVal?: string) => {
+        const valToConvert = inputVal !== undefined ? inputVal : data.value;
+        if (valToConvert) {
+            try {
+                // Handle LaTeX fractions or mixed strings
+                let clean = valToConvert.replace(/\\/g, '');
+                // If it's a fraction like frac{1}{2}, try a basic regex or just parseFloat
+                if (clean.includes('frac')) {
+                    const matches = clean.match(/frac\{(\d+)\}\{(\d+)\}/);
+                    if (matches && matches.length === 3) { // Ensure both numerator and denominator are captured
+                        const numerator = parseInt(matches[1]);
+                        const denominator = parseInt(matches[2]);
+                        if (!isNaN(numerator) && !isNaN(denominator) && denominator !== 0) {
+                            const res = numerator / denominator;
+                            updateNodeData(id, { value: res.toString() });
+                            return;
+                        }
+                    }
+                }
+
+                const num = parseFloat(clean);
+                if (!isNaN(num)) {
+                    updateNodeData(id, { value: num.toString() });
+                }
+            } catch (e) {
+                console.error("Decimal conversion error", e);
+            }
+        }
+    };
+
+    // Re-run conversion if input value changes through connection
+    // (In our store evaluateGraph handles value propagation)
+    useEffect(() => {
+        if (data.input !== undefined) { // Check if there's an incoming value
+            handleToDecimal(data.input);
+        }
+    }, [data.input, id, updateNodeData]); // Dependencies for useEffect
+
+    const touchingClasses = data.touchingEdges
+        ? Object.entries(data.touchingEdges)
+            .filter(([_, touching]) => touching)
+            .map(([edge]) => `edge-touch-${edge}`)
+            .join(' ')
+        : '';
+
+    return (
+        <div className={`math-node op-node decimal-node ${touchingClasses}`}>
+            <DynamicHandles
+                nodeId={id}
+                handles={data.handles}
+                allowedTypes={['input', 'output', 'trigger-in', 'trigger-out']}
+                touchingEdges={data.touchingEdges}
+                customDescriptions={{
+                    'trigger-in': '接收電流時執行小數轉換',
+                    'trigger-out': '轉換成功後發出電流'
+                }}
+            />
+            <div className="node-header">
+                To Decimal
+                <button onClick={() => handleToDecimal()} className="exec-button">CONV</button>
+            </div>
+            <div className="node-content">
+                <div className="result-value" style={{ fontSize: '1.2rem' }}>
+                    {data.value !== undefined ? data.value : '--'}
+                </div>
+            </div>
+        </div>
+    );
+}

@@ -25,9 +25,24 @@ export function NumberNode({ id, data }: NodeProps<Node<NodeData>>) {
     return () => mf.removeEventListener('input', handleInput);
   }, [id, data.value, updateNodeData]);
 
+  const touchingClasses = data.touchingEdges
+    ? Object.entries(data.touchingEdges)
+      .filter(([_, touching]) => touching)
+      .map(([edge]) => `edge-touch-${edge}`)
+      .join(' ')
+    : '';
+
   return (
-    <div className="math-node number-node">
-      <DynamicHandles nodeId={id} handles={data.handles} />
+    <div className={`math-node number-node ${touchingClasses}`}>
+      <DynamicHandles
+        nodeId={id}
+        handles={data.handles}
+        allowedTypes={['input', 'output', 'trigger-out']}
+        touchingEdges={data.touchingEdges}
+        customDescriptions={{
+          'trigger-out': '當傳入的數值更新時同步發出電流'
+        }}
+      />
       <div className="node-header">Data</div>
       <div className="node-content math-input-container">
         {/* @ts-ignore */}
