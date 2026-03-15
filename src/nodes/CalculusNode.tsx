@@ -1,9 +1,9 @@
-import { type NodeProps, type Node } from '@xyflow/react';
+import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
 import { useEffect } from 'react';
 import useStore, { type AppState, type NodeData } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 
-export function CalculusNode({ id, data }: NodeProps<Node<NodeData>>) {
+export function CalculusNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
     const executeNode = useStore((state: AppState) => state.executeNode);
     const variant = data.variant || 'diff'; // 'diff' or 'integ'
@@ -28,6 +28,9 @@ export function CalculusNode({ id, data }: NodeProps<Node<NodeData>>) {
         }
     }, [data.input, id, executeNode]);
 
+    const edges = useStore((state: AppState) => state.edges);
+    const isOutputConnected = edges.some(e => e.source === id && (e.sourceHandle === 'h-out' || e.sourceHandle?.startsWith('h-auto-out')));
+
     const touchingClasses = data.touchingEdges
         ? Object.entries(data.touchingEdges)
             .filter(([_, touching]) => touching)
@@ -36,7 +39,8 @@ export function CalculusNode({ id, data }: NodeProps<Node<NodeData>>) {
         : '';
 
     return (
-        <div className={`math-node op-node calculus-node ${variant}-node ${touchingClasses}`}>
+        <div className={`math-node op-node calculus-node ${variant}-node ${touchingClasses}`} style={{ width: '100%', height: '100%' }}>
+            <NodeResizer minWidth={120} minHeight={80} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: variant === 'diff' ? '#ff4757' : '#1e90ff' }} />
             <DynamicHandles
                 nodeId={id}
                 handles={data.handles}
@@ -87,12 +91,16 @@ export function CalculusNode({ id, data }: NodeProps<Node<NodeData>>) {
             </div>
 
             <div className="node-content" style={{ flexDirection: 'column', gap: '4px' }}>
-                <div style={{ fontSize: '0.6rem', color: '#666', width: '100%', textAlign: 'left' }}>
-                    {variant === 'diff' ? 'DERIVATIVE:' : 'INTEGRAL:'}
-                </div>
-                <div className="result-value" style={{ fontSize: '1.1rem', color: '#4facfe', width: '100%', textAlign: 'center' }}>
-                    {data.value !== undefined ? data.value : '--'}
-                </div>
+                {!isOutputConnected && (
+                    <>
+                        <div style={{ fontSize: '0.6rem', color: '#666', width: '100%', textAlign: 'left' }}>
+                            {variant === 'diff' ? 'DERIVATIVE:' : 'INTEGRAL:'}
+                        </div>
+                        <div className="result-value" style={{ fontSize: '1.1rem', color: '#4facfe', width: '100%', textAlign: 'center' }}>
+                            {data.value !== undefined ? data.value : '--'}
+                        </div>
+                    </>
+                )}
             </div>
             <style>{`
                 .calculus-node {

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
+import { type Edge } from '@xyflow/react';
 import {
     type Connection,
-    type Edge,
     type EdgeChange,
     type Node,
     type NodeChange,
@@ -12,8 +12,9 @@ import {
     applyNodeChanges,
     applyEdgeChanges,
 } from '@xyflow/react';
+import { CalculationService } from '../utils/CalculationService';
 
-export type HandleType = 'modify' | 'input' | 'output' | 'trigger-in' | 'trigger-out' | 'trigger-err';
+export type HandleType = 'input' | 'output' | 'trigger-in' | 'trigger-out' | 'trigger-err';
 
 export type CustomHandle = {
     id: string;
@@ -21,6 +22,7 @@ export type CustomHandle = {
     position: 'top' | 'bottom' | 'left' | 'right';
     offset: number; // percentage 0-100
     label?: string; // Optional label for variables
+    lineIndex?: number; // For TextNode: which line this handle is pinned to
 };
 
 export type NodeData = {
@@ -32,6 +34,9 @@ export type NodeData = {
     touchingEdges?: { left?: boolean, right?: boolean, top?: boolean, bottom?: boolean };
     variant?: 'diff' | 'integ'; // For calculus nodes
     variable?: string; // For specifying differentiation/integration variable
+    useExternalFormula?: boolean;
+    formulaInput?: string; // Formula string received from an external connection
+    outputs?: Record<string, string>; // Multi-output support (handleId -> value)
 };
 
 export type AppNode = Node<NodeData>;
@@ -74,56 +79,25 @@ export const calculusNodeHandles: CustomHandle[] = [
 ];
 
 export const textNodeHandles: CustomHandle[] = [
-    { id: 'h-in', type: 'input', position: 'left', offset: 50 },
-    { id: 'h-out', type: 'output', position: 'right', offset: 50 }
+    { id: 'h-in', type: 'input', position: 'left', offset: 50 }
 ];
 
 // Initial setup nodes
-const initialNodes: AppNode[] = [
-    {
-        id: 'num1',
-        type: 'numberNode',
-        position: { x: 100, y: 100 },
-        data: { value: '10', handles: [...dataNodeHandles] },
-    },
-    {
-        id: 'num2',
-        type: 'numberNode',
-        position: { x: 100, y: 350 },
-        data: { value: '\\sqrt{2}', handles: [...dataNodeHandles] },
-    },
-    {
-        id: 'fn1',
-        type: 'functionNode',
-        position: { x: 500, y: 200 },
-        data: {
-            formula: 'x + y',
-            handles: [
-                { id: 'h-in-x', type: 'input', position: 'left', offset: 33, label: 'x' },
-                { id: 'h-in-y', type: 'input', position: 'left', offset: 66, label: 'y' },
-                { id: 'h-out', type: 'output', position: 'right', offset: 50 }
-            ]
-        },
-    }
-];
-
-const initialEdges: Edge[] = [
-    { id: 'e1', source: 'num1', target: 'fn1', sourceHandle: 'h-out', targetHandle: 'h-in-x' },
-    { id: 'e2', source: 'num2', target: 'fn1', sourceHandle: 'h-out', targetHandle: 'h-in-y' },
-];
+const initialNodes: AppNode[] = [];
 
 const useStore = create<AppState>((set, get) => ({
     nodes: initialNodes,
-    edges: initialEdges,
+    edges: [],
     implicitEdges: [],
 
     onNodesChange: (changes: NodeChange<AppNode>[]) => {
         set({
             nodes: applyNodeChanges(changes, get().nodes),
         });
+        get().checkProximity();
     },
 
-    onEdgesChange: (changes: EdgeChange<Edge>[]) => {
+    onEdgesChange: (changes: EdgeChange[]) => {
         set({
             edges: applyEdgeChanges(changes, get().edges),
         });
@@ -131,86 +105,107 @@ const useStore = create<AppState>((set, get) => ({
     },
 
     onConnect: (connection: Connection) => {
+        const { nodes } = get();
+        const sourceNode = nodes.find(n => n.id === connection.source);
+        const sourceHandle = sourceNode?.data.handles?.find(h => h.id === connection.sourceHandle);
+
+        const isTrigger = sourceHandle?.type.startsWith('trigger');
+
+        const newEdge = {
+            ...connection,
+            type: 'default',
+            animated: isTrigger,
+            className: isTrigger ? 'trigger-edge' : 'data-edge',
+            style: {
+                strokeWidth: 2,
+                stroke: isTrigger ? '#b8860b' : '#3d5a80'
+            }
+        };
+
         set({
-            edges: addEdge(connection, get().edges),
+            edges: addEdge(newEdge, get().edges),
         });
         get().evaluateGraph();
     },
 
-    updateNodeData: (nodeId: string, data: NodeData) => {
-        const node = get().nodes.find(n => n.id === nodeId);
-        const oldValue = node?.data.value;
+    updateNodeData: (nodeId: string, dataPatch: Partial<NodeData>) => {
+        const { nodes, edges } = get();
+        const node = nodes.find(n => n.id === nodeId);
+        if (!node) return;
 
-        set({
-            nodes: get().nodes.map((node) => {
-                if (node.id === nodeId) {
-                    return { ...node, data: { ...node.data, ...data } };
-                }
-                return node;
-            }),
-        });
+        const nextData = { ...node.data, ...dataPatch };
 
-        // Trigger logic: If value changed, fire triggers
-        if (data.value !== undefined && data.value !== oldValue) {
-            const newNode = get().nodes.find(n => n.id === nodeId);
-            // 1. Explicit trigger-out handles
-            const triggerOutHandles = newNode?.data.handles?.filter(h => h.type === 'trigger-out') || [];
-            triggerOutHandles.forEach(h => get().triggerNode(nodeId, h.id));
-
-            // 2. Implicit triggers for auto-connected nodes (snapped)
-            const implicitOuts = get().implicitEdges.filter(e => e.source === nodeId);
-            implicitOuts.forEach(edge => {
-                get().executeNode(edge.target);
+        // If handles changed, we MUST cleanup orphaned edges to prevent ghost connections
+        let nextEdges = edges;
+        if (dataPatch.handles) {
+            const nextHandleIds = new Set(dataPatch.handles.map(h => h.id));
+            nextEdges = edges.filter(e => {
+                if (e.source === nodeId && e.sourceHandle && !nextHandleIds.has(e.sourceHandle)) return false;
+                if (e.target === nodeId && e.targetHandle && !nextHandleIds.has(e.targetHandle)) return false;
+                return true;
             });
         }
 
-        get().evaluateGraph();
+        set({
+            nodes: nodes.map((n) => (n.id === nodeId ? { ...n, data: nextData } : n)),
+            edges: nextEdges
+        });
+
+        // Trigger execution for nodes that should auto-run on data change
+        if (node.type === 'numberNode' || node.type === 'functionNode' || node.type === 'calculateNode') {
+            get().executeNode(nodeId);
+        } else {
+            get().evaluateGraph();
+        }
     },
 
     addHandle: (nodeId: string, handle: CustomHandle) => {
+        const { nodes } = get();
         set({
-            nodes: get().nodes.map((node) => {
-                if (node.id === nodeId) {
-                    const handles = node.data.handles || [];
-                    return { ...node, data: { ...node.data, handles: [...handles, handle] } };
-                }
-                return node;
-            }),
+            nodes: nodes.map((n) =>
+                n.id === nodeId
+                    ? { ...n, data: { ...n.data, handles: [...(n.data.handles || []), handle] } }
+                    : n
+            ),
         });
     },
 
     removeHandle: (nodeId: string, handleId: string) => {
+        const { nodes, edges } = get();
         set({
-            nodes: get().nodes.map((node) => {
-                if (node.id === nodeId) {
-                    const handles = node.data.handles || [];
-                    return { ...node, data: { ...node.data, handles: handles.filter(h => h.id !== handleId) } };
-                }
-                return node;
-            }),
+            nodes: nodes.map((n) =>
+                n.id === nodeId
+                    ? { ...n, data: { ...n.data, handles: n.data.handles?.filter(h => h.id !== handleId) } }
+                    : n
+            ),
+            edges: edges.filter(e =>
+                !(e.source === nodeId && e.sourceHandle === handleId) &&
+                !(e.target === nodeId && e.targetHandle === handleId)
+            )
         });
     },
 
     updateHandle: (nodeId: string, handleId: string, patch: Partial<CustomHandle>) => {
+        const { nodes } = get();
         set({
-            nodes: get().nodes.map((node) => {
-                if (node.id === nodeId) {
-                    const handles = node.data.handles || [];
-                    return {
-                        ...node,
+            nodes: nodes.map((n) =>
+                n.id === nodeId
+                    ? {
+                        ...n,
                         data: {
-                            ...node.data,
-                            handles: handles.map(h => (h.id === handleId ? { ...h, ...patch } : h))
+                            ...n.data,
+                            handles: n.data.handles?.map(h => h.id === handleId ? { ...h, ...patch } : h)
                         }
-                    };
-                }
-                return node;
-            }),
+                    }
+                    : n
+            ),
         });
     },
 
     addNode: (node: AppNode) => {
-        set({ nodes: [...get().nodes, node] });
+        set({
+            nodes: [...get().nodes, node],
+        });
     },
 
     removeNode: (nodeId: string) => {
@@ -222,285 +217,129 @@ const useStore = create<AppState>((set, get) => ({
     },
 
     executeNode: (nodeId: string) => {
-        const { nodes, edges } = get();
+        const { nodes } = get();
         const node = nodes.find(n => n.id === nodeId);
         if (!node) return;
 
-        if (['addNode', 'functionNode', 'toolNode', 'decimalNode', 'calculusNode'].includes(node.type || '')) {
-            const formula = node.data.formula || '';
-            const implicitInputs = get().implicitEdges.filter(e => e.target === nodeId);
-
+        if (['addNode', 'calculateNode', 'toolNode', 'decimalNode', 'calculusNode'].includes(node.type || '')) {
             const handleResult = (res: string) => {
                 const currentNodes = get().nodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, value: res } } : n);
-
                 set({ nodes: currentNodes });
 
                 // Fire Trigger-Out
                 const updatedNode = currentNodes.find(n => n.id === nodeId);
-                // 1. Explicit handles
-                const triggerOutHandles = updatedNode?.data.handles?.filter(h => h.type === 'trigger-out') || [];
-                triggerOutHandles.forEach(h => get().triggerNode(nodeId, h.id));
+                updatedNode?.data.handles?.filter(h => h.type === 'trigger-out').forEach(h => get().triggerNode(nodeId, h.id));
 
-                // 2. Implicit connections
-                const implicitOuts = get().implicitEdges.filter(e => e.source === nodeId);
-                implicitOuts.forEach(edge => {
-                    get().executeNode(edge.target);
-                });
+                // Implicit connections
+                get().implicitEdges.filter(e => e.source === nodeId).forEach(edge => get().executeNode(edge.target));
 
                 get().evaluateGraph();
             };
 
             const handleError = (err: string) => {
-                set({
-                    nodes: get().nodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, value: err } } : n)
-                });
-                // Fire Trigger-Err
+                set({ nodes: get().nodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, value: err } } : n) });
                 const updatedNode = get().nodes.find(n => n.id === nodeId);
-                // 1. Explicit handles
-                const triggerErrHandles = updatedNode?.data.handles?.filter(h => h.type === 'trigger-err') || [];
-                triggerErrHandles.forEach(h => get().triggerNode(nodeId, h.id));
-
-                // 2. Implicit connections (Errors also propagate current but maybe to the same next node)
-                const implicitOuts = get().implicitEdges.filter(e => e.source === nodeId);
-                implicitOuts.forEach(edge => {
-                    get().executeNode(edge.target);
-                });
+                updatedNode?.data.handles?.filter(h => h.type === 'trigger-err').forEach(h => get().triggerNode(nodeId, h.id));
+                get().implicitEdges.filter(e => e.source === nodeId).forEach(edge => get().executeNode(edge.target));
             };
 
-            // Specialized logic for DecimalNode
-            if (node.type === 'decimalNode') {
-                const inputVal = node.data.input || node.data.value;
-                if (inputVal) {
-                    try {
-                        let clean = inputVal.replace(/\\/g, '');
-                        if (clean.includes('frac')) {
-                            const matches = clean.match(/frac\{(\d+)\}\{(\d+)\}/);
-                            if (matches && matches.length === 3) {
-                                const numerator = parseInt(matches[1]);
-                                const denominator = parseInt(matches[2]);
-                                if (!isNaN(numerator) && !isNaN(denominator) && denominator !== 0) {
-                                    handleResult((numerator / denominator).toString());
-                                    return;
-                                }
-                            }
-                        }
-                        const num = parseFloat(clean);
-                        if (!isNaN(num)) {
-                            handleResult(num.toString());
-                        } else {
-                            handleResult(inputVal); // Fallback
-                        }
-                    } catch (e) {
-                        handleError('\\text{Error}');
-                    }
-                } else {
-                    handleResult('--');
-                }
-                return;
-            }
-
-            // Specialized logic for CalculusNode
-            if (node.type === 'calculusNode') {
-                const inputVal = node.data.input || node.data.value;
-                const variant = node.data.variant || 'diff';
-                if (inputVal) {
-                    try {
-                        // @ts-ignore
-                        import('nerdamer/all.min').then((nerdamer: any) => {
-                            const ner = nerdamer.default || nerdamer;
-                            try {
-                                const expr = ner.convertFromLaTeX(inputVal);
-                                const wrt = node.data.variable || 'x';
-                                let result;
-                                if (variant === 'diff') {
-                                    result = ner.diff(expr, wrt);
-                                } else {
-                                    result = ner.integrate(expr, wrt);
-                                }
-                                handleResult(result.toTeX());
-                            } catch (e) {
-                                handleError('\\text{Calc Error}');
-                            }
-                        });
-                    } catch (e) {
-                        handleError('\\text{Load Error}');
-                    }
-                }
-                return;
-            }
-
-            try {
-                // @ts-ignore
-                import('nerdamer/all.min').then((nerdamer: any) => {
-                    const ner = nerdamer.default || nerdamer;
-
-                    if (!formula) {
-                        handleResult('?');
-                        return;
-                    }
-
-                    // FunctionNode behavior: map handles to variables
-                    // 1. Convert LaTeX formula to nerdamer expressions
-                    const solver = ner.convertFromLaTeX(formula);
-                    const variables = solver.variables(); // ['x', 'y']
-
-                    // 2. Map current connected handles to these variables
-                    const varMap: Record<string, string> = {};
-                    variables.forEach((v: string) => {
-                        // Find the handle that has this variable name as ID or label
-                        const handle = node.data.handles?.find((h: any) => h.label === v || h.id === `h-in-${v}`);
-                        if (handle) {
-                            // Check explicit edges first
-                            const edge = edges.find(e => e.target === nodeId && e.targetHandle === handle.id);
-                            if (edge) {
-                                const sourceId = edge.source;
-                                const sourceNode = nodes.find(n => n.id === sourceId);
-                                const sourceValue = sourceNode?.data?.value;
-                                if (sourceValue !== undefined && sourceValue !== null && sourceValue.trim() !== '') {
-                                    varMap[v] = ner.convertFromLaTeX(sourceValue).toString();
-                                }
-                            }
-                            // Check implicit edges if handle is on the left
-                            else if (handle.position === 'left') {
-                                const implicitEdge = implicitInputs.find(e => e.target === nodeId);
-                                if (implicitEdge) {
-                                    const sourceNode = nodes.find(n => n.id === implicitEdge.source);
-                                    const sourceValue = sourceNode?.data?.value;
-                                    if (sourceValue !== undefined && sourceValue !== null && sourceValue.trim() !== '') {
-                                        varMap[v] = ner.convertFromLaTeX(sourceValue).toString();
-                                    }
-                                }
-                            }
-                        }
-                    });
-
-                    // 3. Evaluate with variables
-                    const finalRes = solver.evaluate(varMap);
-                    handleResult(finalRes.toTeX());
-                }).catch(e => {
-                    console.error("Nerdamer Load Error", e);
-                    handleError('\\text{Error}');
+            CalculationService.calculate(node, {
+                nodes: get().nodes,
+                edges: get().edges,
+                implicitEdges: get().implicitEdges
+            })
+                .then(handleResult)
+                .catch((e) => {
+                    handleError(e?.message || String(e));
                 });
-            } catch (e) {
-                console.error("Nerdamer Execution Error", e);
-                handleError('\\text{Error}');
-            }
-        } else {
-            // Propagate down to number nodes right after execution
-            get().evaluateGraph();
         }
     },
 
     triggerNode: (nodeId: string, handleId: string) => {
-        const { edges, implicitEdges } = get();
-        // Find all connections from this handle
-        const outgoingCurrents = edges.filter(e => e.source === nodeId && e.sourceHandle === handleId);
-
-        outgoingCurrents.forEach(edge => {
-            const targetNodeId = edge.target;
-            const targetHandleId = edge.targetHandle;
-
-            const targetNode = get().nodes.find(n => n.id === targetNodeId);
-            const targetHandle = targetNode?.data.handles?.find(h => h.id === targetHandleId);
-
-            // If target handle is a trigger-in, execute the node
-            if (targetHandle?.type === 'trigger-in') {
-                get().executeNode(targetNodeId);
-            }
-        });
-
-        // Implicit triggers for auto-connected nodes on the right
-        // This logic is now centralized here.
-        if (handleId.includes('trigger-out') || handleId.includes('trigger-err')) {
-            const implicitOuts = implicitEdges.filter(e => e.source === nodeId);
-            implicitOuts.forEach(edge => {
-                get().executeNode(edge.target);
+        const { edges, nodes } = get();
+        edges
+            .filter(e => e.source === nodeId && e.sourceHandle === handleId)
+            .forEach(e => {
+                const targetNode = nodes.find(n => n.id === e.target);
+                const targetHandle = targetNode?.data.handles?.find(h => h.id === e.targetHandle);
+                // Fire if connecting to a trigger-in or plain input handle (by type, not ID)
+                if (targetHandle?.type === 'trigger-in' || targetHandle?.type === 'input'
+                    || e.targetHandle?.startsWith('h-tr-in') || e.targetHandle === 'h-in') {
+                    get().executeNode(e.target);
+                }
             });
-        }
     },
 
     checkProximity: () => {
-        const SNAP_DIST = 20;
         const { nodes } = get();
+        const PROXIMITY_THRESHOLD = 50;
         const implicitEdges: { source: string, target: string }[] = [];
 
-        let nextNodes = nodes.map(n => ({
-            ...n,
-            data: { ...n.data, touchingEdges: { top: false, bottom: false, left: false, right: false } }
-        }));
+        nodes.forEach(nodeA => {
+            nodes.forEach(nodeB => {
+                if (nodeA.id === nodeB.id) return;
+                if (!nodeA.measured || !nodeB.measured) return;
 
-        for (let i = 0; i < nextNodes.length; i++) {
-            for (let j = i + 1; j < nextNodes.length; j++) {
-                const a = nextNodes[i];
-                const b = nextNodes[j];
+                const ax = nodeA.position.x;
+                const ay = nodeA.position.y;
+                const aw = nodeA.measured.width || 0;
 
-                if (!a.measured?.width || !b.measured?.width) continue;
+                const bx = nodeB.position.x;
+                const by = nodeB.position.y;
 
-                const aLeft = a.position.x;
-                const aRight = a.position.x + a.measured.width;
-                const aTop = a.position.y;
-                const aBottom = a.position.y + a.measured.height!;
+                const distRightLeft = Math.abs((ax + aw) - bx);
+                const distTopTop = Math.abs(ay - by);
 
-                const bLeft = b.position.x;
-                const bRight = b.position.x + b.measured.width;
-                const bTop = b.position.y;
-                const bBottom = b.position.y + b.measured.height!;
+                if (distRightLeft < PROXIMITY_THRESHOLD && distTopTop < 20) {
+                    implicitEdges.push({ source: nodeA.id, target: nodeB.id });
+                }
+            });
+        });
 
-                const yOverlap = aBottom > bTop && aTop < bBottom;
-
-                if (yOverlap) {
-                    if (Math.abs(aRight - bLeft) < SNAP_DIST) {
-                        implicitEdges.push({ source: a.id, target: b.id });
-                        a.data.touchingEdges!.right = true;
-                        b.data.touchingEdges!.left = true;
-                    } else if (Math.abs(bRight - aLeft) < SNAP_DIST) {
-                        implicitEdges.push({ source: b.id, target: a.id });
-                        b.data.touchingEdges!.right = true;
-                        a.data.touchingEdges!.left = true;
+        const nodesWithTouching = nodes.map(node => {
+            const isSource = implicitEdges.some(e => e.source === node.id);
+            const isTarget = implicitEdges.some(e => e.target === node.id);
+            return {
+                ...node,
+                data: {
+                    ...node.data,
+                    touchingEdges: {
+                        right: isSource,
+                        left: isTarget
                     }
                 }
-            }
-        }
+            };
+        });
 
-        // Deep equality check for minimal rendering overhead
         if (JSON.stringify(implicitEdges) !== JSON.stringify(get().implicitEdges) ||
-            JSON.stringify(nextNodes.map(n => n.data.touchingEdges)) !== JSON.stringify(get().nodes.map(n => n.data.touchingEdges))) {
-            set({ nodes: nextNodes, implicitEdges });
-            get().evaluateGraph();
+            JSON.stringify(nodesWithTouching.map(n => n.data.touchingEdges)) !== JSON.stringify(get().nodes.map(n => n.data.touchingEdges))) {
+            set({ implicitEdges, nodes: nodesWithTouching });
         }
     },
 
     handleProximitySnap: (nodeId: string) => {
-        const SNAP_DIST = 20;
-        const SNAP_Y_DIST = 15; // Vertical snapping leniency
         const { nodes } = get();
         const aIndex = nodes.findIndex(n => n.id === nodeId);
-        if (aIndex === -1) return;
-
-        let a = nodes[aIndex];
-        if (!a.measured?.width) {
-            get().checkProximity();
-            return;
-        }
+        const a = nodes[aIndex];
+        if (!a || !a.measured || a.measured.width === undefined || a.measured.height === undefined) return;
 
         let aLeft = a.position.x;
-        let aRight = a.position.x + a.measured.width;
         let aTop = a.position.y;
-        let aBottom = a.position.y + a.measured.height!;
+        const SNAP_DIST = 40;
+        const SNAP_Y_DIST = 10;
         let snapedX = false;
         let snapedY = false;
 
-        for (const b of nodes) {
-            if (a.id === b.id || !b.measured?.width) continue;
+        for (let i = 0; i < nodes.length; i++) {
+            const b = nodes[i];
+            if (b.id === nodeId || !b.measured) continue;
 
             const bLeft = b.position.x;
-            const bRight = b.position.x + b.measured.width;
+            const bRight = b.position.x + (b.measured.width || 0);
             const bTop = b.position.y;
-            const bBottom = b.position.y + b.measured.height!;
 
-            const yOverlap = aBottom > bTop && aTop < bBottom;
-            if (yOverlap) {
-                if (Math.abs(aRight - bLeft) < SNAP_DIST) {
+            if (Math.abs(aTop - bTop) < SNAP_Y_DIST || Math.abs(aLeft - bLeft) < SNAP_DIST) {
+                if (Math.abs(aLeft + (a.measured.width || 0) - bLeft) < SNAP_DIST) {
                     aLeft = bLeft - a.measured.width;
                     snapedX = true;
                     if (Math.abs(aTop - bTop) < SNAP_Y_DIST) {
@@ -529,7 +368,6 @@ const useStore = create<AppState>((set, get) => ({
             });
         }
 
-        // Finalize proximity detection sweep
         get().checkProximity();
     },
 
@@ -539,23 +377,64 @@ const useStore = create<AppState>((set, get) => ({
 
         for (let i = 0; i < 5; i++) {
             const tempNodes = nextNodes.map(node => {
-                if (node.type === 'numberNode' || node.type === 'decimalNode' || node.type === 'calculusNode') {
-                    const explicitEdges = edges.filter(e => e.target === node.id);
-                    const implicitInputs = get().implicitEdges.filter(e => e.target === node.id);
+                // Collect all inputs pointing to this node
+                const explicitEdges = edges.filter(e => e.target === node.id);
+                const implicitInputs = get().implicitEdges.filter(e => e.target === node.id);
 
-                    if (explicitEdges.length > 0 || implicitInputs.length > 0) {
-                        const values = [
-                            ...explicitEdges.map(e => nextNodes.find(n => n.id === e.source)?.data?.value),
-                            ...implicitInputs.map(e => nextNodes.find(n => n.id === e.source)?.data?.value)
-                        ];
-                        const valIn = values.find(v => v !== undefined);
-                        // decimalNode and calculusNode use 'input' to receive incoming data, numberNode uses 'value'
-                        if (node.type === 'decimalNode' || node.type === 'calculusNode') {
+                if (explicitEdges.length > 0 || implicitInputs.length > 0) {
+                    const values = [
+                        ...explicitEdges.map(e => {
+                            const source = nextNodes.find(n => n.id === e.source);
+                            if (!source) return undefined;
+                            if (e.sourceHandle && source.data.outputs?.[e.sourceHandle] !== undefined) {
+                                return source.data.outputs[e.sourceHandle];
+                            }
+                            return source.data.value;
+                        }),
+                        ...implicitInputs.map(e => nextNodes.find(n => n.id === e.source)?.data?.value)
+                    ];
+                    const valIn = values.find(v => v !== undefined);
+
+                    // Case for calculateNode external formula input
+                    if (node.type === 'calculateNode') {
+                        const formulaEdge = edges.find(e => e.target === node.id && e.targetHandle === 'h-fn-in');
+                        let formulaVal = undefined;
+                        if (formulaEdge) {
+                            const source = nextNodes.find(n => n.id === formulaEdge.source);
+                            if (source) {
+                                formulaVal = (formulaEdge.sourceHandle && source.data.outputs?.[formulaEdge.sourceHandle]) ?? source.data.value;
+                            }
+                        }
+
+                        let updated = false;
+                        const dataPatch: Partial<NodeData> = {};
+
+                        if (formulaVal !== undefined && formulaVal !== node.data.formulaInput) {
+                            dataPatch.formulaInput = formulaVal;
+                            updated = true;
+                        }
+
+                        // Also propagate data input to standard handles if not handled elsewhere
+                        if (valIn !== undefined && valIn !== node.data.input) {
+                            dataPatch.input = valIn;
+                            updated = true;
+                        }
+
+                        return updated ? { ...node, data: { ...node.data, ...dataPatch } } : node;
+                    }
+
+                    if (node.type === 'decimalNode' || node.type === 'calculusNode') {
+                        if (valIn !== node.data.input) {
                             return { ...node, data: { ...node.data, input: valIn as string | undefined } };
                         }
-                        return { ...node, data: { ...node.data, value: valIn as string | undefined } };
+                    } else if (node.type === 'textNode') {
+                        if (valIn !== undefined) {
+                            const newText = `[[${valIn}]]`;
+                            if (newText !== node.data.text) {
+                                return { ...node, data: { ...node.data, text: newText } };
+                            }
+                        }
                     }
-                    return node;
                 }
                 return node;
             });
@@ -570,7 +449,6 @@ const useStore = create<AppState>((set, get) => ({
     },
 }));
 
-// Run initial evaluation
 useStore.getState().evaluateGraph();
 
 export default useStore;

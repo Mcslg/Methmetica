@@ -1,21 +1,19 @@
-import { type NodeProps, type Node } from '@xyflow/react';
-import { useEffect } from 'react'; // Import useEffect
+import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
+import { useEffect } from 'react';
 import useStore, { type AppState, type NodeData } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 
-export function DecimalNode({ id, data }: NodeProps<Node<NodeData>>) {
+export function DecimalNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
 
     const handleToDecimal = (inputVal?: string) => {
         const valToConvert = inputVal !== undefined ? inputVal : data.value;
         if (valToConvert) {
             try {
-                // Handle LaTeX fractions or mixed strings
                 let clean = valToConvert.replace(/\\/g, '');
-                // If it's a fraction like frac{1}{2}, try a basic regex or just parseFloat
                 if (clean.includes('frac')) {
                     const matches = clean.match(/frac\{(\d+)\}\{(\d+)\}/);
-                    if (matches && matches.length === 3) { // Ensure both numerator and denominator are captured
+                    if (matches && matches.length === 3) {
                         const numerator = parseInt(matches[1]);
                         const denominator = parseInt(matches[2]);
                         if (!isNaN(numerator) && !isNaN(denominator) && denominator !== 0) {
@@ -36,13 +34,11 @@ export function DecimalNode({ id, data }: NodeProps<Node<NodeData>>) {
         }
     };
 
-    // Re-run conversion if input value changes through connection
-    // (In our store evaluateGraph handles value propagation)
     useEffect(() => {
-        if (data.input !== undefined) { // Check if there's an incoming value
+        if (data.input !== undefined) {
             handleToDecimal(data.input);
         }
-    }, [data.input, id, updateNodeData]); // Dependencies for useEffect
+    }, [data.input, id, updateNodeData]);
 
     const touchingClasses = data.touchingEdges
         ? Object.entries(data.touchingEdges)
@@ -52,7 +48,8 @@ export function DecimalNode({ id, data }: NodeProps<Node<NodeData>>) {
         : '';
 
     return (
-        <div className={`math-node op-node decimal-node ${touchingClasses}`}>
+        <div className={`math-node op-node decimal-node ${touchingClasses}`} style={{ width: '100%', height: '100%' }}>
+            <NodeResizer minWidth={120} minHeight={80} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: '#43e97b' }} />
             <DynamicHandles
                 nodeId={id}
                 handles={data.handles}

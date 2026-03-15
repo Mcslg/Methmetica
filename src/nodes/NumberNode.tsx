@@ -1,10 +1,18 @@
 import { useEffect, useRef } from 'react';
-import { type NodeProps, type Node } from '@xyflow/react';
+import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
 import useStore, { type AppState, type NodeData } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 import 'mathlive';
 
-export function NumberNode({ id, data }: NodeProps<Node<NodeData>>) {
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      'math-field': any;
+    }
+  }
+}
+
+export function NumberNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
   const updateNodeData = useStore((state: AppState) => state.updateNodeData);
   const mfRef = useRef<any>(null);
 
@@ -33,7 +41,8 @@ export function NumberNode({ id, data }: NodeProps<Node<NodeData>>) {
     : '';
 
   return (
-    <div className={`math-node number-node ${touchingClasses}`}>
+    <div className={`math-node number-node ${touchingClasses}`} style={{ width: '100%', height: '100%' }}>
+      <NodeResizer minWidth={100} minHeight={60} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: '#ff7eb3' }} />
       <DynamicHandles
         nodeId={id}
         handles={data.handles}

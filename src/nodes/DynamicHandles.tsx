@@ -8,7 +8,7 @@ interface DynamicHandlesProps {
     handles?: CustomHandle[];
     locked?: boolean;
     allowedTypes?: HandleType[];
-    customDescriptions?: Partial<Record<HandleType, string>>;
+    customDescriptions?: Partial<Record<string, string>>;
     touchingEdges?: { left?: boolean, right?: boolean, top?: boolean, bottom?: boolean };
 }
 
@@ -148,13 +148,11 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
     };
 
     const getIconContent = (type: HandleType) => {
-        if (type === 'modify') return '×';
         if (type === 'trigger-in' || type === 'trigger-out' || type === 'trigger-err') return '▶';
         return '●';
     };
 
     const getRotation = (type: HandleType, side: string) => {
-        if (type === 'modify') return 0;
         const isInput = (type === 'input' || type === 'trigger-in');
         if (isInput) {
             if (side === 'left') return 0;
@@ -171,15 +169,12 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
     };
 
     const getShapeClass = (type: HandleType) => {
-        if (['modify', 'input', 'output'].includes(type)) return 'handle-square';
+        if (['input', 'output'].includes(type)) return 'handle-square';
         return 'handle-triangle-down';
     };
-
     const panelItems: { type: HandleType, label: string, desc: string }[] = [
-        { type: 'trigger-in', label: '電流輸入', desc: '接收電流時觸發節點運算' },
         { type: 'trigger-out', label: '電流輸出', desc: '數值變動或運算成功時發出' },
         { type: 'trigger-err', label: '錯誤偵測', desc: '運算錯誤時發出電流' },
-        { type: 'modify', label: 'Modify Param', desc: '參數調整' },
     ];
 
     const canAddAny = allowedTypes.length > 0;
@@ -217,7 +212,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                     <Handle
                         key={h.id}
                         id={h.id}
-                        type={h.type === 'input' || h.type === 'trigger-in' || h.type === 'modify' ? 'target' : 'source'}
+                        type={h.type === 'input' || h.type === 'trigger-in' ? 'target' : 'source'}
                         position={getPositionLiteral(h.position)}
                         isConnectable={!cmdPressed}
                         className={`${getShapeClass(h.type)} handle-${h.type} ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
