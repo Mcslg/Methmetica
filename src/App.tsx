@@ -8,7 +8,12 @@ import { CalculateNode } from './nodes/CalculateNode';
 import { TextNode } from './nodes/TextNode';
 import { DecimalNode } from './nodes/DecimalNode';
 import { CalculusNode } from './nodes/CalculusNode';
-import { calculusNodeHandles } from './store/useStore';
+import { AppendNode } from './nodes/AppendNode';
+import { ButtonNode } from './nodes/ButtonNode';
+import { GateNode } from './nodes/GateNode';
+import { RangeNode } from './nodes/RangeNode';
+import { ForEachNode } from './nodes/ForEachNode';
+import { calculusNodeHandles, buttonNodeHandles, appendNodeHandles, gateNodeHandles, rangeNodeHandles, forEachNodeHandles } from './store/useStore';
 
 const nodeTypes = {
   numberNode: NumberNode,
@@ -16,6 +21,11 @@ const nodeTypes = {
   textNode: TextNode,
   decimalNode: DecimalNode,
   calculusNode: CalculusNode,
+  appendNode: AppendNode,
+  buttonNode: ButtonNode,
+  gateNode: GateNode,
+  rangeNode: RangeNode,
+  forEachNode: ForEachNode,
 };
 
 function Flow() {
@@ -24,16 +34,38 @@ function Flow() {
   const [paneMenu, setPaneMenu] = useState<{ x: number, y: number, screenX: number, screenY: number } | null>(null);
   const [nodeMenu, setNodeMenu] = useState<{ x: number, y: number, nodeId: string, relativeY: number } | null>(null);
   const connectingNodeRef = useRef<{ nodeId: string, handleId: string, handleType: string } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const nodeLibrary = [
+    { type: 'textNode', label: 'Text Logic', desc: 'Markdown & text processing', category: 'Logic', icon: '¶', color: '#4facfe' },
+    { type: 'calculateNode', label: 'Math Calculator', desc: 'Symbolic math expressions', category: 'Math', icon: 'fx', color: '#ffcc33' },
+    { type: 'decimalNode', label: 'To Decimal', desc: 'Convert fraction/LaTeX to float', category: 'Utils', icon: '0.1', color: '#43e97b' },
+    { type: 'calculusNode', label: 'Calculus Tool', desc: 'Derivatives & Integrals', category: 'Math', icon: '∫', color: '#a18cd1' },
+    { type: 'appendNode', label: 'Append Logger', desc: 'Append data to touching TextNode', category: 'Logic', icon: '⤓', color: '#43e97b' },
+    { type: 'buttonNode', label: 'Run Trigger', desc: 'Manual signal trigger', category: 'Logic', icon: '⚡', color: '#ffcc00' },
+    { type: 'gateNode', label: 'Trigger Gate', desc: 'Pass trigger if input is non-zero', category: 'Logic', icon: '⛩', color: '#4facfe' },
+    { type: 'rangeNode', label: 'Range Generator', desc: 'Generate a sequence of numbers', category: 'Math', icon: '{n}', color: '#43e97b' },
+    { type: 'forEachNode', label: 'For Each', desc: 'Process sequence items on neighbor', category: 'Logic', icon: '↻', color: '#6c5ce7' },
+  ];
+
+  const filteredLibrary = nodeLibrary.filter(item => 
+    item.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    item.desc.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const onPaneContextMenu = useCallback((e: MouseEvent | React.MouseEvent) => {
     e.preventDefault();
     setNodeMenu(null);
+    setSearchQuery('');
     setPaneMenu({
       x: e.clientX,
       y: e.clientY,
       screenX: e.clientX,
       screenY: e.clientY,
     });
+    // Focus search on next tick
+    setTimeout(() => searchInputRef.current?.focus(), 10);
   }, []);
 
   const onNodeContextMenu = useCallback((e: React.MouseEvent, node: any) => {
@@ -57,7 +89,25 @@ function Flow() {
         case 'numberNode': return dataNodeHandles;
         case 'textNode': return textNodeHandles;
         case 'calculusNode': return calculusNodeHandles;
+        case 'buttonNode': return buttonNodeHandles;
+        case 'appendNode': return appendNodeHandles;
+        case 'gateNode': return gateNodeHandles;
+        case 'rangeNode': return rangeNodeHandles;
+        case 'forEachNode': return forEachNodeHandles;
         default: return toolNodeHandles;
+      }
+    };
+
+    const getDefaultSize = (type: string) => {
+      switch (type) {
+        case 'textNode': return { width: 300, height: 180 };
+        case 'calculateNode': 
+        case 'calculusNode': return { width: 220, height: 140 };
+        case 'rangeNode':
+        case 'forEachNode': 
+        case 'gateNode': return { width: 180, height: 110 };
+        case 'numberNode': return { width: 120, height: 80 };
+        default: return { width: 200, height: 120 };
       }
     };
 
@@ -65,9 +115,11 @@ function Flow() {
       id: `${type}-${Date.now()}`,
       type,
       position,
+      style: getDefaultSize(type),
       data: {
         handles: getHandles(type),
-        ...(variant ? { variant } : {})
+        ...(variant ? { variant } : {}),
+        ...(type === 'rangeNode' ? { rangeDef: '0..10' } : {})
       }
     } as any);
     setPaneMenu(null);
@@ -158,15 +210,56 @@ function Flow() {
 
       {paneMenu && (
         <div
-          className="pane-context-menu"
-          style={{ position: 'absolute', left: paneMenu.x, top: paneMenu.y, zIndex: 1000 }}
-          onMouseLeave={() => setPaneMenu(null)}
+          className="command-palette nodrag"
+          style={{ position: 'absolute', left: paneMenu.x, top: paneMenu.y }}
+          onMouseLeave={() => {}} // Keep open for search
+          onClick={(e) => e.stopPropagation()}
         >
-          <div className="menu-header">Add Node</div>
-          <div className="menu-item" onClick={() => handleAddNode('textNode')}>+ New Text Logic</div>
-          <div className="menu-item border-top" onClick={() => handleAddNode('calculateNode')}>+ Calculate (Tool)</div>
-          <div className="menu-item border-top" onClick={() => handleAddNode('decimalNode')}>+ To Decimal (Util)</div>
-          <div className="menu-item border-top" onClick={() => handleAddNode('calculusNode', 'diff')}>+ Calculus (Tool)</div>
+          <div className="command-search-container">
+            <input
+              ref={searchInputRef}
+              type="text"
+              className="command-input"
+              placeholder="Search nodes... (e.g. 'cal' or 'text')"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && filteredLibrary.length > 0) {
+                  handleAddNode(filteredLibrary[0].type);
+                } else if (e.key === 'Escape') {
+                  setPaneMenu(null);
+                }
+              }}
+            />
+          </div>
+          <div className="command-list">
+            {filteredLibrary.length > 0 ? (
+              <>
+                {Array.from(new Set(filteredLibrary.map(n => n.category))).map(cat => (
+                  <React.Fragment key={cat}>
+                    <div className="command-category">{cat}</div>
+                    {filteredLibrary.filter(n => n.category === cat).map(item => (
+                      <div 
+                        key={item.type} 
+                        className="command-item" 
+                        onClick={() => handleAddNode(item.type)}
+                      >
+                        <div className="command-icon" style={{ '--theme-color': item.color } as any}>
+                          {item.icon}
+                        </div>
+                        <div className="command-info">
+                          <span className="command-label">{item.label}</span>
+                          <span className="command-desc">{item.desc}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </React.Fragment>
+                ))}
+              </>
+            ) : (
+              <div className="command-empty">No nodes found matching your search.</div>
+            )}
+          </div>
         </div>
       )}
 

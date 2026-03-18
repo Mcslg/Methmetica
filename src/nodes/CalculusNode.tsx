@@ -28,8 +28,6 @@ export function CalculusNode({ id, data, selected }: NodeProps<Node<NodeData>>) 
         }
     }, [data.input, id, executeNode]);
 
-    const edges = useStore((state: AppState) => state.edges);
-    const isOutputConnected = edges.some(e => e.source === id && (e.sourceHandle === 'h-out' || e.sourceHandle?.startsWith('h-auto-out')));
 
     const touchingClasses = data.touchingEdges
         ? Object.entries(data.touchingEdges)
@@ -39,7 +37,15 @@ export function CalculusNode({ id, data, selected }: NodeProps<Node<NodeData>>) 
         : '';
 
     return (
-        <div className={`math-node op-node calculus-node ${variant}-node ${touchingClasses}`} style={{ width: '100%', height: '100%' }}>
+        <div className={`math-node op-node calculus-node ${variant}-node ${touchingClasses}`} 
+             style={{ 
+                 width: '100%', 
+                 height: '100%',
+                 display: 'flex',
+                 flexDirection: 'column',
+                 overflow: 'visible',
+                 boxSizing: 'border-box'
+             }}>
             <NodeResizer minWidth={120} minHeight={80} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: variant === 'diff' ? '#ff4757' : '#1e90ff' }} />
             <DynamicHandles
                 nodeId={id}
@@ -52,9 +58,8 @@ export function CalculusNode({ id, data, selected }: NodeProps<Node<NodeData>>) 
                     'trigger-err': '計算出錯時發出電流'
                 }}
             />
-            <div className="node-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="node-header" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                 <span>{variant === 'diff' ? 'Differentiate' : 'Integrate'}</span>
-                <button onClick={() => executeNode(id)} className="exec-button" style={{ float: 'none' }}>EXEC</button>
             </div>
 
             <div className="calc-controls" style={{
@@ -90,17 +95,7 @@ export function CalculusNode({ id, data, selected }: NodeProps<Node<NodeData>>) 
                 </div>
             </div>
 
-            <div className="node-content" style={{ flexDirection: 'column', gap: '4px' }}>
-                {!isOutputConnected && (
-                    <>
-                        <div style={{ fontSize: '0.6rem', color: '#666', width: '100%', textAlign: 'left' }}>
-                            {variant === 'diff' ? 'DERIVATIVE:' : 'INTEGRAL:'}
-                        </div>
-                        <div className="result-value" style={{ fontSize: '1.1rem', color: '#4facfe', width: '100%', textAlign: 'center' }}>
-                            {data.value !== undefined ? data.value : '--'}
-                        </div>
-                    </>
-                )}
+            <div className="node-content custom-scrollbar" style={{ flexGrow: 1, padding: '10px', overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', gap: '4px' }}>
             </div>
             <style>{`
                 .calculus-node {

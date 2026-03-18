@@ -84,23 +84,23 @@ export class CalculationService {
         const variables = solver.variables();
         const implicitInputs = implicitEdges.filter(e => e.target === node.id);
 
+        let isSequence = false;
+        let sequenceKey = '';
+        let sequenceItems: any[] = [];
         const varMap: Record<string, string> = {};
+
         variables.forEach((v: string) => {
             const handle = node.data.handles?.find((h: any) => h.label === v || h.id === `h-in-${v}`);
             if (handle) {
+                let val: string | undefined;
+
                 // Explicit connection
                 const edge = edges.find(e => e.target === node.id && e.targetHandle === handle.id);
                 if (edge) {
                     const sourceNode = nodes.find(n => n.id === edge.source);
-                    let val = sourceNode?.data?.value;
-
-                    // Priority: handle-specific output > general value
+                    val = sourceNode?.data?.value;
                     if (edge.sourceHandle && sourceNode?.data.outputs?.[edge.sourceHandle] !== undefined) {
                         val = sourceNode.data.outputs[edge.sourceHandle];
-                    }
-
-                    if (val && val.trim() !== '') {
-                        varMap[v] = ner.convertFromLaTeX(val).toString();
                     }
                 }
                 // Implicit connection
@@ -108,14 +108,70 @@ export class CalculationService {
                     const implicitEdge = implicitInputs.find(e => e.target === node.id);
                     if (implicitEdge) {
                         const sourceNode = nodes.find(n => n.id === implicitEdge.source);
-                        const val = sourceNode?.data?.value;
-                        if (val && val.trim() !== '') {
-                            varMap[v] = ner.convertFromLaTeX(val).toString();
-                        }
+                        val = sourceNode?.data?.value;
                     }
                 }
+
+                if (val && val.trim() !== '') {
+                    // Check if value is a JSON array (sequence)
+                    try {
+                        const parsed = JSON.parse(val);
+                        if (Array.isArray(parsed) && !isSequence) {
+                            isSequence = true;
+                            sequenceKey = v;
+                            sequenceItems = parsed;
+                            return;
+                        }
+                    } catch (e) { /* Not JSON */ }
+                    
+                    try {
+                        varMap[v] = ner.convertFromLaTeX(val).toString();
+                    } catch {
+                        varMap[v] = val; // fallback for raw numbers
+                    }
+                }
+            } else if (variables.length === 1 && handle === undefined) {
+                 // Fallback: If no handle matches but there's an implicit connection and only 1 variable
+                 const implicitEdge = implicitInputs.find(e => e.target === node.id);
+                 if (implicitEdge) {
+                     const sourceNode = nodes.find(n => n.id === implicitEdge.source);
+                     const val = sourceNode?.data?.value;
+                     if (val && val.trim() !== '') {
+                         try {
+                              const parsed = JSON.parse(val);
+                              if (Array.isArray(parsed) && !isSequence) {
+                                  isSequence = true;
+                                  sequenceKey = v;
+                                  sequenceItems = parsed;
+                                  return;
+                              }
+                         } catch (e) { }
+                         try {
+                             varMap[v] = ner.convertFromLaTeX(val).toString();
+                         } catch {
+                             varMap[v] = val;
+                         }
+                     }
+                 }
             }
         });
+
+        if (isSequence) {
+            // Map the formula over the sequence
+            const results = sequenceItems.map(item => {
+                const currentVarMap = { ...varMap, [sequenceKey]: String(item) };
+                try {
+                    const res = solver.evaluate(currentVarMap);
+                    // Extract numeric value if possible to keep array clean
+                    const raw = typeof res?.valueOf === 'function' ? res.valueOf() : res;
+                    return typeof raw === 'number' ? Number(raw.toFixed(4)) : res.toTeX();
+                } catch {
+                    return null;
+                }
+            }).filter(res => res !== null);
+            
+            return JSON.stringify(results);
+        }
 
         return solver.evaluate(varMap).toTeX();
     }

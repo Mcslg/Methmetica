@@ -32,11 +32,14 @@ export type NodeData = {
     handles?: CustomHandle[];
     input?: string; // For utility nodes to receive data
     touchingEdges?: { left?: boolean, right?: boolean, top?: boolean, bottom?: boolean };
-    variant?: 'diff' | 'integ'; // For calculus nodes
+    variant?: 'diff' | 'integ' | 'insert'; // Added 'insert'
     variable?: string; // For specifying differentiation/integration variable
     useExternalFormula?: boolean;
     formulaInput?: string; // Formula string received from an external connection
     outputs?: Record<string, string>; // Multi-output support (handleId -> value)
+    style?: { color?: string; fontSize?: number }; // Custom styles for node
+    rangeDef?: string; // For rangeNode definition (e.g., '0..10')
+    status?: string; // For progress reporting (e.g., 'ForEach' progress)
 };
 
 export type AppNode = Node<NodeData>;
@@ -74,12 +77,39 @@ export const toolNodeHandles: CustomHandle[] = [
 export const calculusNodeHandles: CustomHandle[] = [
     { id: 'h-in', type: 'input', position: 'left', offset: 50 },
     { id: 'h-out', type: 'output', position: 'right', offset: 50 },
-    { id: 'h-tr-in', type: 'trigger-in', position: 'top', offset: 50 },
-    { id: 'h-tr-out', type: 'trigger-out', position: 'bottom', offset: 50 },
 ];
 
 export const textNodeHandles: CustomHandle[] = [
     { id: 'h-in', type: 'input', position: 'left', offset: 50 }
+];
+
+export const buttonNodeHandles: CustomHandle[] = [
+    { id: 'h-tr-out', type: 'trigger-out', position: 'right', offset: 50 }
+];
+
+export const appendNodeHandles: CustomHandle[] = [
+    { id: 'h-in', type: 'input', position: 'left', offset: 50 },
+];
+
+export const insertNodeHandles: CustomHandle[] = [
+    { id: 'h-in', type: 'input', position: 'left', offset: 30, label: 'Value' },
+    { id: 'h-index', type: 'input', position: 'left', offset: 70, label: 'Line index' },
+];
+
+export const gateNodeHandles: CustomHandle[] = [
+    { id: 'h-in', type: 'input', position: 'top', offset: 50 },
+    { id: 'h-tr-in', type: 'trigger-in', position: 'left', offset: 50 },
+    { id: 'h-tr-out', type: 'trigger-out', position: 'right', offset: 50 },
+];
+
+export const rangeNodeHandles: CustomHandle[] = [
+    { id: 'h-out', type: 'output', position: 'right', offset: 50 }
+];
+
+export const forEachNodeHandles: CustomHandle[] = [
+    { id: 'h-tr-in', type: 'trigger-in', position: 'left', offset: 30 },
+    { id: 'h-seq-in', type: 'input', position: 'left', offset: 70 },
+    { id: 'h-tr-out', type: 'trigger-out', position: 'right', offset: 50 }
 ];
 
 // Initial setup nodes
@@ -98,9 +128,30 @@ const useStore = create<AppState>((set, get) => ({
     },
 
     onEdgesChange: (changes: EdgeChange[]) => {
-        set({
-            edges: applyEdgeChanges(changes, get().edges),
+        const currentEdges = get().edges;
+        const nextEdges = applyEdgeChanges(changes, currentEdges);
+        
+        // Check for removed edges to cleanup trigger-in handles
+        changes.forEach(change => {
+            if (change.type === 'remove') {
+                const edge = currentEdges.find(e => e.id === change.id);
+                if (edge && edge.targetHandle) {
+                    const targetNode = get().nodes.find(n => n.id === edge.target);
+                    const handle = targetNode?.data.handles?.find(h => h.id === edge.targetHandle);
+                    
+                    if (handle?.type === 'trigger-in') {
+                        // If no other edge is using this handle in the NEXT state, remove it
+                        const isStillUsed = nextEdges.some(e => e.target === edge.target && e.targetHandle === edge.targetHandle);
+                        if (!isStillUsed) {
+                            // Defer handle removal to avoid React Flow update conflicts during onEdgesChange
+                            setTimeout(() => get().removeHandle(edge.target, edge.targetHandle!), 0);
+                        }
+                    }
+                }
+            }
         });
+
+        set({ edges: nextEdges });
         get().evaluateGraph();
     },
 
@@ -152,7 +203,7 @@ const useStore = create<AppState>((set, get) => ({
         });
 
         // Trigger execution for nodes that should auto-run on data change
-        if (node.type === 'numberNode' || node.type === 'functionNode' || node.type === 'calculateNode') {
+        if (node.type === 'numberNode' || node.type === 'functionNode' || node.type === 'calculateNode' || node.type === 'gateNode' || node.type === 'rangeNode') {
             get().executeNode(nodeId);
         } else {
             get().evaluateGraph();
@@ -221,7 +272,146 @@ const useStore = create<AppState>((set, get) => ({
         const node = nodes.find(n => n.id === nodeId);
         if (!node) return;
 
-        if (['addNode', 'calculateNode', 'toolNode', 'decimalNode', 'calculusNode'].includes(node.type || '')) {
+        if (['addNode', 'calculateNode', 'toolNode', 'decimalNode', 'calculusNode', 'appendNode', 'gateNode', 'rangeNode', 'forEachNode'].includes(node.type || '')) {
+            if (node.type === 'forEachNode') {
+                const seqVal = node.data.input || '[]';
+                let seq: any[] = [];
+                try {
+                    seq = JSON.parse(seqVal);
+                    if (!Array.isArray(seq)) seq = [seqVal];
+                } catch {
+                    seq = [seqVal];
+                }
+
+                if (seq.length === 0) return;
+
+                // Find neighbor (prioritize magnetic/implicit connection on right or bottom)
+                const implicitNeighbor = get().implicitEdges.find(e => e.source === nodeId)?.target;
+                const explicitNeighbor = get().edges.find(e => e.source === nodeId)?.target;
+                const neighborId = implicitNeighbor || explicitNeighbor;
+                
+                if (!neighborId) {
+                    get().updateNodeData(nodeId, { status: 'Error: No Target' });
+                    return;
+                }
+
+                const runLoop = async () => {
+                    for (let i = 0; i < seq.length; i++) {
+                        const item = seq[i];
+                        // Update its own value so connected nodes can read it (like CalculateNode)
+                        get().updateNodeData(nodeId, { 
+                            status: `Item ${i+1}/${seq.length}`,
+                            value: String(item)
+                        });
+                        
+                        // Also update the target's explicit input (like Calculus or Decimal node)
+                        get().updateNodeData(neighborId, { input: String(item) });
+                        await new Promise(r => setTimeout(r, 100));
+                        get().executeNode(neighborId);
+                        await new Promise(r => setTimeout(r, 50));
+                    }
+                    get().updateNodeData(nodeId, { status: 'Done' });
+                    node.data.handles?.filter(h => h.type === 'trigger-out').forEach(h => get().triggerNode(nodeId, h.id));
+                };
+                runLoop();
+                return;
+            }
+            if (node.type === 'rangeNode') {
+                const inputs = (node.data.rangeDef || '0..10').split('..');
+                const start = parseInt(inputs[0] || '0');
+                const end = parseInt(inputs[1] || '10');
+                const range = [];
+                // Safety cap to prevent browser hang
+                const count = Math.min(Math.abs(end - start) + 1, 1000);
+                const step = start <= end ? 1 : -1;
+                for(let i = 0; i < count; i++) {
+                    range.push(start + (i * step));
+                }
+                const res = JSON.stringify(range);
+                
+                set({ nodes: get().nodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, value: res } } : n) });
+                node.data.handles?.filter(h => h.type === 'trigger-out').forEach(h => get().triggerNode(nodeId, h.id));
+                get().evaluateGraph();
+                return;
+            }
+            if (node.type === 'gateNode') {
+                const val = Number(node.data.value || 0);
+                if (val !== 0) {
+                    // Fire all trigger-out handles
+                    node.data.handles?.filter(h => h.type === 'trigger-out').forEach(h => get().triggerNode(nodeId, h.id));
+                }
+                return;
+            }
+            if (node.type === 'appendNode') {
+                const explicitEdges = get().edges.filter(e => e.target === nodeId);
+                const implicitInputs = get().implicitEdges.filter(e => e.target === nodeId);
+                
+                const values = [
+                    ...explicitEdges.map(e => {
+                        const source = nodes.find(n => n.id === e.source);
+                        return (e.sourceHandle && source?.data.outputs?.[e.sourceHandle]) ?? source?.data.value;
+                    }),
+                    ...implicitInputs.map(e => nodes.find(n => n.id === e.source)?.data?.value)
+                ].filter(v => v !== undefined);
+                
+                const val = values[0];
+                if (val !== undefined && val !== '') {
+                    // Find all implicit neighbors
+                    const neighbors = get().implicitEdges
+                        .filter(e => e.source === nodeId || e.target === nodeId)
+                        .map(e => e.source === nodeId ? e.target : e.source);
+                    
+                    // Specifically find the textNode among neighbors
+                    const targetNode = nodes.find(n => neighbors.includes(n.id) && n.type === 'textNode');
+                    
+                        if (targetNode?.type === 'textNode') {
+                            const oldText = targetNode.data.text || '';
+                            let lines = oldText.split('\n');
+                            let appendix = String(val);
+                            
+                            // Detect if it's a number, formula, or already wrapped
+                            const isNumeric = !isNaN(Number(appendix)) && appendix.trim() !== '';
+                            const isLaTeX = appendix.includes('\\') || appendix.includes('{');
+                            const alreadyWrapped = appendix.startsWith('[[') && appendix.endsWith(']]');
+                            
+                            if ((isNumeric || isLaTeX) && !alreadyWrapped) {
+                                appendix = `[[${appendix}]]`;
+                            }
+
+                            if (node.data.variant === 'insert') {
+                                // Find line index input
+                                const indexEdge = get().edges.find(e => e.target === nodeId && e.targetHandle === 'h-index');
+                                let lineIndex = 0;
+                                if (indexEdge) {
+                                    const source = nodes.find(n => n.id === indexEdge.source);
+                                    lineIndex = Number((indexEdge.sourceHandle && source?.data.outputs?.[indexEdge.sourceHandle]) ?? source?.data.value ?? 0);
+                                } else {
+                                    // Try implicit index if any (though usually explicit is better for index)
+                                    const implicitIndex = get().implicitEdges.find(e => e.target === nodeId);
+                                    if (implicitIndex) {
+                                        const source = nodes.find(n => n.id === implicitIndex.source);
+                                        lineIndex = Number(source?.data.value || 0);
+                                    }
+                                }
+                                
+                                // Clean up lines: if all empty, reset
+                                if (lines.length === 1 && lines[0] === '') lines = [];
+                                
+                                // Insert at index
+                                const idx = Math.max(0, Math.min(lines.length, Math.floor(lineIndex)));
+                                lines.splice(idx, 0, appendix);
+                                get().updateNodeData(targetNode.id, { text: lines.join('\n') });
+                            } else {
+                                // Default Append mode
+                                get().updateNodeData(targetNode.id, { text: oldText + (oldText ? '\n' : '') + appendix });
+                            }
+                        }
+                    // Update our own display value
+                    set({ nodes: get().nodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, value: val } } : n) });
+                }
+                return;
+            }
+
             const handleResult = (res: string) => {
                 const currentNodes = get().nodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, value: res } } : n);
                 set({ nodes: currentNodes });
@@ -272,10 +462,12 @@ const useStore = create<AppState>((set, get) => ({
 
     checkProximity: () => {
         const { nodes } = get();
-        const PROXIMITY_THRESHOLD = 50;
         const implicitEdges: { source: string, target: string }[] = [];
+        const touchingStates: Record<string, { left: boolean, right: boolean, top: boolean, bottom: boolean }> = {};
 
         nodes.forEach(nodeA => {
+            if (!touchingStates[nodeA.id]) touchingStates[nodeA.id] = { left: false, right: false, top: false, bottom: false };
+            
             nodes.forEach(nodeB => {
                 if (nodeA.id === nodeB.id) return;
                 if (!nodeA.measured || !nodeB.measured) return;
@@ -283,33 +475,46 @@ const useStore = create<AppState>((set, get) => ({
                 const ax = nodeA.position.x;
                 const ay = nodeA.position.y;
                 const aw = nodeA.measured.width || 0;
+                const ah = nodeA.measured.height || 0;
 
                 const bx = nodeB.position.x;
                 const by = nodeB.position.y;
 
+                // Horizontal check (A is Left of B)
                 const distRightLeft = Math.abs((ax + aw) - bx);
-                const distTopTop = Math.abs(ay - by);
-
-                if (distRightLeft < PROXIMITY_THRESHOLD && distTopTop < 20) {
+                const distYMatch = Math.abs(ay - by);
+                if (distRightLeft < 15 && distYMatch < 15) {
                     implicitEdges.push({ source: nodeA.id, target: nodeB.id });
+                    touchingStates[nodeA.id].right = true;
+                }
+
+                // Vertical check (A is Top of B)
+                const distBottomTop = Math.abs((ay + ah) - by);
+                const distXMatch = Math.abs(ax - bx);
+                if (distBottomTop < 15 && distXMatch < 15) {
+                    implicitEdges.push({ source: nodeA.id, target: nodeB.id });
+                    touchingStates[nodeA.id].bottom = true;
+                }
+                
+                // Opposite states (B receiving from A)
+                if (distRightLeft < 15 && distYMatch < 15) {
+                    if (!touchingStates[nodeB.id]) touchingStates[nodeB.id] = { left: false, right: false, top: false, bottom: false };
+                    touchingStates[nodeB.id].left = true;
+                }
+                if (distBottomTop < 15 && distXMatch < 15) {
+                    if (!touchingStates[nodeB.id]) touchingStates[nodeB.id] = { left: false, right: false, top: false, bottom: false };
+                    touchingStates[nodeB.id].top = true;
                 }
             });
         });
 
-        const nodesWithTouching = nodes.map(node => {
-            const isSource = implicitEdges.some(e => e.source === node.id);
-            const isTarget = implicitEdges.some(e => e.target === node.id);
-            return {
-                ...node,
-                data: {
-                    ...node.data,
-                    touchingEdges: {
-                        right: isSource,
-                        left: isTarget
-                    }
-                }
-            };
-        });
+        const nodesWithTouching = nodes.map(node => ({
+            ...node,
+            data: {
+                ...node.data,
+                touchingEdges: touchingStates[node.id] || { left: false, right: false, top: false, bottom: false }
+            }
+        }));
 
         if (JSON.stringify(implicitEdges) !== JSON.stringify(get().implicitEdges) ||
             JSON.stringify(nodesWithTouching.map(n => n.data.touchingEdges)) !== JSON.stringify(get().nodes.map(n => n.data.touchingEdges))) {
@@ -321,53 +526,67 @@ const useStore = create<AppState>((set, get) => ({
         const { nodes } = get();
         const aIndex = nodes.findIndex(n => n.id === nodeId);
         const a = nodes[aIndex];
-        if (!a || !a.measured || a.measured.width === undefined || a.measured.height === undefined) return;
+        if (!a || !a.measured) return;
 
+        const aWidth = a.measured.width || 0;
+        const aHeight = a.measured.height || 0;
         let aLeft = a.position.x;
         let aTop = a.position.y;
-        const SNAP_DIST = 40;
-        const SNAP_Y_DIST = 10;
-        let snapedX = false;
-        let snapedY = false;
+        const SNAP_DIST = 45;
+        let snaped = false;
 
-        for (let i = 0; i < nodes.length; i++) {
-            const b = nodes[i];
+        for (const b of nodes) {
             if (b.id === nodeId || !b.measured) continue;
 
             const bLeft = b.position.x;
-            const bRight = b.position.x + (b.measured.width || 0);
             const bTop = b.position.y;
+            const bWidth = b.measured.width || 0;
+            const bHeight = b.measured.height || 0;
 
-            if (Math.abs(aTop - bTop) < SNAP_Y_DIST || Math.abs(aLeft - bLeft) < SNAP_DIST) {
-                if (Math.abs(aLeft + (a.measured.width || 0) - bLeft) < SNAP_DIST) {
-                    aLeft = bLeft - a.measured.width;
-                    snapedX = true;
-                    if (Math.abs(aTop - bTop) < SNAP_Y_DIST) {
-                        aTop = bTop;
-                        snapedY = true;
-                    }
+            // 1. Horizontal Snapping (Left-Right)
+            if (Math.abs(aTop - bTop) < SNAP_DIST) {
+                // A Right to B Left
+                if (Math.abs((aLeft + aWidth) - bLeft) < SNAP_DIST) {
+                    aLeft = bLeft - aWidth;
+                    aTop = bTop;
+                    snaped = true;
                     break;
                 }
-                if (Math.abs(aLeft - bRight) < SNAP_DIST) {
-                    aLeft = bRight;
-                    snapedX = true;
-                    if (Math.abs(aTop - bTop) < SNAP_Y_DIST) {
-                        aTop = bTop;
-                        snapedY = true;
-                    }
+                // A Left to B Right
+                if (Math.abs(aLeft - (bLeft + bWidth)) < SNAP_DIST) {
+                    aLeft = bLeft + bWidth;
+                    aTop = bTop;
+                    snaped = true;
+                    break;
+                }
+            }
+
+            // 2. Vertical Snapping (Top-Bottom)
+            if (Math.abs(aLeft - bLeft) < SNAP_DIST) {
+                // A Bottom to B Top
+                if (Math.abs((aTop + aHeight) - bTop) < SNAP_DIST) {
+                    aTop = bTop - aHeight;
+                    aLeft = bLeft;
+                    snaped = true;
+                    break;
+                }
+                // A Top to B Bottom
+                if (Math.abs(aTop - (bTop + bHeight)) < SNAP_DIST) {
+                    aTop = bTop + bHeight;
+                    aLeft = bLeft;
+                    snaped = true;
                     break;
                 }
             }
         }
 
-        if (snapedX || snapedY) {
+        if (snaped) {
             set({
-                nodes: get().nodes.map((n, idx) =>
-                    idx === aIndex ? { ...n, position: { x: aLeft, y: aTop } } : n
+                nodes: get().nodes.map((n) =>
+                    n.id === nodeId ? { ...n, position: { x: aLeft, y: aTop } } : n
                 )
             });
         }
-
         get().checkProximity();
     },
 
@@ -391,7 +610,16 @@ const useStore = create<AppState>((set, get) => ({
                             }
                             return source.data.value;
                         }),
-                        ...implicitInputs.map(e => nextNodes.find(n => n.id === e.source)?.data?.value)
+                        ...implicitInputs
+                            .filter(e => {
+                                // For textNodes, don't allow appendNodes to trigger reactive replacement
+                                if (node.type === 'textNode') {
+                                    const source = nextNodes.find(n => n.id === e.source);
+                                    return source?.type !== 'appendNode';
+                                }
+                                return true;
+                            })
+                            .map(e => nextNodes.find(n => n.id === e.source)?.data?.value)
                     ];
                     const valIn = values.find(v => v !== undefined);
 
@@ -423,15 +651,26 @@ const useStore = create<AppState>((set, get) => ({
                         return updated ? { ...node, data: { ...node.data, ...dataPatch } } : node;
                     }
 
-                    if (node.type === 'decimalNode' || node.type === 'calculusNode') {
-                        if (valIn !== node.data.input) {
+                    if (node.type === 'decimalNode' || node.type === 'calculusNode' || node.type === 'gateNode') {
+                        if (valIn !== node.data.input && node.type !== 'gateNode') {
                             return { ...node, data: { ...node.data, input: valIn as string | undefined } };
+                        }
+                        if (valIn !== node.data.value && node.type === 'gateNode') {
+                            return { ...node, data: { ...node.data, value: valIn as string | undefined } };
                         }
                     } else if (node.type === 'textNode') {
                         if (valIn !== undefined) {
-                            const newText = `[[${valIn}]]`;
-                            if (newText !== node.data.text) {
-                                return { ...node, data: { ...node.data, text: newText } };
+                            let textToSet = String(valIn);
+                            const isNumeric = !isNaN(Number(textToSet)) && textToSet.trim() !== '';
+                            const isLaTeX = textToSet.includes('\\') || textToSet.includes('{');
+                            const isSequence = textToSet.trim().startsWith('[') && textToSet.trim().endsWith(']');
+                            
+                            if (isNumeric || isLaTeX || isSequence) {
+                                textToSet = `[[ ${textToSet} ]]`;
+                            }
+                            
+                            if (textToSet !== node.data.text) {
+                                return { ...node, data: { ...node.data, text: textToSet } };
                             }
                         }
                     }
@@ -447,6 +686,8 @@ const useStore = create<AppState>((set, get) => ({
 
         set({ nodes: nextNodes });
     },
+
+
 }));
 
 useStore.getState().evaluateGraph();

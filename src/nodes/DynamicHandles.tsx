@@ -31,7 +31,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
     useEffect(() => {
         updateNodeInternals(nodeId);
     }, [nodeId, handles, updateNodeInternals]);
-    const [menu, setMenu] = useState<{ pX: number, pY: number, side: 'top' | 'bottom' | 'left' | 'right', percent: number, screenX: number, screenY: number } | null>(null);
+    const [menu, setMenu] = useState<{ pX: number, pY: number, side: 'top' | 'bottom' | 'left' | 'right', percent: number, screenX: number, screenY: number, items: { type: HandleType | 'delete' | 'close', label: string, icon: string, color: string }[] } | null>(null);
     const [movingHandle, setMovingHandle] = useState<{ id: string, side: string, offset: number } | null>(null);
     const [cmdPressed, setCmdPressed] = useState(false);
 
@@ -50,51 +50,163 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
         };
     }, []);
 
+    const panelItems: Record<string, { label: string, desc: string, icon: string, color: string }> = {
+        'input': { label: '數據輸入', desc: '接收運算數據', icon: '●', color: '#2196F3' },
+        'output': { label: '數據輸出', desc: '傳遞運算結果', icon: '●', color: '#E91E63' },
+        'trigger-in': { label: '電流輸入', desc: '觸發執行信號', icon: '▶', color: '#FFEB3B' },
+        'trigger-out': { label: '電流輸出', desc: '執行成功信號', icon: '▶', color: '#4CAF50' },
+        'trigger-err': { label: '錯誤偵測', desc: '異常報警信號', icon: '▶', color: '#F44336' },
+        'delete': { label: '刪除組件', desc: '移除此零件', icon: '🗑', color: '#ff4757' }
+    };
+
     const onEdgeContextMenu = useCallback((e: React.MouseEvent, side: 'top' | 'bottom' | 'left' | 'right') => {
         e.preventDefault();
         e.stopPropagation();
-        if (locked && (side === 'left' || side === 'right')) return; // Locked nodes handles are auto-managed
+        if (locked && (side === 'left' || side === 'right')) return;
 
         if (!containerRef.current) return;
         const rect = containerRef.current.getBoundingClientRect();
         const pX = ((e.clientX - rect.left) / rect.width) * 100;
         const pY = ((e.clientY - rect.top) / rect.height) * 100;
         const percent = Math.max(0, Math.min(100, (side === 'top' || side === 'bottom') ? pX : pY));
+        const typesToShow = allowedTypes.filter(t => panelItems[t]);
+        if (typesToShow.length === 0) return;
 
-        // Direct-Add UX for Left/Right
-        if (side === 'left' && allowedTypes.includes('input')) {
-            addHandle(nodeId, { id: `h-${Date.now()}`, type: 'input', position: 'left', offset: percent });
-            return;
-        }
-        if (side === 'right' && allowedTypes.includes('output')) {
-            addHandle(nodeId, { id: `h-${Date.now()}`, type: 'output', position: 'right', offset: percent });
-            return;
-        }
-
-        // Filter panel items
-        const availablePanelItems = panelItems.filter(item => allowedTypes.includes(item.type));
-        if (availablePanelItems.length === 0) return;
-
-        // Panel Menu for Top/Bottom
-        setMenu({ pX, pY, side, percent, screenX: e.clientX, screenY: e.clientY });
-    }, [nodeId, locked, addHandle, allowedTypes]);
-
-    const handleAdd = (type: HandleType) => {
-        if (!menu) return;
-        addHandle(nodeId, {
-            id: `h-${Date.now()}`,
+        const items = typesToShow.map(type => ({
+            ...panelItems[type],
             type,
-            position: menu.side,
-            offset: menu.percent,
-        });
+            desc: customDescriptions[type] || panelItems[type].desc
+        }));
+
+        if (items.length === 1) {
+            addHandle(nodeId, {
+                id: `h-${Date.now()}`,
+                type: items[0].type as HandleType,
+                position: side,
+                offset: percent,
+            });
+            return;
+        }
+
+        setMenu({ pX, pY, side, percent, screenX: e.clientX, screenY: e.clientY, items } as any);
+    }, [nodeId, locked, allowedTypes, customDescriptions, addHandle]);
+
+    const handleAction = (type: string, handleId?: string) => {
+        if (type === 'delete' && handleId) {
+            removeHandle(nodeId, handleId);
+        } else if (menu && type !== 'close') {
+            addHandle(nodeId, {
+                id: `h-${Date.now()}`,
+                type: type as HandleType,
+                position: menu.side,
+                offset: menu.percent,
+            });
+        }
         setMenu(null);
     };
 
-    const onHandleContextMenu = (e: React.MouseEvent, handleId: string) => {
+    const onHandleContextMenu = (e: React.MouseEvent, handle: CustomHandle) => {
         e.preventDefault();
         e.stopPropagation();
-        if (locked) return; // Cannot delete locked handles
-        removeHandle(nodeId, handleId);
+        if (locked) return;
+        
+        const items = [
+            { ...panelItems['delete'], type: 'delete', handleId: handle.id } as any
+        ];
+
+        if (items.length === 1) {
+            removeHandle(nodeId, handle.id);
+            return;
+        }
+
+        setMenu({
+            pX: 0, pY: 0,
+            side: handle.position,
+            percent: handle.offset,
+            screenX: e.clientX,
+            screenY: e.clientY,
+            items
+        });
+    };
+
+    const PieMenu = ({ menu, onAction }: { menu: any, onAction: (type: string, handleId?: string) => void }) => {
+        const size = 320;
+        const center = size / 2;
+        const outerRadius = 140;
+        const innerRadius = 55;
+        const itemCount = menu.items.length;
+        const anglePerItem = 360 / itemCount;
+
+        const describeArc = (startAngle: number, endAngle: number): string => {
+            const polarToCartesian = (centerX: number, centerY: number, radius: number, angleInDegrees: number) => {
+                const angleInRadians = (angleInDegrees - 90) * Math.PI / 180.0;
+                return {
+                    x: centerX + (radius * Math.cos(angleInRadians)),
+                    y: centerY + (radius * Math.sin(angleInRadians))
+                };
+            };
+
+            // If it's a full circle or near-full, draw two semi-arcs to avoid SVG arc limitations
+            const diff = endAngle - startAngle;
+            if (diff >= 359.9) {
+                const mid = startAngle + diff / 2;
+                return describeArc(startAngle, mid) + " " + describeArc(mid, endAngle);
+            }
+
+            const startOuter = polarToCartesian(center, center, outerRadius, endAngle);
+            const endOuter = polarToCartesian(center, center, outerRadius, startAngle);
+            const startInner = polarToCartesian(center, center, innerRadius, endAngle);
+            const endInner = polarToCartesian(center, center, innerRadius, startAngle);
+
+            const largeArcFlag = diff <= 180 ? "0" : "1";
+
+            return [
+                "M", startOuter.x, startOuter.y,
+                "A", outerRadius, outerRadius, 0, largeArcFlag, 0, endOuter.x, endOuter.y,
+                "L", endInner.x, endInner.y,
+                "A", innerRadius, innerRadius, 0, largeArcFlag, 1, startInner.x, startInner.y,
+                "Z"
+            ].join(" ");
+        };
+
+        return (
+            <>
+                <div className="pie-menu-overlay" onClick={() => onAction('close')} />
+                <div className="pie-menu-container" style={{ left: menu.screenX - center, top: menu.screenY - center }}>
+                    <svg className="pie-svg" viewBox={`0 0 ${size} ${size}`}>
+                        {menu.items.map((item: any, i: number) => {
+                            const startAngle = i * anglePerItem;
+                            const endAngle = (i + 1) * anglePerItem;
+                            const midAngle = startAngle + anglePerItem / 2;
+                            const textRadius = (outerRadius + innerRadius) / 2;
+                            
+                            const radian = (midAngle - 90) * Math.PI / 180;
+                            const tx = center + Math.cos(radian) * textRadius;
+                            const ty = center + Math.sin(radian) * textRadius;
+
+                            return (
+                                <g key={item.type}>
+                                    <path
+                                        className="pie-segment"
+                                        d={describeArc(startAngle, endAngle)}
+                                        style={{ '--item-color': item.color } as any}
+                                        onClick={() => onAction(item.type, item.handleId)}
+                                    />
+                                    <g className="pie-label-group" transform={`translate(${tx}, ${ty})`}>
+                                        <text className="pie-item-icon" y="-15" style={{ '--item-color': item.color } as any}>
+                                            {item.icon}
+                                        </text>
+                                        <text className="pie-item-label" y="5">{item.label}</text>
+                                        <text className="pie-item-desc" y="20">{item.desc}</text>
+                                    </g>
+                                </g>
+                            );
+                        })}
+                    </svg>
+                    <div className="pie-menu-center-v2" onClick={() => onAction('close')}>×</div>
+                </div>
+            </>
+        );
     };
 
     const onHandleMouseDown = (e: React.MouseEvent, handle: CustomHandle) => {
@@ -172,10 +284,6 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
         if (['input', 'output'].includes(type)) return 'handle-square';
         return 'handle-triangle-down';
     };
-    const panelItems: { type: HandleType, label: string, desc: string }[] = [
-        { type: 'trigger-out', label: '電流輸出', desc: '數值變動或運算成功時發出' },
-        { type: 'trigger-err', label: '錯誤偵測', desc: '運算錯誤時發出電流' },
-    ];
 
     const canAddAny = allowedTypes.length > 0;
 
@@ -219,7 +327,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                         style={{
                             [h.position === 'top' || h.position === 'bottom' ? 'left' : 'top']: `${h.offset}%`,
                         }}
-                        onContextMenu={(e) => onHandleContextMenu(e, h.id)}
+                        onContextMenu={(e) => onHandleContextMenu(e, h)}
                         onMouseDown={(e) => onHandleMouseDown(e, h)}
                     >
                         <div style={{ transform: `rotate(${getRotation(h.type, h.position)}deg)`, display: 'flex' }}>
@@ -242,34 +350,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
             })}
 
             {menu && createPortal(
-                <div
-                    className="handle-panel nodrag"
-                    style={{ position: 'fixed', left: `${menu.screenX}px`, top: `${menu.screenY}px`, transform: 'translate(-50%, -5px)', zIndex: 999999 }}
-                    onMouseLeave={() => setMenu(null)}
-                    onClick={(e) => e.stopPropagation()}
-                    onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                >
-                    <div className="handle-panel-header">
-                        <span className="handle-panel-title">電流系統 (Electric Current)</span>
-                        <span className="handle-panel-close" onClick={() => setMenu(null)}>×</span>
-                    </div>
-                    {panelItems.filter(item => allowedTypes.includes(item.type)).map((item) => (
-                        <div key={item.type} className="handle-panel-item" onClick={(e) => {
-                            e.stopPropagation();
-                            handleAdd(item.type);
-                        }}>
-                            <div className={`handle-panel-icon handle-${item.type}`} style={{ transform: `rotate(${getRotation(item.type, menu.side)}deg)` }}>
-                                {getIconContent(item.type)}
-                            </div>
-                            <div className="handle-panel-info">
-                                <span className="handle-panel-label">{item.label}</span>
-                                <span className="handle-panel-desc">
-                                    {customDescriptions[item.type] || item.desc}
-                                </span>
-                            </div>
-                        </div>
-                    ))}
-                </div>,
+                <PieMenu menu={menu} onAction={handleAction} />,
                 document.body
             )}
         </div>

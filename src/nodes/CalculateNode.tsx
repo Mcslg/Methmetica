@@ -16,6 +16,7 @@ declare global {
 export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
     const executeNode = useStore((state: AppState) => state.executeNode);
+    const edges = useStore((state: AppState) => state.edges);
     const mfRef = useRef<any>(null);
 
     const useExternalFormula = !!data.useExternalFormula;
@@ -106,8 +107,6 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
         }
     }, [data.formulaInput, useExternalFormula, id, executeNode]);
 
-    const edges = useStore((state: AppState) => state.edges);
-    const isOutputConnected = edges.some(e => e.source === id && (e.sourceHandle === 'h-out' || e.sourceHandle?.startsWith('h-auto-out')));
 
     const touchingClasses = data.touchingEdges
         ? Object.entries(data.touchingEdges)
@@ -117,13 +116,21 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
         : '';
 
     return (
-        <div className={`math-node op-node calculate-node ${touchingClasses}`} style={{ width: '100%', height: '100%' }}>
+        <div className={`math-node op-node calculate-node ${touchingClasses}`} 
+             style={{ 
+                 width: '100%', 
+                 height: '100%', 
+                 display: 'flex', 
+                 flexDirection: 'column',
+                 overflow: 'visible',
+                 boxSizing: 'border-box'
+             }}>
             <NodeResizer minWidth={160} minHeight={120} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: '#4facfe' }} />
             <DynamicHandles
                 nodeId={id}
                 handles={data.handles}
                 locked={true}
-                allowedTypes={['input', 'output', 'trigger-in', 'trigger-out', 'trigger-err']}
+                allowedTypes={['output', 'trigger-in', 'trigger-out', 'trigger-err']}
                 touchingEdges={data.touchingEdges}
                 customDescriptions={{
                     'trigger-in': '接收電流時自動執行運算',
@@ -142,11 +149,10 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
                     >
                         EXT
                     </button>
-                    <button onClick={() => executeNode(id)} className="exec-button" style={{ float: 'none' }}>EXEC</button>
                 </div>
             </div>
 
-            <div className="node-content" style={{ flexDirection: 'column', gap: '8px' }}>
+            <div className="node-content custom-scrollbar" style={{ flexGrow: 1, padding: '10px', overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <div className="formula-label" style={{ fontSize: '0.6rem', color: '#666', width: '100%', textAlign: 'left' }}>
                     {useExternalFormula ? 'EXTERNAL FORMULA:' : 'FORMULA:'}
                 </div>
@@ -177,12 +183,20 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
                     </math-field>
                 )}
 
-                {!isOutputConnected && (
-                    <div className="result-area" style={{ marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px', width: '100%' }}>
-                        <div style={{ fontSize: '0.6rem', color: '#666', width: '100%', textAlign: 'left' }}>RESULT:</div>
-                        <div style={{ fontSize: '1.2rem', color: '#4facfe', textAlign: 'center', padding: '4px' }}>
-                            {data.value || '--'}
-                        </div>
+                {(!data.handles?.some(h => h.type === 'output') || !edges.some(e => e.source === id)) && data.value && (
+                    <div style={{
+                        marginTop: '4px',
+                        padding: '6px',
+                        background: 'rgba(79, 172, 254, 0.1)',
+                        border: '1px solid rgba(79, 172, 254, 0.3)',
+                        borderRadius: '4px',
+                        fontSize: '1rem',
+                        color: '#fff',
+                        textAlign: 'center',
+                        overflowX: 'auto',
+                        whiteSpace: 'nowrap'
+                    }}>
+                        <span dangerouslySetInnerHTML={{ __html: window.katex?.renderToString(data.value, { throwOnError: false }) || data.value }} />
                     </div>
                 )}
             </div>
