@@ -152,10 +152,7 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
                 </div>
             </div>
 
-            <div className="node-content custom-scrollbar" style={{ flexGrow: 1, padding: '10px', overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div className="formula-label" style={{ fontSize: '0.6rem', color: '#666', width: '100%', textAlign: 'left' }}>
-                    {useExternalFormula ? 'EXTERNAL FORMULA:' : 'FORMULA:'}
-                </div>
+            <div className="node-content custom-scrollbar" style={{ flexGrow: 1, padding: '4px 8px', overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', gap: '4px' }}>
 
                 {useExternalFormula ? (
                     <div style={{

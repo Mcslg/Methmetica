@@ -50,20 +50,17 @@ export const ButtonNode = ({ id, data, selected }: any) => {
             <NodeResizer minWidth={80} minHeight={40} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: '#ffcc00' }} />
 
             <div className="node-header" style={{ 
-                padding: '4px 10px', 
-                fontSize: '0.65rem', 
+                padding: '2px 8px', 
+                fontSize: '0.6rem', 
                 background: 'rgba(255, 204, 0, 0.15)',
                 borderBottom: 'none',
                 color: '#ffcc00',
                 fontWeight: 'bold',
                 display: 'flex',
-                justifyContent: 'space-between',
+                justifyContent: 'center',
                 alignItems: 'center',
-                minHeight: '32px'
+                minHeight: '26px'
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span>RUN</span>
-                </div>
                 <button 
                     onClick={handlePush}
                     className="nodrag"

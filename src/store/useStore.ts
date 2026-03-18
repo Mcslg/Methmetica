@@ -112,6 +112,15 @@ export const forEachNodeHandles: CustomHandle[] = [
     { id: 'h-tr-out', type: 'trigger-out', position: 'right', offset: 50 }
 ];
 
+export const graphNodeHandles: CustomHandle[] = [
+    { id: 'h-fn-in', type: 'input', position: 'left', offset: 50, label: 'f(x)' }
+];
+
+export const sliderNodeHandles: CustomHandle[] = [
+    { id: 'h-out', type: 'output', position: 'right', offset: 50, label: 'val' }
+];
+
+
 // Initial setup nodes
 const initialNodes: AppNode[] = [];
 
@@ -623,14 +632,29 @@ const useStore = create<AppState>((set, get) => ({
                     ];
                     const valIn = values.find(v => v !== undefined);
 
-                    // Case for calculateNode external formula input
-                    if (node.type === 'calculateNode') {
-                        const formulaEdge = edges.find(e => e.target === node.id && e.targetHandle === 'h-fn-in');
+                    // Case for calculateNode & graphNode external formula input
+                    if (node.type === 'calculateNode' || node.type === 'graphNode') {
+                        const formulaEdges = edges.filter(e => e.target === node.id && e.targetHandle === 'h-fn-in');
                         let formulaVal = undefined;
-                        if (formulaEdge) {
-                            const source = nextNodes.find(n => n.id === formulaEdge.source);
-                            if (source) {
-                                formulaVal = (formulaEdge.sourceHandle && source.data.outputs?.[formulaEdge.sourceHandle]) ?? source.data.value;
+                        
+                        if (formulaEdges.length > 0) {
+                            if (node.type === 'graphNode') {
+                                // For graphNode, we can collect multiple formulas and join them with commas
+                                const formulaParts = formulaEdges.map(edge => {
+                                    const source = nextNodes.find(n => n.id === edge.source);
+                                    if (source) {
+                                        return (edge.sourceHandle && source.data.outputs?.[edge.sourceHandle]) ?? source.data.value;
+                                    }
+                                    return undefined;
+                                }).filter(v => v !== undefined);
+                                formulaVal = formulaParts.join(',');
+                            } else {
+                                // For calculateNode, we still just pick the first one
+                                const edge = formulaEdges[0];
+                                const source = nextNodes.find(n => n.id === edge.source);
+                                if (source) {
+                                    formulaVal = (edge.sourceHandle && source.data.outputs?.[edge.sourceHandle]) ?? source.data.value;
+                                }
                             }
                         }
 

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ReactFlow, Background, Controls, ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
@@ -13,7 +13,9 @@ import { ButtonNode } from './nodes/ButtonNode';
 import { GateNode } from './nodes/GateNode';
 import { RangeNode } from './nodes/RangeNode';
 import { ForEachNode } from './nodes/ForEachNode';
-import { calculusNodeHandles, buttonNodeHandles, appendNodeHandles, gateNodeHandles, rangeNodeHandles, forEachNodeHandles } from './store/useStore';
+import { GraphNode } from './nodes/GraphNode';
+import { SliderNode } from './nodes/SliderNode';
+import { calculusNodeHandles, buttonNodeHandles, appendNodeHandles, gateNodeHandles, rangeNodeHandles, forEachNodeHandles, graphNodeHandles, sliderNodeHandles } from './store/useStore';
 
 const nodeTypes = {
   numberNode: NumberNode,
@@ -26,6 +28,8 @@ const nodeTypes = {
   gateNode: GateNode,
   rangeNode: RangeNode,
   forEachNode: ForEachNode,
+  graphNode: GraphNode,
+  sliderNode: SliderNode,
 };
 
 function Flow() {
@@ -35,7 +39,20 @@ function Flow() {
   const [nodeMenu, setNodeMenu] = useState<{ x: number, y: number, nodeId: string, relativeY: number } | null>(null);
   const connectingNodeRef = useRef<{ nodeId: string, handleId: string, handleType: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isShiftPressed, setIsShiftPressed] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') setIsShiftPressed(e.type === 'keydown');
+    };
+    window.addEventListener('keydown', handleKey);
+    window.addEventListener('keyup', handleKey);
+    return () => {
+      window.removeEventListener('keydown', handleKey);
+      window.removeEventListener('keyup', handleKey);
+    };
+  }, []);
 
   const nodeLibrary = [
     { type: 'textNode', label: 'Text Logic', desc: 'Markdown & text processing', category: 'Logic', icon: '¶', color: '#4facfe' },
@@ -47,6 +64,8 @@ function Flow() {
     { type: 'gateNode', label: 'Trigger Gate', desc: 'Pass trigger if input is non-zero', category: 'Logic', icon: '⛩', color: '#4facfe' },
     { type: 'rangeNode', label: 'Range Generator', desc: 'Generate a sequence of numbers', category: 'Math', icon: '{n}', color: '#43e97b' },
     { type: 'forEachNode', label: 'For Each', desc: 'Process sequence items on neighbor', category: 'Logic', icon: '↻', color: '#6c5ce7' },
+    { type: 'graphNode', label: 'Graph Calculator', desc: 'Plot 2D dynamic mathematical functions', category: 'Math', icon: '📈', color: '#ff66b2' },
+    { type: 'sliderNode', label: 'Slider Input', desc: 'Interactive numeric value slider', category: 'Input', icon: '—○—', color: '#4facfe' },
   ];
 
   const filteredLibrary = nodeLibrary.filter(item => 
@@ -58,9 +77,21 @@ function Flow() {
     e.preventDefault();
     setNodeMenu(null);
     setSearchQuery('');
+    
+    // Adjusted position logic to prevent overflow
+    const menuWidth = 350; // Estimated max width
+    const menuHeight = 500; // Estimated max height
+    let x = e.clientX;
+    let y = e.clientY;
+
+    if (x + menuWidth > window.innerWidth) x = window.innerWidth - menuWidth - 20;
+    if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 20;
+    if (x < 10) x = 10;
+    if (y < 10) y = 10;
+
     setPaneMenu({
-      x: e.clientX,
-      y: e.clientY,
+      x,
+      y,
       screenX: e.clientX,
       screenY: e.clientY,
     });
@@ -94,6 +125,8 @@ function Flow() {
         case 'gateNode': return gateNodeHandles;
         case 'rangeNode': return rangeNodeHandles;
         case 'forEachNode': return forEachNodeHandles;
+        case 'graphNode': return graphNodeHandles;
+        case 'sliderNode': return sliderNodeHandles;
         default: return toolNodeHandles;
       }
     };
@@ -102,11 +135,14 @@ function Flow() {
       switch (type) {
         case 'textNode': return { width: 300, height: 180 };
         case 'calculateNode': 
-        case 'calculusNode': return { width: 220, height: 140 };
+        case 'calculusNode': return { width: 160, height: 75 };
         case 'rangeNode':
         case 'forEachNode': 
         case 'gateNode': return { width: 180, height: 110 };
+        case 'graphNode': return { width: 300, height: 260 };
         case 'numberNode': return { width: 120, height: 80 };
+        case 'sliderNode': return { width: 180, height: 110 };
+        case 'buttonNode': return { width: 120, height: 46 };
         default: return { width: 200, height: 120 };
       }
     };
@@ -210,9 +246,8 @@ function Flow() {
 
       {paneMenu && (
         <div
-          className="command-palette nodrag"
+          className={`command-palette nodrag ${searchQuery ? 'is-searching' : ''} ${isShiftPressed ? 'is-shifting' : ''}`}
           style={{ position: 'absolute', left: paneMenu.x, top: paneMenu.y }}
-          onMouseLeave={() => {}} // Keep open for search
           onClick={(e) => e.stopPropagation()}
         >
           <div className="command-search-container">
