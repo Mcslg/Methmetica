@@ -67,9 +67,15 @@ h1 {
   box-shadow: none !important;
 }
 
+/* Transparent Resize Handles globally */
+.react-flow__resize-control.handle {
+  background-color: transparent !important;
+  border-color: transparent !important;
+}
+
 .math-node.selected {
   outline: none !important;
-  box-shadow: 0 0 0 1px #4facfe, 0 10px 40px 0 rgba(0, 0, 0, 0.5) !important;
+  box-shadow: 0 10px 40px 0 rgba(0, 0, 0, 0.5) !important; /* Removed 0 0 0 1px #4facfe blue border here */
 }
 
 .node-header {

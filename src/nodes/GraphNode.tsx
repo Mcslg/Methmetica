@@ -15,23 +15,32 @@ declare global {
 
 export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
-    
+
     // Refs
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const mfRef = useRef<any>(null);
-    const engineRef = useRef<any>(null);
 
     // States
     const [isShiftPressed, setIsShiftPressed] = useState(false);
     const [criticalPoints, setCriticalPoints] = useState<any[]>([]);
-    const [engineReady, setEngineReady] = useState(false);
     const [view, setView] = useState({ x: 0, y: 0, scale: 40 });
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
-    const useExternalFormula = !!data.useExternalFormula;
-    const formulaToParse = useExternalFormula ? (data.formulaInput || '') : (data.formula || '');
+    // The formula we actually parse: prefer external (magnetic/connected), fallback to manual
+    const formulaInput = data.formulaInput;
+    const manualFormula = data.formula || '';
+    // If we have formulaInput (from magnetic/connected node), always use it
+    const formulaToParse = formulaInput || manualFormula;
+    const isReceivingExternal = !!formulaInput;
+
+    // Touching edges (magnetic snapping visual feedback)
+    const touchingEdges = data.touchingEdges || {};
+    const touchingClasses = Object.entries(touchingEdges)
+        .filter(([, touching]) => touching)
+        .map(([edge]) => `edge-touch-${edge}`)
+        .join(' ');
 
     // 1. Shift Key Listener
     useEffect(() => {
@@ -46,139 +55,84 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         };
     }, []);
 
-    // 2. Load Math Engine
+    // 2. Sync MathField with stored formula
     useEffect(() => {
-        getMathEngine().then((eng) => {
-            engineRef.current = eng;
-            setEngineReady(true);
-        });
-    }, []);
-
-    // 3. Find critical points using numerical scanning (reliable, view-aware)
-    useEffect(() => {
-        if (!engineReady || !formulaToParse) {
-            setCriticalPoints([]);
-            return;
+        const mf = mfRef.current;
+        if (!mf || isReceivingExternal) return;
+        if (mf.value !== manualFormula) {
+            mf.value = manualFormula;
         }
+        const handleInput = (e: any) => updateNodeData(id, { formula: e.target.value });
+        mf.addEventListener('input', handleInput);
+        return () => mf.removeEventListener('input', handleInput);
+    }, [id, manualFormula, isReceivingExternal, updateNodeData]);
 
-        const findPoints = () => {
+    // 3. Evaluate function numerically - two-tier approach
+    const evalFn = useCallback((formula: string): ((x: number) => number) | null => {
+        try {
+            const ce = getMathEngine();
+            let expr: any = ce.parse(formula);
+            // Unwrap equation: y = x^2 → x^2
+            if (expr.head === 'Equal') expr = expr.op2;
+
+            // Tier 1: compile().run() — CortexJS v0.55 API
             try {
-                const nerd = engineRef.current;
-                const formulas = formulaToParse.split(/[,;]/).map((s: string) => s.trim()).filter(Boolean);
-                const points: any[] = [];
-
-                // Scan range: use a fixed wide range
-                const xMin = -20, xMax = 20, steps = 2000;
-                const dx = (xMax - xMin) / steps;
-
-                // Build numeric functions
-                const fns: (((x: number) => number) | null)[] = formulas.map((f: string) => {
-                    try {
-                        const expr = nerd.convertFromLaTeX(f);
-                        const vars = expr.variables();
-                        if (vars.length > 1) return null;
-                        const v = vars[0] || 'x';
-                        return expr.buildFunction([v]);
-                    } catch(e) { return null; }
-                });
-
-                // 1. Roots & Extrema per function
-                const EPS = 1e-6;
-                const DEDUP_DIST = 0.08; // Cross-type dedup: merge any points at same x,y
-                const dedupe = (newPt: any, existing: any[]) =>
-                    existing.some(p => Math.abs(p.x - newPt.x) < DEDUP_DIST && Math.abs(p.y - newPt.y) < DEDUP_DIST);
-
-                fns.forEach((fn, idx) => {
-                    if (!fn) return;
-                    const safe = (x: number) => { try { const v = Number(fn(x)); return isFinite(v) ? v : NaN; } catch(e) { return NaN; } };
-
-                    let prevY = safe(xMin);
-                    let prevSlope = NaN;
-
-                    for (let i = 1; i <= steps; i++) {
-                        const x = xMin + i * dx;
-                        const xPrev = x - dx;
-                        const y = safe(x);
-                        if (isNaN(y) || isNaN(prevY)) { prevY = y; prevSlope = NaN; continue; }
-
-                        // Root: sign cross OR exact zero
-                        if (prevY * y < 0) {
-                            const xRoot = xPrev - prevY * (dx / (y - prevY));
-                            const pt = { x: xRoot, y: 0, label: '', type: 'root', colorIdx: idx };
-                            if (!dedupe(pt, points)) points.push(pt);
-                        } else if (Math.abs(y) < EPS) {
-                            const pt = { x, y: 0, label: '', type: 'root', colorIdx: idx };
-                            if (!dedupe(pt, points)) points.push(pt);
-                        }
-
-                        // Extrema: slope direction change
-                        const slope = y - prevY;
-                        if (!isNaN(prevSlope) && prevSlope * slope < 0) {
-                            const xEx = xPrev;
-                            const yEx = safe(xEx);
-                            if (!isNaN(yEx)) {
-                                const pt = { x: xEx, y: yEx, label: '', type: 'extrema', colorIdx: idx };
-                                if (!dedupe(pt, points)) points.push(pt);
-                            }
-                        }
-                        prevY = y;
-                        prevSlope = slope;
+                const compiled: any = expr.compile?.();
+                if (compiled && typeof compiled.run === 'function') {
+                    const t1 = compiled.run({ x: 0 });
+                    const t2 = compiled.run({ x: 2 });
+                    // Verify it's actually using x (t1 !== t2 for non-constant functions)
+                    if (typeof t1 === 'number' && typeof t2 === 'number' && t1 !== t2) {
+                        return (x: number) => {
+                            const v = compiled.run({ x });
+                            return typeof v === 'number' ? v : Number(v);
+                        };
                     }
-                });
-
-                // 2. Intersections between pairs
-                for (let i = 0; i < fns.length; i++) {
-                    for (let j = i + 1; j < fns.length; j++) {
-                        const fi = fns[i]; const fj = fns[j];
-                        if (!fi || !fj) continue;
-                        const safeI = (x: number) => { try { return Number(fi(x)); } catch(e) { return NaN; } };
-                        const safeJ = (x: number) => { try { return Number(fj(x)); } catch(e) { return NaN; } };
-                        
-                        let prevDiff = safeI(xMin) - safeJ(xMin);
-                        for (let k = 1; k <= steps; k++) {
-                            const x = xMin + k * dx;
-                            const diff = safeI(x) - safeJ(x);
-
-                            // Sign cross OR exact zero→ both indicate intersection
-                            if (!isNaN(prevDiff) && !isNaN(diff)) {
-                                let xInt: number | null = null;
-                                if (prevDiff * diff < 0) {
-                                    // Linear interpolation for sign change
-                                    xInt = (x - dx) - prevDiff * (dx / (diff - prevDiff));
-                                } else if (Math.abs(diff) < EPS) {
-                                    xInt = x;
-                                }
-
-                                if (xInt !== null) {
-                                    const yRes = safeI(xInt);
-                                    if (!isNaN(yRes)) {
-                                        const pt = { x: xInt, y: yRes, label: '', type: 'intersection', colorIdx: i };
-                                        if (!dedupe(pt, points)) points.push(pt);
-                                    }
-                                }
-                            }
-                            prevDiff = diff;
-                        }
+                    // Accept constants too (horizontal lines)
+                    if (typeof t1 === 'number' && isFinite(t1)) {
+                        return (_x: number) => t1;
                     }
                 }
+            } catch (e) {}
+        } catch (e) {}
 
-                console.log('[Graph] Found points:', points.length);
-                setCriticalPoints(points);
-            } catch(e) {
-                console.error('[Graph] findPoints error:', e);
+        // Tier 2: pure JS eval with full LaTeX → JS conversion
+        try {
+            let jsExpr = formula
+                .replace(/\\cdot\s*/g, '*').replace(/\\times\s*/g, '*')
+                .replace(/\\sin\s*/g, 'Math.sin').replace(/\\cos\s*/g, 'Math.cos')
+                .replace(/\\tan\s*/g, 'Math.tan').replace(/\\ln\s*/g, 'Math.log')
+                .replace(/\\log\s*/g, 'Math.log10').replace(/\\exp\s*/g, 'Math.exp')
+                .replace(/\\sqrt\{([^}]+)\}/g, 'Math.sqrt($1)')
+                .replace(/\\pi/g, 'Math.PI').replace(/\\e\b/g, 'Math.E')
+                .replace(/\^/g, '**')
+                .replace(/[{}\\]/g, '');
+
+            // Implicit multiplication: 2x → 2*x, 2( → 2*(, )x → )*x, )( → )*(
+            jsExpr = jsExpr
+                .replace(/(\d)\s*(x\b)/g, '$1*$2')                // 2x → 2*x
+                .replace(/(\d)\s*(Math\.)/g, '$1*$2')              // 2Math.sin → 2*Math.sin
+                .replace(/\)\s*\(/g, ')*(')                        // (a)(b) → (a)*(b)
+                .replace(/(\d)\s*\(/g, '$1*(')                     // 2(x+1) → 2*(x+1)
+                .replace(/\)\s*(x\b)/g, ')*$1');                   // )x → )*x
+
+            // eslint-disable-next-line no-new-func
+            const fn = new Function('x', `'use strict'; try { return +(${jsExpr}); } catch(e) { return NaN; }`);
+            // Validate: test at two different x values
+            const r1 = fn(0), r2 = fn(1);
+            if (typeof r1 === 'number' || typeof r2 === 'number') {
+                return fn as (x: number) => number;
             }
-        };
+        } catch (e) {}
 
-        const timer = setTimeout(findPoints, 200);
-        return () => clearTimeout(timer);
+        console.warn('[Graph] Could not build evaluator for formula:', formula);
+        return null;
+    }, []);
 
-    }, [formulaToParse, engineReady, view]);
-
-    // 4. Core Plotting Logic
+    // 4. Core Plotting
     const drawGraph = useCallback(() => {
         const canvas = canvasRef.current;
-        const nerd = engineRef.current;
-        if (!canvas || !nerd) return;
+        if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
@@ -198,8 +152,8 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         const scale = view.scale;
         const colors = ['#4facfe', '#f43f5e', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
 
-        // Grid & Axes
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        // Grid
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
         ctx.lineWidth = 1;
         ctx.beginPath();
         const leftUnits = Math.floor(-cx / scale);
@@ -214,71 +168,66 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         }
         ctx.stroke();
 
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-        ctx.lineWidth = 2;
+        // Axes
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
         if (cy >= 0 && cy <= clientHeight) { ctx.moveTo(0, cy); ctx.lineTo(clientWidth, cy); }
         if (cx >= 0 && cx <= clientWidth)  { ctx.moveTo(cx, 0); ctx.lineTo(cx, clientHeight); }
         ctx.stroke();
 
-        if (!formulaToParse) return;
+        // Axis tick labels
+        ctx.font = '9px Outfit, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.textAlign = 'center';
+        for (let i = leftUnits; i <= rightUnits; i++) {
+            if (i === 0) continue;
+            const px = cx + i * scale;
+            ctx.fillText(String(i), px, Math.min(cy + 12, clientHeight - 4));
+        }
+        ctx.textAlign = 'right';
+        for (let i = topUnits; i <= bottomUnits; i++) {
+            if (i === 0) continue;
+            const py = cy + i * scale;
+            ctx.fillText(String(-i), Math.max(cx - 4, 20), py + 3);
+        }
+
+        if (!formulaToParse) {
+            // Draw placeholder
+            ctx.fillStyle = 'rgba(255,255,255,0.15)';
+            ctx.font = '12px Outfit, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('Enter a formula above', clientWidth / 2, clientHeight / 2);
+            return;
+        }
 
         const formulas = formulaToParse.split(/[,;]/).map(s => s.trim()).filter(Boolean);
 
-        const drawArrowhead = (ctx: CanvasRenderingContext2D, fromX: number, fromY: number, toX: number, toY: number, size: number) => {
-            const angle = Math.atan2(toY - fromY, toX - fromX);
-            ctx.beginPath();
-            ctx.moveTo(toX, toY);
-            ctx.lineTo(toX - size * Math.cos(angle - Math.PI / 6), toY - size * Math.sin(angle - Math.PI / 6));
-            ctx.lineTo(toX - size * Math.cos(angle + Math.PI / 6), toY - size * Math.sin(angle + Math.PI / 6));
-            ctx.closePath();
-            ctx.fill();
-        };
-
         formulas.forEach((formula, index) => {
-            try {
-                const expression = nerd.convertFromLaTeX(formula);
-                const symbol = expression.symbol;
+            const fn = evalFn(formula);
+            if (!fn) {
+                console.warn('[Graph] Could not compile formula:', formula);
+                return;
+            }
 
-                // Constant Vector [vx, vy]
-                if (symbol.elements && symbol.elements.length >= 2) {
-                    const vx = Number(symbol.elements[0].evaluate().toString());
-                    const vy = Number(symbol.elements[1].evaluate().toString());
-                    if (!isNaN(vx) && !isNaN(vy)) {
-                        const color = colors[index % colors.length];
-                        ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 3;
-                        const endX = cx + vx * scale; const endY = cy - vy * scale;
-                        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(endX, endY); ctx.stroke();
-                        drawArrowhead(ctx, cx, cy, endX, endY, 12);
-                    }
-                    return;
-                }
-
-                // Normal Function
-                const vars = expression.variables();
-                if (vars.length > 1) return;
-                const mainVar = vars[0] || 'x';
-                const f = expression.buildFunction([mainVar]);
-
-                ctx.strokeStyle = colors[index % colors.length];
-                ctx.lineWidth = 2.5;
-                ctx.beginPath();
-                let firstPoint = true;
-                for (let px = 0; px <= clientWidth; px += 1) {
-                    const mathX = (px - cx) / scale;
-                    try {
-                        const mathY = Number(f(mathX));
-                        if (!isFinite(mathY) || Math.abs(mathY) > 1e6) { firstPoint = true; continue; }
-                        const py = cy - mathY * scale;
-                        if (firstPoint) { ctx.moveTo(px, py); firstPoint = false; }
-                        else { ctx.lineTo(px, py); }
-                    } catch { firstPoint = true; }
-                }
-                ctx.stroke();
-            } catch (e) {}
+            ctx.strokeStyle = colors[index % colors.length];
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            let firstPoint = true;
+            for (let px = 0; px <= clientWidth; px += 0.75) {
+                const mathX = (px - cx) / scale;
+                try {
+                    const mathY = fn(mathX);
+                    if (!isFinite(mathY) || isNaN(mathY) || Math.abs(mathY) > 1e8) { firstPoint = true; continue; }
+                    const py = cy - mathY * scale;
+                    if (firstPoint) { ctx.moveTo(px, py); firstPoint = false; }
+                    else { ctx.lineTo(px, py); }
+                } catch { firstPoint = true; }
+            }
+            ctx.stroke();
         });
 
-        // 5. Draw Critical Points with labels
+        // Critical Points
         criticalPoints.forEach((p) => {
             const px = cx + p.x * scale;
             const py = cy - p.y * scale;
@@ -288,28 +237,146 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             ctx.fillStyle = color; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
             ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
 
-            ctx.font = 'bold 10px Outfit'; ctx.fillStyle = '#fff';
-            ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 4;
-            
-            let labelText = '';
-            if (isShiftPressed) {
-                labelText = p.label.replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, '($1/$2)')
-                                 .replace(/\\sqrt\{([^}]*)\}/g, '√$1')
-                                 .replace(/\\pi/g, 'π').replace(/[{}]/g, '');
-            } else {
-                labelText = `(${p.x.toFixed(2)}, ${p.y.toFixed(2)})`;
-            }
+            ctx.font = 'bold 10px Outfit, sans-serif'; ctx.fillStyle = '#fff'; ctx.textAlign = 'left';
+            ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 4;
+            const labelText = (isShiftPressed && p.label)
+                ? p.label.replace(/\\sqrt\{([^}]*)\}/g, '√$1').replace(/\\pi/g, 'π').replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, '($1/$2)').replace(/[{}\\]/g, '')
+                : `(${p.x.toFixed(2)}, ${p.y.toFixed(2)})`;
             ctx.fillText(labelText, px + 8, py - 8);
             ctx.shadowBlur = 0;
         });
 
-    }, [view, formulaToParse, engineReady, criticalPoints, isShiftPressed]);
+    }, [view, formulaToParse, criticalPoints, isShiftPressed, evalFn]);
 
-    // Cleanup & Lifecycle
+    // 5. Find Critical Points (numerical scan + symbolic label via CortexJS)
+    useEffect(() => {
+        if (!formulaToParse) { setCriticalPoints([]); return; }
+
+        const findPoints = async () => {
+            try {
+                const ce = getMathEngine();
+                const formulas = formulaToParse.split(/[,;]/).map((s: string) => s.trim()).filter(Boolean);
+                const points: any[] = [];
+                const xMin = -20, xMax = 20, steps = 800;
+                const dx = (xMax - xMin) / steps;
+                const DEDUP_DIST = 0.1;
+                const dedupe = (pt: any, existing: any[]) =>
+                    existing.some(p => Math.abs(p.x - pt.x) < DEDUP_DIST && Math.abs(p.y - pt.y) < DEDUP_DIST);
+
+                // Pre-solve symbolic roots for each formula
+                const ceAny = ce as any;
+                const symbolicRoots: string[][] = formulas.map((formula) => {
+                    try {
+                        let expr: any = ce.parse(formula);
+                        if (expr.head === 'Equal') expr = expr.op2;
+                        const solutions = ceAny.solve?.(expr, 'x');
+                        if (solutions && solutions.length > 0) {
+                            return solutions.map((s: any) => s.latex ?? s.toString());
+                        }
+                    } catch (e) {}
+                    return [];
+                });
+
+                const compiledFns = formulas.map((f, idx) => {
+                    const fn = evalFn(f);
+                    return fn ? { fn, colorIdx: idx, formulaIdx: idx } : null;
+                }).filter(Boolean) as { fn: (x: number) => number, colorIdx: number, formulaIdx: number }[];
+
+                compiledFns.forEach(({ fn, colorIdx, formulaIdx }) => {
+                    const symRoots = symbolicRoots[formulaIdx] || [];
+                    let prevY = fn(xMin), prevSlope = NaN;
+
+                    for (let i = 1; i <= steps; i++) {
+                        const x = xMin + i * dx;
+                        const y = fn(x);
+                        if (!isFinite(y) || isNaN(y)) { prevY = y; prevSlope = NaN; continue; }
+
+                        if (isFinite(prevY) && prevY * y <= 0 && Math.abs(y - prevY) < 5) {
+                            const xRoot = x - dx * (y / ((y - prevY) || 1));
+
+                            // Try to match with a symbolic root
+                            let symbolicLabel = '';
+                            for (const symLatex of symRoots) {
+                                try {
+                                    const numVal = ce.parse(symLatex).N().valueOf();
+                                    if (typeof numVal === 'number' && Math.abs(numVal - xRoot) < 0.05) {
+                                        // Clean up LaTeX for display
+                                        const clean = symLatex
+                                            .replace(/\\sqrt\{([^}]*)\}/g, '√$1')
+                                            .replace(/\\pi/g, 'π')
+                                            .replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, '($1/$2)')
+                                            .replace(/[{}\\]/g, '');
+                                        symbolicLabel = `(${clean}, 0)`;
+                                        break;
+                                    }
+                                } catch (e) {}
+                            }
+
+                            const pt = {
+                                x: xRoot, y: 0,
+                                // symbolicLabel is shown with Shift; decimalLabel otherwise
+                                label: symbolicLabel || `(${xRoot.toFixed(4)}, 0)`,
+                                hasSymbol: !!symbolicLabel,
+                                type: 'root', colorIdx
+                            };
+                            if (!dedupe(pt, points)) points.push(pt);
+                        }
+
+                        const slope = y - prevY;
+                        if (isFinite(prevSlope) && prevSlope * slope < 0) {
+                            const xEx = x - dx;
+                            const yEx = fn(xEx);
+                            const pt = {
+                                x: xEx, y: yEx,
+                                label: `(${xEx.toFixed(3)}, ${yEx.toFixed(3)})`,
+                                hasSymbol: false,
+                                type: 'extrema', colorIdx
+                            };
+                            if (!dedupe(pt, points)) points.push(pt);
+                        }
+                        prevY = y; prevSlope = slope;
+                    }
+                });
+
+                // Intersections
+                for (let i = 0; i < compiledFns.length; i++) {
+                    for (let j = i + 1; j < compiledFns.length; j++) {
+                        const fi = compiledFns[i].fn, fj = compiledFns[j].fn;
+                        let prevDiff = fi(xMin) - fj(xMin);
+                        for (let k = 1; k <= steps; k++) {
+                            const x = xMin + k * dx;
+                            const diff = fi(x) - fj(x);
+                            if (isFinite(prevDiff) && isFinite(diff) && prevDiff * diff <= 0) {
+                                const xInt = x - dx * (diff / ((diff - prevDiff) || 1));
+                                const yInt = fi(xInt);
+                                const pt = {
+                                    x: xInt, y: yInt,
+                                    label: `(${xInt.toFixed(3)}, ${yInt.toFixed(3)})`,
+                                    hasSymbol: false,
+                                    type: 'intersection', colorIdx: compiledFns[i].colorIdx
+                                };
+                                if (!dedupe(pt, points)) points.push(pt);
+                            }
+                            prevDiff = diff;
+                        }
+                    }
+                }
+
+                setCriticalPoints(points);
+            } catch (e) {
+                console.error('[Graph] findPoints error:', e);
+            }
+        };
+
+        const timer = setTimeout(findPoints, 300);
+        return () => clearTimeout(timer);
+    }, [formulaToParse, evalFn]);
+
+    // 6. Lifecycle
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas?.parentElement) return;
-        const ro = new ResizeObserver(() => { drawGraph(); });
+        const ro = new ResizeObserver(() => drawGraph());
         ro.observe(canvas.parentElement);
         return () => ro.disconnect();
     }, [drawGraph]);
@@ -319,25 +386,21 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     useEffect(() => {
         const el = containerRef.current;
         if (!el) return;
-        const onWheelNative = (e: WheelEvent) => {
+        const onWheel = (e: WheelEvent) => {
             e.preventDefault(); e.stopPropagation();
             const delta = Math.exp(-e.deltaY * 0.0015);
             setView(v => {
                 const newScale = Math.max(1, Math.min(v.scale * delta, 2000));
                 if (newScale === v.scale) return v;
                 const rect = el.getBoundingClientRect();
-                const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
-                const mathX = (mouseX - (rect.width/2 - v.x)) / v.scale;
-                const mathY = ((rect.height/2 - v.y) - mouseY) / v.scale;
-                return {
-                    scale: newScale,
-                    x: (rect.width/2) - mouseX + (mathX * newScale),
-                    y: (rect.height/2) - mouseY - (mathY * newScale)
-                };
+                const mouseX = e.clientX - rect.left, mouseY = e.clientY - rect.top;
+                const mathX = (mouseX - (rect.width / 2 - v.x)) / v.scale;
+                const mathY = ((rect.height / 2 - v.y) - mouseY) / v.scale;
+                return { scale: newScale, x: rect.width / 2 - mouseX + mathX * newScale, y: rect.height / 2 - mouseY - mathY * newScale };
             });
         };
-        el.addEventListener('wheel', onWheelNative, { passive: false });
-        return () => el.removeEventListener('wheel', onWheelNative);
+        el.addEventListener('wheel', onWheel, { passive: false });
+        return () => el.removeEventListener('wheel', onWheel);
     }, []);
 
     const handlePointerDown = (e: React.PointerEvent) => {
@@ -345,61 +408,83 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         setIsDragging(true); setDragStart({ x: e.clientX, y: e.clientY });
         (e.target as HTMLElement).setPointerCapture(e.pointerId);
     };
-
     const handlePointerMove = (e: React.PointerEvent) => {
         if (!isDragging) return;
-        const dx = e.clientX - dragStart.x; const dy = e.clientY - dragStart.y;
-        setView(v => ({ ...v, x: v.x - dx, y: v.y - dy }));
+        setView(v => ({ ...v, x: v.x - (e.clientX - dragStart.x), y: v.y - (e.clientY - dragStart.y) }));
         setDragStart({ x: e.clientX, y: e.clientY });
     };
-
     const handlePointerUp = (e: React.PointerEvent) => {
         setIsDragging(false); (e.target as HTMLElement).releasePointerCapture(e.pointerId);
     };
 
     return (
-        <div className="math-node op-node graph-node" style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'visible', boxSizing: 'border-box' }}>
+        <div
+            className={`math-node op-node graph-node ${touchingClasses}`}
+            style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'visible', boxSizing: 'border-box' }}
+        >
             <NodeResizer minWidth={250} minHeight={200} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: '#4facfe' }} />
-            <DynamicHandles nodeId={id} handles={data.handles} locked={true} allowedTypes={['input', 'output']} />
-            
+            <DynamicHandles
+                nodeId={id}
+                handles={data.handles}
+                locked={true}
+                allowedTypes={['input', 'output']}
+                touchingEdges={data.touchingEdges}
+            />
+
             <div className="nowheel" style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', overflow: 'hidden', borderRadius: 'inherit' }}>
-            <div className="node-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.4)', zIndex: 2 }}>
-                <span>Graph Plotter</span>
-                <button onClick={() => updateNodeData(id, { useExternalFormula: !useExternalFormula })} className="variant-toggle" style={{ fontSize: '0.5rem', padding: '2px 4px', background: useExternalFormula ? 'rgba(79, 172, 254, 0.3)' : 'transparent' }}>EXT</button>
-            </div>
+                <div className="node-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.4)', zIndex: 2 }}>
+                    <span>Graph Plotter {isReceivingExternal && <span style={{ fontSize: '0.55rem', color: '#4facfe', marginLeft: 4 }}>● EXT</span>}</span>
+                </div>
 
-            <div style={{ padding: '8px', background: 'rgba(0,0,0,0.3)', zIndex: 2 }}>
-                {useExternalFormula ? (
-                    <div style={{ width: '100%', background: 'rgba(255,255,255,0.05)', padding: '4px', borderRadius: '4px', fontSize: '0.9rem', color: data.formulaInput ? '#fff' : '#444', minHeight: '28px', border: '1px dashed rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        {data.formulaInput || 'Wait for f(x)...'}
+                {/* Formula input — only show manual editor when NOT receiving external */}
+                {!isReceivingExternal && (
+                    <div style={{ padding: '6px 8px', background: 'rgba(0,0,0,0.3)', zIndex: 2 }}>
+                        <math-field
+                            ref={mfRef}
+                            class="nodrag formula-input"
+                            style={{ fontSize: '1rem', width: '100%', background: 'rgba(0,0,0,0.2)', padding: '2px', borderRadius: '4px' }}
+                        >
+                            {manualFormula}
+                        </math-field>
                     </div>
-                ) : (
-                    <math-field ref={mfRef} class="nodrag formula-input" style={{ fontSize: '1rem', width: '100%', background: 'rgba(0,0,0,0.2)', padding: '2px', borderRadius: '4px' }}>
-                        {data.formula || ''}
-                    </math-field>
                 )}
+
+                {/* Show received formula when in external mode */}
+                {isReceivingExternal && (
+                    <div style={{ padding: '6px 8px', background: 'rgba(0,0,0,0.3)', zIndex: 2 }}>
+                        <div style={{
+                            width: '100%', background: 'rgba(79,172,254,0.08)', padding: '4px 8px',
+                            borderRadius: '4px', fontSize: '0.85rem', color: '#4facfe',
+                            minHeight: '28px', border: '1px solid rgba(79,172,254,0.25)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}>
+                            {formulaInput}
+                        </div>
+                    </div>
+                )}
+
+                <div ref={containerRef} className="nodrag nowheel"
+                    style={{ flexGrow: 1, position: 'relative', cursor: isDragging ? 'grabbing' : 'crosshair' }}
+                    onPointerDown={handlePointerDown} onPointerMove={handlePointerMove}
+                    onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
+                >
+                    <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
+                    <div style={{ position: 'absolute', bottom: 4, right: 8, fontSize: '0.6rem', color: 'rgba(255,255,255,0.4)', pointerEvents: 'none', textAlign: 'right', lineHeight: 1.4 }}>
+                        x{view.scale.toFixed(0)} · ({(view.x / view.scale * -1).toFixed(1)}, {(view.y / view.scale).toFixed(1)})
+                        {isShiftPressed && <div style={{ color: '#f59e0b' }}>⇧ Symbolic</div>}
+                    </div>
+                    <div className="graph-controls" style={{ position: 'absolute', top: 8, right: 8, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <button onClick={() => setView(v => ({ ...v, scale: Math.max(1, v.scale * 1.3) }))}>+</button>
+                        <button onClick={() => setView(v => ({ ...v, scale: Math.max(1, v.scale / 1.3) }))}>−</button>
+                        <button onClick={() => setView({ x: 0, y: 0, scale: 40 })} style={{ fontSize: '0.5rem', padding: '2px 4px' }}>⌂</button>
+                    </div>
+                </div>
             </div>
 
-            <div ref={containerRef} className="nodrag nowheel" style={{ flexGrow: 1, position: 'relative', cursor: isDragging ? 'grabbing' : 'grab' }} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}>
-                <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
-                <div style={{ position: 'absolute', bottom: 4, right: 8, fontSize: '0.6rem', color: 'rgba(255,255,255,0.5)', pointerEvents: 'none', textAlign: 'right' }}>
-                    Scale: {view.scale.toFixed(1)}x <br />
-                    Pan: {(view.x / view.scale).toFixed(1)}, {(-view.y / view.scale).toFixed(1)}
-                </div>
-                <div className="graph-controls" style={{ position: 'absolute', top: 8, right: 8, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <button onClick={() => setView(v => ({...v, scale: Math.max(1, v.scale * 1.2)}))}>+</button>
-                    <button onClick={() => setView(v => ({...v, scale: Math.max(1, v.scale / 1.2)}))}>−</button>
-                    <button onClick={() => setView({x:0, y:0, scale:40})} style={{ fontSize: '0.5rem', padding: '2px 4px' }}>RESET</button>
-                </div>
-            </div>
-            
             <style>{`
                 .graph-controls button { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
                 .graph-controls button:hover { background: rgba(255,255,255,0.2); }
-                .variant-toggle { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #ccc; border-radius: 4px; cursor: pointer; transition: all 0.2s; }
-                .variant-toggle:hover { background: rgba(255,255,255,0.2); color: #fff; }
             `}</style>
-            </div>{/* end inner overflow wrapper */}
         </div>
     );
 }

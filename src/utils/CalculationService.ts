@@ -28,6 +28,7 @@ export class CalculationService {
             case 'functionNode':
             case 'addNode':
             case 'toolNode':
+            case 'graphNode':
                 return this.executeFunction(node, context);
             default:
                 throw new Error('Unknown node type');
@@ -57,18 +58,18 @@ export class CalculationService {
         const inputVal = node.data.input || node.data.value;
         if (!inputVal) throw new Error('No input');
 
-        const ner = await getMathEngine();
+        const ce = getMathEngine();
         const variant = node.data.variant || 'diff';
         const wrt = node.data.variable || 'x';
 
-        const expr = ner.convertFromLaTeX(inputVal);
+        const expr = ce.parse(inputVal);
         let result;
         if (variant === 'diff') {
-            result = ner.diff(expr, wrt);
+            result = ce.box(['Derivative', expr, wrt]).evaluate();
         } else {
-            result = ner.integrate(expr, wrt);
+            result = ce.box(['Integrate', expr, wrt]).evaluate();
         }
-        return result.toTeX();
+        return result.latex;
     }
 
     private static async executeFunction(node: AppNode, context: ExecutionContext): Promise<string> {
@@ -79,21 +80,21 @@ export class CalculationService {
 
         if (!formula) return '?';
 
-        const ner = await getMathEngine();
-        const solver = ner.convertFromLaTeX(formula);
-        const variables = solver.variables();
+        const ce = getMathEngine();
+        const solver = ce.parse(formula);
+        const variables = solver.symbols; // Get list of symbols
         const implicitInputs = implicitEdges.filter(e => e.target === node.id);
 
         let isSequence = false;
         let sequenceKey = '';
         let sequenceItems: any[] = [];
-        const varMap: Record<string, string> = {};
+        const varMap: Record<string, any> = {};
 
         variables.forEach((v: string) => {
             const handle = node.data.handles?.find((h: any) => h.label === v || h.id === `h-in-${v}`);
-            if (handle) {
-                let val: string | undefined;
+            let val: string | undefined;
 
+            if (handle) {
                 // Explicit connection
                 const edge = edges.find(e => e.target === node.id && e.targetHandle === handle.id);
                 if (edge) {
@@ -111,61 +112,44 @@ export class CalculationService {
                         val = sourceNode?.data?.value;
                     }
                 }
-
-                if (val && val.trim() !== '') {
-                    // Check if value is a JSON array (sequence)
-                    try {
-                        const parsed = JSON.parse(val);
-                        if (Array.isArray(parsed) && !isSequence) {
-                            isSequence = true;
-                            sequenceKey = v;
-                            sequenceItems = parsed;
-                            return;
-                        }
-                    } catch (e) { /* Not JSON */ }
-                    
-                    try {
-                        varMap[v] = ner.convertFromLaTeX(val).toString();
-                    } catch {
-                        varMap[v] = val; // fallback for raw numbers
-                    }
-                }
-            } else if (variables.length === 1 && handle === undefined) {
-                 // Fallback: If no handle matches but there's an implicit connection and only 1 variable
+            } else if (variables.length === 1) {
+                 // Fallback for single variable implicit
                  const implicitEdge = implicitInputs.find(e => e.target === node.id);
                  if (implicitEdge) {
                      const sourceNode = nodes.find(n => n.id === implicitEdge.source);
-                     const val = sourceNode?.data?.value;
-                     if (val && val.trim() !== '') {
-                         try {
-                              const parsed = JSON.parse(val);
-                              if (Array.isArray(parsed) && !isSequence) {
-                                  isSequence = true;
-                                  sequenceKey = v;
-                                  sequenceItems = parsed;
-                                  return;
-                              }
-                         } catch (e) { }
-                         try {
-                             varMap[v] = ner.convertFromLaTeX(val).toString();
-                         } catch {
-                             varMap[v] = val;
-                         }
-                     }
+                     val = sourceNode?.data?.value;
                  }
+            }
+
+            if (val && val.trim() !== '') {
+                // Check if value is a JSON array (sequence)
+                try {
+                    const parsed = JSON.parse(val);
+                    if (Array.isArray(parsed) && !isSequence) {
+                        isSequence = true;
+                        sequenceKey = v;
+                        sequenceItems = parsed;
+                        return;
+                    }
+                } catch (e) { /* Not JSON */ }
+                
+                varMap[v] = ce.parse(val);
             }
         });
 
         if (isSequence) {
             // Map the formula over the sequence
             const results = sequenceItems.map(item => {
-                const currentVarMap = { ...varMap, [sequenceKey]: String(item) };
+                ce.pushScope();
+                Object.entries(varMap).forEach(([k, v]) => ce.assign(k, v));
+                ce.assign(sequenceKey, item);
                 try {
-                    const res = solver.evaluate(currentVarMap);
-                    // Extract numeric value if possible to keep array clean
-                    const raw = typeof res?.valueOf === 'function' ? res.valueOf() : res;
-                    return typeof raw === 'number' ? Number(raw.toFixed(4)) : res.toTeX();
+                    const res = solver.evaluate();
+                    const latex = res.latex;
+                    ce.popScope();
+                    return latex;
                 } catch {
+                    ce.popScope();
                     return null;
                 }
             }).filter(res => res !== null);
@@ -173,6 +157,11 @@ export class CalculationService {
             return JSON.stringify(results);
         }
 
-        return solver.evaluate(varMap).toTeX();
+        ce.pushScope();
+        Object.entries(varMap).forEach(([k, v]) => ce.assign(k, v));
+        const finalRes = solver.evaluate();
+        const output = finalRes.latex;
+        ce.popScope();
+        return output;
     }
 }

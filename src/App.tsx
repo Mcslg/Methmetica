@@ -16,6 +16,7 @@ import { ForEachNode } from './nodes/ForEachNode';
 import { GraphNode } from './nodes/GraphNode';
 import { SliderNode } from './nodes/SliderNode';
 import { calculusNodeHandles, buttonNodeHandles, appendNodeHandles, gateNodeHandles, rangeNodeHandles, forEachNodeHandles, graphNodeHandles, sliderNodeHandles } from './store/useStore';
+import { Sidebar } from './components/Sidebar';
 
 const nodeTypes = {
   numberNode: NumberNode,
@@ -221,6 +222,7 @@ function Flow() {
 
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#0a0a0a' }}>
+      <Sidebar />
       <ReactFlow
         nodes={nodes}
         edges={edges}

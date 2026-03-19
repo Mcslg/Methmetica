@@ -1,15 +1,8 @@
-// @ts-ignore
-const loadNerdamer = async (): Promise<any> => {
-    // @ts-ignore
-    const nerdamer = await import('nerdamer/all.min');
-    return nerdamer.default || nerdamer;
-};
+import { ComputeEngine } from '@cortex-js/compute-engine';
 
-let enginePromise: Promise<any> | null = null;
+// Singleton instance for global math evaluation
+const ce = new ComputeEngine();
 
-export const getMathEngine = (): Promise<any> => {
-    if (!enginePromise) {
-        enginePromise = loadNerdamer();
-    }
-    return enginePromise;
+export const getMathEngine = () => {
+    return ce;
 };

@@ -62,6 +62,7 @@ export type AppState = {
     handleProximitySnap: (nodeId: string) => void;
     implicitEdges: { source: string, target: string }[];
     evaluateGraph: () => void;
+    setGraph: (nodes: AppNode[], edges: Edge[]) => void;
 };
 
 export const dataNodeHandles: CustomHandle[] = [
@@ -128,6 +129,10 @@ const useStore = create<AppState>((set, get) => ({
     nodes: initialNodes,
     edges: [],
     implicitEdges: [],
+
+    setGraph: (nodes, edges) => {
+        set({ nodes, edges, implicitEdges: [] });
+    },
 
     onNodesChange: (changes: NodeChange<AppNode>[]) => {
         set({
@@ -381,11 +386,13 @@ const useStore = create<AppState>((set, get) => ({
                             // Detect if it's a number, formula, or already wrapped
                             const isNumeric = !isNaN(Number(appendix)) && appendix.trim() !== '';
                             const isLaTeX = appendix.includes('\\') || appendix.includes('{');
-                            const alreadyWrapped = appendix.startsWith('[[') && appendix.endsWith(']]');
+                            const alreadyWrapped = (appendix.startsWith('$$') && appendix.endsWith('$$')) || (appendix.startsWith('[[') && appendix.endsWith(']]'));
+
                             
                             if ((isNumeric || isLaTeX) && !alreadyWrapped) {
-                                appendix = `[[${appendix}]]`;
+                                appendix = `$$${appendix.trim()}$$`;
                             }
+
 
                             if (node.data.variant === 'insert') {
                                 // Find line index input
@@ -635,11 +642,11 @@ const useStore = create<AppState>((set, get) => ({
                     // Case for calculateNode & graphNode external formula input
                     if (node.type === 'calculateNode' || node.type === 'graphNode') {
                         const formulaEdges = edges.filter(e => e.target === node.id && e.targetHandle === 'h-fn-in');
-                        let formulaVal = undefined;
+                        let formulaVal: string | undefined = undefined;
                         
                         if (formulaEdges.length > 0) {
                             if (node.type === 'graphNode') {
-                                // For graphNode, we can collect multiple formulas and join them with commas
+                                // For graphNode, collect multiple formulas and join with commas
                                 const formulaParts = formulaEdges.map(edge => {
                                     const source = nextNodes.find(n => n.id === edge.source);
                                     if (source) {
@@ -649,12 +656,33 @@ const useStore = create<AppState>((set, get) => ({
                                 }).filter(v => v !== undefined);
                                 formulaVal = formulaParts.join(',');
                             } else {
-                                // For calculateNode, we still just pick the first one
+                                // For calculateNode, pick the first one
                                 const edge = formulaEdges[0];
                                 const source = nextNodes.find(n => n.id === edge.source);
                                 if (source) {
                                     formulaVal = (edge.sourceHandle && source.data.outputs?.[edge.sourceHandle]) ?? source.data.value;
                                 }
+                            }
+                        }
+
+                        // Magnetic snapping (implicit edges) also feeds formula for graphNode
+                        if (node.type === 'graphNode' && formulaVal === undefined) {
+                            const implicitSources = implicitInputs
+                                .map(e => nextNodes.find(n => n.id === e.source))
+                                .filter(Boolean);
+                            if (implicitSources.length > 0) {
+                                const parts: string[] = [];
+                                implicitSources.forEach(src => {
+                                    if (!src) return;
+                                    if (src.type === 'textNode' && src.data.outputs) {
+                                        // TextNode: collect all math pill values from outputs
+                                        const pillVals = Object.values(src.data.outputs).filter(v => v && v !== '');
+                                        parts.push(...(pillVals as string[]));
+                                    } else if (src.data.value) {
+                                        parts.push(src.data.value);
+                                    }
+                                });
+                                if (parts.length > 0) formulaVal = parts.join(',');
                             }
                         }
 
@@ -665,10 +693,10 @@ const useStore = create<AppState>((set, get) => ({
                             dataPatch.formulaInput = formulaVal;
                             updated = true;
                         }
-
-                        // Also propagate data input to standard handles if not handled elsewhere
-                        if (valIn !== undefined && valIn !== node.data.input) {
-                            dataPatch.input = valIn;
+                        // Clear formulaInput when nothing is connected anymore
+                        if (formulaVal === undefined && node.data.formulaInput !== undefined &&
+                            formulaEdges.length === 0 && implicitInputs.length === 0) {
+                            dataPatch.formulaInput = undefined;
                             updated = true;
                         }
 
@@ -689,9 +717,11 @@ const useStore = create<AppState>((set, get) => ({
                             const isLaTeX = textToSet.includes('\\') || textToSet.includes('{');
                             const isSequence = textToSet.trim().startsWith('[') && textToSet.trim().endsWith(']');
                             
-                            if (isNumeric || isLaTeX || isSequence) {
-                                textToSet = `[[ ${textToSet} ]]`;
+                            if ((isNumeric || isLaTeX || isSequence) && !(textToSet.startsWith('$$') && textToSet.endsWith('$$'))) {
+                                textToSet = `$$${textToSet.trim()}$$`;
                             }
+
+
                             
                             if (textToSet !== node.data.text) {
                                 return { ...node, data: { ...node.data, text: textToSet } };
