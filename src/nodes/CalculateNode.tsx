@@ -5,13 +5,7 @@ import { DynamicHandles } from './DynamicHandles';
 import { getMathEngine } from '../utils/MathEngine';
 import 'mathlive';
 
-declare global {
-    namespace JSX {
-        interface IntrinsicElements {
-            'math-field': any;
-        }
-    }
-}
+
 
 export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
@@ -32,9 +26,9 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
             let newInputHandles: CustomHandle[] = [];
             if (formulaToParse) {
                 try {
-                    const ner = await getMathEngine();
-                    const solver = ner.convertFromLaTeX(formulaToParse);
-                    const variables = solver.variables(); // e.g. ['x', 'y']
+                    const ce = getMathEngine();
+                    const expr = ce.parse(formulaToParse);
+                    const variables = expr.unknowns ? [...expr.unknowns] : []; // e.g. ['x', 'y']
 
                     newInputHandles = variables.map((v: string, index: number) => {
                         const existing = currentHandles.find((h: any) => h.label === v || h.id === `h-in-${v}`);

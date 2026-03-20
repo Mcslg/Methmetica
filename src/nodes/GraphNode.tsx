@@ -5,13 +5,7 @@ import { DynamicHandles } from './DynamicHandles';
 import { getMathEngine } from '../utils/MathEngine';
 import 'mathlive';
 
-declare global {
-    namespace JSX {
-        interface IntrinsicElements {
-            'math-field': any;
-        }
-    }
-}
+
 
 export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);

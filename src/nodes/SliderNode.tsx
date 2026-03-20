@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
 import useStore, { type NodeData, type AppState } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
@@ -16,8 +16,8 @@ export function SliderNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         // Ensure initial output is set
         if (data.outputs?.['h-out'] === undefined) {
              updateNodeData(id, { 
-                 value: value,
-                 outputs: { 'h-out': value }
+                 value: String(value),
+                 outputs: { 'h-out': String(value) }
              });
         }
     }, []);
@@ -25,8 +25,8 @@ export function SliderNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const newVal = Number(e.target.value);
         updateNodeData(id, { 
-            value: newVal,
-            outputs: { 'h-out': newVal }
+            value: String(newVal),
+            outputs: { 'h-out': String(newVal) }
         });
         executeNode(id);
     };
@@ -76,7 +76,7 @@ export function SliderNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                         <label>MIN</label>
                         <input 
                             type="text" 
-                            defaultValue={min} 
+                            defaultValue={String(min)} 
                             onBlur={(e) => handleSettingsChange('min', e.target.value)}
                             className="nodrag"
                             style={{ background: 'rgba(0,0,0,0.2)', border: 'none', color: '#ccc', padding: '2px', borderRadius: '2px' }}
@@ -86,7 +86,7 @@ export function SliderNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                         <label>MAX</label>
                         <input 
                             type="text" 
-                            defaultValue={max} 
+                            defaultValue={String(max)} 
                             onBlur={(e) => handleSettingsChange('max', e.target.value)}
                             className="nodrag"
                             style={{ background: 'rgba(0,0,0,0.2)', border: 'none', color: '#ccc', padding: '2px', borderRadius: '2px' }}
@@ -96,7 +96,7 @@ export function SliderNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                         <label>STEP</label>
                         <input 
                             type="text" 
-                            defaultValue={step} 
+                            defaultValue={String(step)} 
                             onBlur={(e) => handleSettingsChange('step', e.target.value)}
                             className="nodrag"
                             style={{ background: 'rgba(0,0,0,0.2)', border: 'none', color: '#ccc', padding: '2px', borderRadius: '2px' }}

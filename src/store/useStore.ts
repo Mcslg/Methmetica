@@ -40,6 +40,9 @@ export type NodeData = {
     style?: { color?: string; fontSize?: number }; // Custom styles for node
     rangeDef?: string; // For rangeNode definition (e.g., '0..10')
     status?: string; // For progress reporting (e.g., 'ForEach' progress)
+    min?: number; // For SliderNode
+    max?: number; // For SliderNode
+    step?: number; // For SliderNode
 };
 
 export type AppNode = Node<NodeData>;
