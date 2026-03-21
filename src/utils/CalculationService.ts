@@ -1,6 +1,8 @@
 import { getMathEngine } from './MathEngine';
 import { type AppNode } from '../store/useStore';
 import { type Edge } from '@xyflow/react';
+// @ts-ignore
+import nerdamer from 'nerdamer/all.min';
 
 interface MinimalEdge {
     source: string;
@@ -25,6 +27,7 @@ export class CalculationService {
             case 'calculusNode':
                 return this.executeCalculus(node);
             case 'calculateNode':
+            case 'solveNode':
             case 'functionNode':
             case 'addNode':
             case 'toolNode':
@@ -72,6 +75,24 @@ export class CalculationService {
         return result.latex;
     }
 
+    private static parseSequence(val: string): any[] | null {
+        if (!val) return null;
+        const s = val.trim();
+        if (!s.startsWith('[') || !s.endsWith(']')) return null;
+        try {
+            // Try strict JSON first
+            const parsed = JSON.parse(s);
+            if (Array.isArray(parsed)) return parsed;
+        } catch {
+            // Fallback for LaTeX-style [1, 2, 3] or [x, y, z]
+            const content = s.slice(1, -1);
+            if (!content) return [];
+            // Basic comma split, handle nested brackets if needed (though keeping it simple for now)
+            return content.split(',').map(item => item.trim());
+        }
+        return null;
+    }
+
     private static async executeFunction(node: AppNode, context: ExecutionContext): Promise<string> {
         const { nodes, edges, implicitEdges } = context;
         const formula = (node.data.useExternalFormula && node.data.formulaInput)
@@ -85,10 +106,21 @@ export class CalculationService {
         const variables = solver.symbols; // Get list of symbols
         const implicitInputs = implicitEdges.filter(e => e.target === node.id);
 
-        let isSequence = false;
-        let sequenceKey = '';
-        let sequenceItems: any[] = [];
-        const varMap: Record<string, any> = {};
+        const sequenceVars: Record<string, any[]> = {};
+        const staticVars: Record<string, any> = {};
+        let maxSeqLength = 0;
+
+        // Build global variable lookup from named text node outputs
+        const globalVars: Record<string, string> = {};
+        nodes.filter(n => n.type === 'textNode').forEach(tn => {
+            if (tn.data.handles && tn.data.outputs) {
+                tn.data.handles.forEach(h => {
+                    if (h.label && tn.data.outputs![h.id] !== undefined) {
+                        globalVars[h.label] = tn.data.outputs![h.id];
+                    }
+                });
+            }
+        });
 
         variables.forEach((v: string) => {
             const handle = node.data.handles?.find((h: any) => h.label === v || h.id === `h-in-${v}`);
@@ -121,47 +153,102 @@ export class CalculationService {
                  }
             }
 
+            // Fallback to globally defined variables from text nodes
+            if ((!val || val.trim() === '') && globalVars[v] !== undefined) {
+                val = globalVars[v];
+            }
+
             if (val && val.trim() !== '') {
-                // Check if value is a JSON array (sequence)
-                try {
-                    const parsed = JSON.parse(val);
-                    if (Array.isArray(parsed) && !isSequence) {
-                        isSequence = true;
-                        sequenceKey = v;
-                        sequenceItems = parsed;
-                        return;
-                    }
-                } catch (e) { /* Not JSON */ }
-                
-                varMap[v] = ce.parse(val);
+                const seq = this.parseSequence(val);
+                if (seq) {
+                    sequenceVars[v] = seq;
+                    maxSeqLength = Math.max(maxSeqLength, seq.length);
+                } else {
+                    staticVars[v] = ce.parse(val);
+                }
             }
         });
 
-        if (isSequence) {
-            // Map the formula over the sequence
-            const results = sequenceItems.map(item => {
+        if (maxSeqLength > 0) {
+            // Map the formula over the sequence(s)
+            const results = [];
+            for (let i = 0; i < maxSeqLength; i++) {
                 ce.pushScope();
-                Object.entries(varMap).forEach(([k, v]) => ce.assign(k, v));
-                ce.assign(sequenceKey, item);
+                // Assign static variables
+                Object.entries(staticVars).forEach(([k, val]) => ce.assign(k, val));
+                // Assign sequence variables (cycle if lengths differ)
+                Object.entries(sequenceVars).forEach(([k, seq]) => {
+                    const item = seq[i % seq.length];
+                    ce.assign(k, ce.parse(String(item)));
+                });
+
                 try {
                     const res = solver.evaluate();
-                    const latex = res.latex;
-                    ce.popScope();
-                    return latex;
+                    results.push(res.latex);
                 } catch {
-                    ce.popScope();
-                    return null;
+                    results.push('?');
                 }
-            }).filter(res => res !== null);
+                ce.popScope();
+            }
             
             return JSON.stringify(results);
         }
 
+        // Standard single evaluation
         ce.pushScope();
-        Object.entries(varMap).forEach(([k, v]) => ce.assign(k, v));
-        const finalRes = solver.evaluate();
-        const output = finalRes.latex;
+        Object.entries(staticVars).forEach(([k, val]) => ce.assign(k, val));
+        
+        let finalRes;
+        if (node.type === 'solveNode') {
+            const wrt = node.data.variable || 'x';
+            let formattedEq = formula;
+            // Substitute numeric static variables so nerdamer can solve precisely
+            Object.entries(staticVars).forEach(([k, val]) => {
+                const v = val.numericValue !== undefined ? val.numericValue : val.value;
+                if (v !== undefined) {
+                    formattedEq = formattedEq.replace(new RegExp(`\\b${k}\\b`, 'g'), `(${v})`);
+                }
+            });
+
+            try {
+                // Determine if equations are a list (comma separated or JSON)
+                let eqs: any = formattedEq;
+                if (typeof formattedEq === 'string') {
+                   if (formattedEq.trim().startsWith('[') && formattedEq.trim().endsWith(']')) {
+                        try { eqs = JSON.parse(formattedEq); } catch {}
+                   } else if (formattedEq.includes(',') || formattedEq.includes(';')) {
+                        eqs = formattedEq.split(/[;,]/).map(e => e.trim());
+                   }
+                }
+
+                // Determine target variable(s)
+                let vars: any = wrt;
+                if (typeof wrt === 'string') {
+                    if (wrt.includes(',')) {
+                        vars = wrt.split(',').map(v => v.trim());
+                    } else if (wrt.trim().startsWith('[') && wrt.trim().endsWith(']')) {
+                        try { vars = JSON.parse(wrt); } catch {}
+                    }
+                }
+
+                const cleanResult = (nerdamer as any).solveEquations(eqs, vars);
+                const list = Array.isArray(cleanResult) ? cleanResult.map((sol: any) => {
+                    if (Array.isArray(sol) && sol.length === 2 && typeof sol[0] === 'string') {
+                        return `${sol[0]}=${(nerdamer as any)(sol[1]).toTeX()}`;
+                    }
+                    return (nerdamer as any)(sol).toTeX();
+                }) : [(nerdamer as any)(cleanResult).toTeX()];
+
+                finalRes = JSON.stringify(list);
+            } catch (e) {
+                console.error('Nerdamer solve error:', e);
+                finalRes = `["Error"]`;
+            }
+        } else {
+            finalRes = solver.evaluate().latex;
+        }
+        
         ce.popScope();
-        return output;
+        return finalRes;
     }
 }

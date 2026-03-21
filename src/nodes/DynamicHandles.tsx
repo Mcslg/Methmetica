@@ -31,7 +31,15 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
     useEffect(() => {
         updateNodeInternals(nodeId);
     }, [nodeId, handles, updateNodeInternals]);
-    const [menu, setMenu] = useState<{ pX: number, pY: number, side: 'top' | 'bottom' | 'left' | 'right', percent: number, screenX: number, screenY: number, items: { type: HandleType | 'delete' | 'close', label: string, icon: string, color: string }[] } | null>(null);
+
+    const [menu, setMenu] = useState<{ 
+        pX: number, pY: number, 
+        side: 'top' | 'bottom' | 'left' | 'right', 
+        percent: number, 
+        screenX: number, screenY: number, 
+        activeIndex: number | null,
+        items: { type: HandleType | 'delete' | 'close', label: string, icon: string, color: string }[] 
+    } | null>(null);
     const [movingHandle, setMovingHandle] = useState<{ id: string, side: string, offset: number } | null>(null);
     const [cmdPressed, setCmdPressed] = useState(false);
 
@@ -88,8 +96,72 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
             return;
         }
 
-        setMenu({ pX, pY, side, percent, screenX: e.clientX, screenY: e.clientY, items } as any);
-    }, [nodeId, locked, allowedTypes, customDescriptions, addHandle]);
+        setMenu({ pX, pY, side, percent, screenX: e.clientX, screenY: e.clientY, activeIndex: null, items } as any);
+    }, [nodeId, locked, allowedTypes, panelItems, customDescriptions, addHandle]);
+
+    const onEdgeMouseDown = useCallback((e: React.MouseEvent, side: 'top' | 'bottom' | 'left' | 'right') => {
+        if (e.button === 2) {
+            onEdgeContextMenu(e, side);
+        }
+    }, [onEdgeContextMenu]);
+
+    useEffect(() => {
+        if (!menu) return;
+
+        const handleGlobalMouseMove = (e: MouseEvent) => {
+            const dx = e.clientX - menu.screenX;
+            const dy = e.clientY - menu.screenY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < 40) {
+                setMenu(prev => prev ? { ...prev, activeIndex: null } : null);
+                return;
+            }
+
+            // Calculate angle in degrees (0 is up, clockwise)
+            let angle = Math.atan2(dx, -dy) * 180 / Math.PI;
+            if (angle < 0) angle += 360;
+
+            const itemCount = menu.items.length;
+            const anglePerItem = 360 / itemCount;
+            const index = Math.floor(angle / anglePerItem);
+            
+            setMenu(prev => prev ? { ...prev, activeIndex: index } : null);
+        };
+
+        const handleGlobalMouseUp = (e: MouseEvent) => {
+            if (e.button === 2) {
+                // If we have an active index, execute it
+                setMenu(current => {
+                    if (current && current.activeIndex !== null) {
+                        const item = current.items[current.activeIndex];
+                        // We need a way to call handleAction from here. 
+                        // But menu is about to be cleared.
+                        // We'll handle it via a ref or a side effect.
+                        // Actually, I can just call the action here directly.
+                        if (item.type === 'delete' && (item as any).handleId) {
+                            removeHandle(nodeId, (item as any).handleId);
+                        } else if (item.type !== 'close') {
+                            addHandle(nodeId, {
+                                id: `h-${Date.now()}`,
+                                type: item.type as HandleType,
+                                position: current.side,
+                                offset: current.percent,
+                            });
+                        }
+                    }
+                    return null;
+                });
+            }
+        };
+
+        window.addEventListener('mousemove', handleGlobalMouseMove);
+        window.addEventListener('mouseup', handleGlobalMouseUp);
+        return () => {
+            window.removeEventListener('mousemove', handleGlobalMouseMove);
+            window.removeEventListener('mouseup', handleGlobalMouseUp);
+        };
+    }, [menu, nodeId, addHandle, removeHandle]);
 
     const handleAction = (type: string, handleId?: string) => {
         if (type === 'delete' && handleId) {
@@ -125,6 +197,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
             percent: handle.offset,
             screenX: e.clientX,
             screenY: e.clientY,
+            activeIndex: null,
             items
         });
     };
@@ -185,9 +258,9 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                             const ty = center + Math.sin(radian) * textRadius;
 
                             return (
-                                <g key={item.type}>
+                                <g key={i}>
                                     <path
-                                        className="pie-segment"
+                                        className={`pie-segment ${menu.activeIndex === i ? 'active' : ''}`}
                                         d={describeArc(startAngle, endAngle)}
                                         style={{ '--item-color': item.color } as any}
                                         onClick={() => onAction(item.type, item.handleId)}
@@ -196,7 +269,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                                         <text className="pie-item-icon" y="-15" style={{ '--item-color': item.color } as any}>
                                             {item.icon}
                                         </text>
-                                        <text className="pie-item-label" y="5">{item.label}</text>
+                                        <text className="pie-item-label" y="5" style={{ fill: menu.activeIndex === i ? '#fff' : '#ccc' }}>{item.label}</text>
                                         <text className="pie-item-desc" y="20">{item.desc}</text>
                                     </g>
                                 </g>
@@ -295,10 +368,10 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
         >
             {canAddAny && (
                 <>
-                    <div className="edge-hitbox edge-top" onContextMenu={(e) => onEdgeContextMenu(e, 'top')} />
-                    <div className="edge-hitbox edge-bottom" onContextMenu={(e) => onEdgeContextMenu(e, 'bottom')} />
-                    <div className="edge-hitbox edge-left" onContextMenu={(e) => onEdgeContextMenu(e, 'left')} />
-                    <div className="edge-hitbox edge-right" onContextMenu={(e) => onEdgeContextMenu(e, 'right')} />
+                    <div className="edge-hitbox edge-top" onMouseDown={(e) => onEdgeMouseDown(e, 'top')} onContextMenu={(e) => e.preventDefault()} />
+                    <div className="edge-hitbox edge-bottom" onMouseDown={(e) => onEdgeMouseDown(e, 'bottom')} onContextMenu={(e) => e.preventDefault()} />
+                    <div className="edge-hitbox edge-left" onMouseDown={(e) => onEdgeMouseDown(e, 'left')} onContextMenu={(e) => e.preventDefault()} />
+                    <div className="edge-hitbox edge-right" onMouseDown={(e) => onEdgeMouseDown(e, 'right')} onContextMenu={(e) => e.preventDefault()} />
                 </>
             )}
 
@@ -327,8 +400,14 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                         style={{
                             [h.position === 'top' || h.position === 'bottom' ? 'left' : 'top']: `${h.offset}%`,
                         }}
-                        onContextMenu={(e) => onHandleContextMenu(e, h)}
-                        onMouseDown={(e) => onHandleMouseDown(e, h)}
+                        onContextMenu={(e) => e.preventDefault()}
+                        onMouseDown={(e: React.MouseEvent) => {
+                            if (e.button === 2) {
+                                onHandleContextMenu(e, h);
+                            } else {
+                                onHandleMouseDown(e, h);
+                            }
+                        }}
                     >
                         <div style={{ transform: `rotate(${getRotation(h.type, h.position)}deg)`, display: 'flex' }}>
                             {getIconContent(h.type)}

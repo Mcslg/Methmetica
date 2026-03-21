@@ -17,6 +17,19 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
     // The formula we actually parse for handles
     const formulaToParse = useExternalFormula ? (data.formulaInput || '') : (data.formula || '');
 
+    // Get any variable that is already named in a textNode so we don't spawn a handle for it
+    const globalVarsString = useStore((state: AppState) => {
+        const vars = new Set<string>();
+        state.nodes.filter(n => n.type === 'textNode').forEach(tn => {
+            if (tn.data.handles) {
+                tn.data.handles.forEach(h => {
+                    if (h.label) vars.add(h.label);
+                });
+            }
+        });
+        return Array.from(vars).sort().join(',');
+    });
+
     // Sync nerdamer variables to handles
     useEffect(() => {
         const syncHandles = async () => {
@@ -30,11 +43,14 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
                     const expr = ce.parse(formulaToParse);
                     const variables = expr.unknowns ? [...expr.unknowns] : []; // e.g. ['x', 'y']
 
-                    newInputHandles = variables.map((v: string, index: number) => {
+                    const globalVarsSet = new Set(globalVarsString ? globalVarsString.split(',') : []);
+                    const tempVariables = variables.filter((v: string) => !globalVarsSet.has(v));
+
+                    newInputHandles = tempVariables.map((v: string, index: number) => {
                         const existing = currentHandles.find((h: any) => h.label === v || h.id === `h-in-${v}`);
                         if (existing) return existing;
 
-                        const spacing = 100 / (variables.length + 1);
+                        const spacing = 100 / (tempVariables.length + 1);
                         return {
                             id: `h-in-${v}`,
                             type: 'input',
@@ -75,7 +91,7 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
         };
 
         syncHandles();
-    }, [id, formulaToParse, useExternalFormula, updateNodeData]);
+    }, [id, formulaToParse, useExternalFormula, updateNodeData, globalVarsString]);
 
     // Setup MathField for formula input
     useEffect(() => {
@@ -187,7 +203,18 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
                         overflowX: 'auto',
                         whiteSpace: 'nowrap'
                     }}>
-                        <span dangerouslySetInnerHTML={{ __html: window.katex?.renderToString(data.value, { throwOnError: false }) || data.value }} />
+                        <span dangerouslySetInnerHTML={{ 
+                            __html: (() => {
+                                let val = data.value;
+                                if (val && val.startsWith('[') && val.endsWith(']')) {
+                                    try {
+                                        const parsed = JSON.parse(val);
+                                        if (Array.isArray(parsed)) val = `[${parsed.join(', ')}]`;
+                                    } catch {}
+                                }
+                                return window.katex?.renderToString(val, { throwOnError: false }) || val;
+                            })()
+                        }} />
                     </div>
                 )}
             </div>

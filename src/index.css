@@ -99,6 +99,18 @@ h1 {
   border: 1px solid rgba(67, 233, 123, 0.4);
 }
 
+/* Math Pill Selection Highlight */
+.data-pill-render *::selection {
+  background: rgba(79, 172, 254, 0.4) !important;
+  color: transparent !important;
+}
+
+/* For result pills (green theme) */
+.data-pill-render.alt-preview *::selection {
+  background: rgba(67, 233, 123, 0.4) !important;
+  color: transparent !important;
+}
+
 .number-node .node-header {
   color: #ff7eb3;
 }
@@ -730,10 +742,11 @@ math-field::part(virtual-keyboard-toggle) {
   transition: all 0.2s ease;
 }
 
-.pie-segment:hover {
-  fill: rgba(40, 40, 50, 0.95);
+.pie-segment:hover,
+.pie-segment.active {
+  fill: rgba(60, 60, 80, 0.95);
   stroke: var(--item-color, rgba(255, 255, 255, 0.3));
-  stroke-width: 2;
+  stroke-width: 3;
 }
 
 .pie-label-group {
@@ -970,4 +983,13 @@ math-field::part(virtual-keyboard-toggle) {
   text-align: center;
   color: #555;
   font-size: 13px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.idle-tooltip {
+    animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }

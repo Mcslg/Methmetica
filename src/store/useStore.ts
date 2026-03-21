@@ -66,6 +66,8 @@ export type AppState = {
     implicitEdges: { source: string, target: string }[];
     evaluateGraph: () => void;
     setGraph: (nodes: AppNode[], edges: Edge[]) => void;
+    isAltPressed: boolean;
+    setAltPressed: (pressed: boolean) => void;
 };
 
 export const dataNodeHandles: CustomHandle[] = [
@@ -83,9 +85,7 @@ export const calculusNodeHandles: CustomHandle[] = [
     { id: 'h-out', type: 'output', position: 'right', offset: 50 },
 ];
 
-export const textNodeHandles: CustomHandle[] = [
-    { id: 'h-in', type: 'input', position: 'left', offset: 50 }
-];
+export const textNodeHandles: CustomHandle[] = [];
 
 export const buttonNodeHandles: CustomHandle[] = [
     { id: 'h-tr-out', type: 'trigger-out', position: 'right', offset: 50 }
@@ -137,11 +137,19 @@ const useStore = create<AppState>((set, get) => ({
         set({ nodes, edges, implicitEdges: [] });
     },
 
+    isAltPressed: false,
+    setAltPressed: (pressed) => set({ isAltPressed: pressed }),
+
     onNodesChange: (changes: NodeChange<AppNode>[]) => {
         set({
             nodes: applyNodeChanges(changes, get().nodes),
         });
-        get().checkProximity();
+        
+        // Only run proximity physics if position or size changed (ignores selection changes)
+        const needsProximity = changes.some(c => c.type === 'position' || c.type === 'dimensions');
+        if (needsProximity) {
+            get().checkProximity();
+        }
     },
 
     onEdgesChange: (changes: EdgeChange[]) => {
@@ -168,8 +176,18 @@ const useStore = create<AppState>((set, get) => ({
             }
         });
 
+        const removedDataEdges = currentEdges.filter(e => 
+            (!e.sourceHandle || !e.sourceHandle.startsWith('h-tr')) && 
+            !nextEdges.some(ne => ne.id === e.id)
+        );
+
         set({ edges: nextEdges });
         get().evaluateGraph();
+
+        // Re-evaluate target nodes that lost an explicit data input
+        removedDataEdges.forEach(e => {
+            get().executeNode(e.target);
+        });
     },
 
     onConnect: (connection: Connection) => {
@@ -289,7 +307,7 @@ const useStore = create<AppState>((set, get) => ({
         const node = nodes.find(n => n.id === nodeId);
         if (!node) return;
 
-        if (['addNode', 'calculateNode', 'toolNode', 'decimalNode', 'calculusNode', 'appendNode', 'gateNode', 'rangeNode', 'forEachNode'].includes(node.type || '')) {
+        if (['addNode', 'calculateNode', 'solveNode', 'toolNode', 'decimalNode', 'calculusNode', 'appendNode', 'gateNode', 'rangeNode', 'forEachNode'].includes(node.type || '')) {
             if (node.type === 'forEachNode') {
                 const seqVal = node.data.input || '[]';
                 let seq: any[] = [];
@@ -442,6 +460,9 @@ const useStore = create<AppState>((set, get) => ({
                 // Implicit connections
                 get().implicitEdges.filter(e => e.source === nodeId).forEach(edge => get().executeNode(edge.target));
 
+                // Explicit connections (but not triggers)
+                get().edges.filter(e => e.source === nodeId && (!e.sourceHandle || !e.sourceHandle.startsWith('h-tr'))).forEach(edge => get().executeNode(edge.target));
+
                 get().evaluateGraph();
             };
 
@@ -480,22 +501,27 @@ const useStore = create<AppState>((set, get) => ({
     },
 
     checkProximity: () => {
-        const { nodes } = get();
+        const { nodes, implicitEdges: prevEdges } = get();
         const implicitEdges: { source: string, target: string }[] = [];
         const touchingStates: Record<string, { left: boolean, right: boolean, top: boolean, bottom: boolean }> = {};
 
-        nodes.forEach(nodeA => {
-            if (!touchingStates[nodeA.id]) touchingStates[nodeA.id] = { left: false, right: false, top: false, bottom: false };
-            
-            nodes.forEach(nodeB => {
-                if (nodeA.id === nodeB.id) return;
-                if (!nodeA.measured || !nodeB.measured) return;
+        for (const n of nodes) {
+            touchingStates[n.id] = { left: false, right: false, top: false, bottom: false };
+        }
 
-                const ax = nodeA.position.x;
-                const ay = nodeA.position.y;
-                const aw = nodeA.measured.width || 0;
-                const ah = nodeA.measured.height || 0;
+        for (let i = 0; i < nodes.length; i++) {
+            const nodeA = nodes[i];
+            if (!nodeA.measured) continue;
+            const ax = nodeA.position.x;
+            const ay = nodeA.position.y;
+            const aw = nodeA.measured.width || 0;
+            const ah = nodeA.measured.height || 0;
 
+            for (let j = 0; j < nodes.length; j++) {
+                if (i === j) continue;
+                const nodeB = nodes[j];
+                if (!nodeB.measured) continue;
+                
                 const bx = nodeB.position.x;
                 const by = nodeB.position.y;
 
@@ -505,6 +531,7 @@ const useStore = create<AppState>((set, get) => ({
                 if (distRightLeft < 15 && distYMatch < 15) {
                     implicitEdges.push({ source: nodeA.id, target: nodeB.id });
                     touchingStates[nodeA.id].right = true;
+                    touchingStates[nodeB.id].left = true;
                 }
 
                 // Vertical check (A is Top of B)
@@ -513,31 +540,33 @@ const useStore = create<AppState>((set, get) => ({
                 if (distBottomTop < 15 && distXMatch < 15) {
                     implicitEdges.push({ source: nodeA.id, target: nodeB.id });
                     touchingStates[nodeA.id].bottom = true;
-                }
-                
-                // Opposite states (B receiving from A)
-                if (distRightLeft < 15 && distYMatch < 15) {
-                    if (!touchingStates[nodeB.id]) touchingStates[nodeB.id] = { left: false, right: false, top: false, bottom: false };
-                    touchingStates[nodeB.id].left = true;
-                }
-                if (distBottomTop < 15 && distXMatch < 15) {
-                    if (!touchingStates[nodeB.id]) touchingStates[nodeB.id] = { left: false, right: false, top: false, bottom: false };
                     touchingStates[nodeB.id].top = true;
                 }
-            });
+            }
+        }
+
+        let nodesChanged = false;
+        const newNodes = nodes.map(node => {
+            const c = node.data.touchingEdges || { left: false, right: false, top: false, bottom: false };
+            const n = touchingStates[node.id];
+            if (c.left !== n.left || c.right !== n.right || c.top !== n.top || c.bottom !== n.bottom) {
+                nodesChanged = true;
+                return { ...node, data: { ...node.data, touchingEdges: n } };
+            }
+            return node;
         });
 
-        const nodesWithTouching = nodes.map(node => ({
-            ...node,
-            data: {
-                ...node.data,
-                touchingEdges: touchingStates[node.id] || { left: false, right: false, top: false, bottom: false }
+        let edgesChanged = implicitEdges.length !== prevEdges.length;
+        if (!edgesChanged) {
+            for (let i = 0; i < implicitEdges.length; i++) {
+                if (implicitEdges[i].source !== prevEdges[i].source || implicitEdges[i].target !== prevEdges[i].target) {
+                    edgesChanged = true; break;
+                }
             }
-        }));
+        }
 
-        if (JSON.stringify(implicitEdges) !== JSON.stringify(get().implicitEdges) ||
-            JSON.stringify(nodesWithTouching.map(n => n.data.touchingEdges)) !== JSON.stringify(get().nodes.map(n => n.data.touchingEdges))) {
-            set({ implicitEdges, nodes: nodesWithTouching });
+        if (edgesChanged || nodesChanged) {
+            set({ implicitEdges, nodes: nodesChanged ? newNodes : nodes });
         }
     },
 
@@ -611,13 +640,26 @@ const useStore = create<AppState>((set, get) => ({
 
     evaluateGraph: () => {
         const { nodes, edges } = get();
+        const implicitInputsRaw = get().implicitEdges;
         let nextNodes = [...nodes];
+
+        // 1. Build rapid-access maps for incoming edges
+        const targetToExplicit = new Map<string, typeof edges>();
+        const targetToImplicit = new Map<string, typeof implicitInputsRaw>();
+        edges.forEach(e => {
+            if (!targetToExplicit.has(e.target)) targetToExplicit.set(e.target, []);
+            targetToExplicit.get(e.target)!.push(e);
+        });
+        implicitInputsRaw.forEach(e => {
+            if (!targetToImplicit.has(e.target)) targetToImplicit.set(e.target, []);
+            targetToImplicit.get(e.target)!.push(e);
+        });
 
         for (let i = 0; i < 5; i++) {
             const tempNodes = nextNodes.map(node => {
-                // Collect all inputs pointing to this node
-                const explicitEdges = edges.filter(e => e.target === node.id);
-                const implicitInputs = get().implicitEdges.filter(e => e.target === node.id);
+                // Rapidly look up dependencies using Maps instead of filtering entire arrays
+                const explicitEdges = targetToExplicit.get(node.id) || [];
+                const implicitInputs = targetToImplicit.get(node.id) || [];
 
                 if (explicitEdges.length > 0 || implicitInputs.length > 0) {
                     const values = [
@@ -696,9 +738,8 @@ const useStore = create<AppState>((set, get) => ({
                             dataPatch.formulaInput = formulaVal;
                             updated = true;
                         }
-                        // Clear formulaInput when nothing is connected anymore
-                        if (formulaVal === undefined && node.data.formulaInput !== undefined &&
-                            formulaEdges.length === 0 && implicitInputs.length === 0) {
+                        // Clear formulaInput when nothing provides a formula anymore
+                        if (formulaVal === undefined && node.data.formulaInput !== undefined) {
                             dataPatch.formulaInput = undefined;
                             updated = true;
                         }
