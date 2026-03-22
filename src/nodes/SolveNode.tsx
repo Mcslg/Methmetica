@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
 import useStore, { type NodeData, type AppState } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
+import { Icons } from '../components/Icons';
 import 'mathlive';
 
 export function SolveNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
@@ -53,9 +54,7 @@ export function SolveNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             boxSizing: 'border-box', 
             overflow: 'visible',
             borderRadius: '12px',
-            background: 'rgba(15, 15, 20, 0.8)',
-            backdropFilter: 'blur(20px)',
-            border: '1px solid rgba(255, 126, 95, 0.4)'
+        border: '1px solid rgba(255, 126, 95, 0.25)'
         }}>
             <NodeResizer minWidth={160} minHeight={120} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: '#ff7e5f' }} />
             <DynamicHandles
@@ -70,35 +69,26 @@ export function SolveNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                 }}
             />
             
-            <div className="node-header" style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center', 
-                background: 'linear-gradient(90deg, #ff7e5f, #feb47b)', 
-                padding: '6px 12px', 
-                color: '#fff',
-                borderTopLeftRadius: '10px',
-                borderTopRightRadius: '10px',
-                fontSize: '0.75rem',
-                fontWeight: 800
-            }}>
+            <div className="node-header" style={{ justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span>Solve For</span>
+                    <Icons.Solve />
+                    <span>Solve for</span>
                     <input 
                         defaultValue={wrt}
                         onBlur={(e) => updateNodeData(id, { variable: e.target.value })}
                         onKeyDown={(e) => e.key === 'Enter' && (e.target as any).blur()}
                         title="Variable to solve for"
                         style={{ 
-                            width: '30px', 
-                            background: 'rgba(0,0,0,0.2)', 
-                            border: '1px solid rgba(255,255,255,0.2)', 
+                            width: '28px', 
+                            background: 'var(--bg-input)', 
+                            border: '1px solid var(--border-input)', 
                             borderRadius: '4px', 
                             textAlign: 'center', 
-                            color: '#fff', 
+                            color: 'var(--text-main)', 
                             fontSize: '0.7rem',
                             outline: 'none',
-                            fontWeight: 'bold'
+                            fontWeight: 'bold',
+                            fontFamily: 'inherit'
                         }}
                     />
                 </div>
@@ -119,11 +109,9 @@ export function SolveNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                     style={{ 
                         fontSize: '1rem', 
                         width: '100%', 
-                        background: 'rgba(0,0,0,0.3)', 
                         padding: '6px', 
                         borderRadius: '6px',
-                        border: '1px solid rgba(255,126,95,0.1)',
-                        color: '#fff'
+                        color: 'var(--text-main)'
                     }}
                 >
                     {data.formula || ''}

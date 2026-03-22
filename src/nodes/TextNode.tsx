@@ -13,6 +13,7 @@ import nerdamer from 'nerdamer/all.min';
 import { getMathEngine } from '../utils/MathEngine';
 import useStore, { type AppState, type NodeData, type CustomHandle, type HandleType } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
+import { Icons } from '../components/Icons';
 
 const LINE_Y_THRESHOLD = 12; // px
 
@@ -1070,18 +1071,16 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                 }}
                 style={{
                     minWidth: '150px', minHeight: '80px', width: '100%', height: '100%',
-                    background: 'rgba(15, 15, 20, 0.85)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)', // Removed blue selection border
-                    borderRadius: '8px', display: 'flex', flexDirection: 'column',
                     position: 'relative', overflow: 'visible',
-                    cursor: 'text' // Show text cursor anywhere in the node
+                    cursor: 'text'
                 }}
                 onMouseDown={(e) => { if (mathInputOpen) e.stopPropagation(); }}
             >
                 <NodeResizer color="transparent" isVisible={selected} minWidth={150} minHeight={80} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
 
-                <div className="node-header" style={{ padding: '6px 12px', borderBottom: '1px solid rgba(255,255,255,0.05)', background: 'rgba(0, 0, 0, 0.3)', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.6rem', letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.6, fontWeight: 700 }}>Note / Logic</span>
+                <div className="node-header">
+                    <Icons.Text />
+                    <span>Note</span>
                 </div>
 
                 {(selected || editor?.isFocused) && (
@@ -1094,10 +1093,10 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                             display: 'flex',
                             gap: '4px',
                             padding: '6px 8px',
-                            background: 'rgba(25, 25, 30, 0.95)',
-                            border: '1px solid rgba(79, 172, 254, 0.3)',
-                            borderRadius: '6px',
-                            boxShadow: '0 4px 15px rgba(0,0,0,0.4)',
+                            background: 'var(--bg-node)',
+                            border: '1px solid var(--border-node)',
+                            borderRadius: '10px',
+                            boxShadow: 'var(--node-shadow)',
                             flexWrap: 'wrap',
                             zIndex: 1000
                         }}>
@@ -1217,7 +1216,7 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                         style={{
                             padding: '12px',
                             fontSize: `${data.style?.fontSize || 1}rem`,
-                            color: data.style?.color || '#cbd5e1',
+                            color: data.style?.color || 'var(--text-main)',
                             lineHeight: '1.6',
                             outline: 'none',
                             minHeight: '60px'

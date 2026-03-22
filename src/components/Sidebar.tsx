@@ -1,8 +1,10 @@
 import React, { useRef } from 'react';
 import useStore from '../store/useStore';
+import { Icons } from './Icons';
 
 export function Sidebar() {
-    const { nodes, edges, setGraph } = useStore();
+    const { nodes, edges, setGraph, theme, setTheme } = useStore();
+    const [isOpen, setIsOpen] = React.useState(true);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleSave = () => {
@@ -36,7 +38,6 @@ export function Sidebar() {
             }
         };
         reader.readAsText(file);
-        // Reset input
         e.target.value = '';
     };
 
@@ -47,79 +48,162 @@ export function Sidebar() {
     };
 
     return (
-        <div style={{
-            position: 'absolute',
-            left: '20px',
-            top: '20px',
-            zIndex: 1000,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px',
-            background: 'rgba(15, 15, 20, 0.85)',
-            backdropFilter: 'blur(12px)',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            padding: '16px',
-            borderRadius: '12px',
-            boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
-            color: '#fff',
-            minWidth: '200px'
-        }}>
-            <h2 style={{ 
-                margin: '0 0 10px 0', 
-                fontSize: '1.2rem', 
-                fontWeight: 600,
-                background: 'linear-gradient(45deg, #00f2fe, #4facfe)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent'
-            }}>Methmatica</h2>
+        <div className={`sidebar-container ${isOpen ? 'open' : 'closed'}`}>
+            <div className="sidebar-drawer">
+                <div className="sidebar-header">
+                    <h2>methmatica</h2>
+                    <p>v0.6.1</p>
+                </div>
 
-            <button className="sidebar-btn" onClick={handleSave}>
-                <span className="icon">💾</span> Save / Export
-            </button>
-            <button className="sidebar-btn" onClick={() => fileInputRef.current?.click()}>
-                <span className="icon">📂</span> Load / Import
-            </button>
-            <button className="sidebar-btn danger" onClick={handleClear}>
-                <span className="icon">🗑</span> Clear Workspace
-            </button>
+                <div className="sidebar-section">
+                    <label>Project</label>
+                    <button className="sidebar-btn" onClick={handleSave}>
+                        <Icons.Save /> Save / Export
+                    </button>
+                    <button className="sidebar-btn" onClick={() => fileInputRef.current?.click()}>
+                        <Icons.Load /> Load / Import
+                    </button>
+                    <button className="sidebar-btn danger" onClick={handleClear}>
+                        <Icons.Clear /> Clear All
+                    </button>
+                </div>
 
-            <input 
-                type="file" 
-                ref={fileInputRef} 
-                style={{ display: 'none' }} 
-                accept=".json"
-                onChange={handleLoad}
-            />
+                <div className="sidebar-section">
+                    <label>System</label>
+                    <div className="stat-row">
+                        <span>Nodes:</span>
+                        <span>{nodes.length}</span>
+                    </div>
+                    <div className="stat-row">
+                        <span>Edges:</span>
+                        <span>{edges.length}</span>
+                    </div>
+                    <button className="sidebar-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} style={{ marginTop: '8px' }}>
+                        {theme === 'dark' ? <Icons.Sun /> : <Icons.Moon />}
+                        {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+                    </button>
+                </div>
+
+                <input
+                    type="file"
+                    ref={fileInputRef}
+                    style={{ display: 'none' }}
+                    accept=".json"
+                    onChange={handleLoad}
+                />
+            </div>
+
+            <button className="sidebar-toggle-btn" onClick={() => setIsOpen(!isOpen)}>
+                {isOpen ? '‹' : '›'}
+            </button>
 
             <style>{`
+                .sidebar-container {
+                    position: fixed;
+                    left: 0;
+                    top: 0;
+                    bottom: 0;
+                    z-index: 9999;
+                    display: flex;
+                    align-items: center;
+                    transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1);
+                }
+                .sidebar-container.closed {
+                    transform: translateX(-260px);
+                }
+                .sidebar-drawer {
+                    width: 260px;
+                    height: 100%;
+                    background: var(--bg-sidebar);
+                    backdrop-filter: blur(20px);
+                    -webkit-backdrop-filter: blur(20px);
+                    border-right: 1px solid var(--border-node);
+                    padding: 24px 16px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 28px;
+                    box-shadow: 20px 0 50px rgba(0,0,0,0.15);
+                }
+                .sidebar-header h2 {
+                    margin: 0;
+                    font-size: 1.4rem;
+                    letter-spacing: -0.5px;
+                    background: linear-gradient(135deg, #4ade80, #0E2F0B);
+                    -webkit-background-clip: text;
+                    -webkit-text-fill-color: transparent;
+                    font-weight: 800;
+                }
+                .sidebar-header p {
+                    margin: 4px 0 0 0;
+                    font-size: 0.75rem;
+                    color: var(--text-sub);
+                    letter-spacing: 0.02em;
+                    font-weight: 500;
+                }
+                .sidebar-section {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                }
+                .sidebar-section label {
+                    font-size: 0.75rem;
+                    color: var(--text-sub);
+                    margin-bottom: 4px;
+                    font-weight: 600;
+                    letter-spacing: 0.01em;
+                }
                 .sidebar-btn {
                     display: flex;
                     align-items: center;
-                    gap: 8px;
+                    gap: 10px;
                     width: 100%;
-                    padding: 8px 12px;
-                    background: rgba(255, 255, 255, 0.05);
-                    border: 1px solid rgba(255, 255, 255, 0.1);
-                    border-radius: 6px;
-                    color: rgba(255, 255, 255, 0.85);
+                    padding: 10px 14px;
+                    background: var(--bg-input);
+                    border: 1px solid var(--border-node);
+                    border-radius: 12px;
+                    color: var(--text-main);
                     cursor: pointer;
-                    font-size: 0.9rem;
-                    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-                    text-align: left;
+                    font-size: 0.82rem;
+                    font-family: inherit;
+                    transition: all 0.2s;
                 }
                 .sidebar-btn:hover {
-                    background: rgba(79, 172, 254, 0.15);
-                    border-color: rgba(79, 172, 254, 0.4);
+                    background: var(--accent);
                     color: #fff;
-                    transform: translateX(4px);
+                    border-color: var(--accent);
+                    transform: translateY(-1px);
                 }
                 .sidebar-btn.danger:hover {
-                    background: rgba(255, 71, 87, 0.15);
-                    border-color: rgba(255, 71, 87, 0.4);
-                    color: #ff4757;
+                    background: rgba(248, 113, 113, 0.15);
+                    border-color: rgba(248, 113, 113, 0.4);
+                    color: #f87171;
                 }
-                .sidebar-btn .icon {
-                    font-size: 1.1rem;
+                .stat-row {
+                    display: flex;
+                    justify-content: space-between;
+                    font-size: 0.8rem;
+                    color: var(--text-sub);
+                    padding: 4px 2px;
+                }
+                .sidebar-toggle-btn {
+                    width: 20px;
+                    height: 44px;
+                    background: var(--bg-sidebar);
+                    backdrop-filter: blur(10px);
+                    border: 1px solid var(--border-node);
+                    border-left: none;
+                    border-radius: 0 8px 8px 0;
+                    color: var(--text-sub);
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 1rem;
+                    transition: all 0.2s;
+                }
+                .sidebar-toggle-btn:hover {
+                    color: var(--text-main);
+                    padding-left: 4px;
                 }
             `}</style>
         </div>

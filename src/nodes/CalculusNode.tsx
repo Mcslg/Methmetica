@@ -2,6 +2,7 @@ import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
 import { useEffect } from 'react';
 import useStore, { type AppState, type NodeData } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
+import { Icons } from '../components/Icons';
 
 export function CalculusNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
@@ -58,26 +59,26 @@ export function CalculusNode({ id, data, selected }: NodeProps<Node<NodeData>>) 
                     'trigger-err': '計算出錯時發出電流'
                 }}
             />
-            <div className="node-header" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '24px' }}>
-                <span>{variant === 'diff' ? 'Differentiate' : 'Integrate'}</span>
+            <div className="node-header">
+                <span style={{ display: 'flex', alignItems: 'center' }}><Icons.Calculus /> {variant === 'diff' ? 'Differentiate' : 'Integrate'}</span>
             </div>
 
             <div className="calc-controls" style={{
                 display: 'flex',
                 gap: '8px',
-                padding: '4px 12px',
-                background: 'rgba(0,0,0,0.3)',
-                borderBottom: 'none',
+                padding: '6px 12px',
+                background: 'var(--bg-input)',
+                borderTop: '1px solid var(--border-header)',
                 fontSize: '0.65rem',
                 alignItems: 'center',
                 flexGrow: 1,
                 justifyContent: 'center'
             }}>
-                <button onClick={toggleVariant} className="variant-toggle" style={{ padding: '0px 4px' }} title={variant === 'diff' ? '切換為積分' : '切換為微分'}>
+                <button onClick={toggleVariant} className="variant-toggle" style={{ padding: '0px 6px' }} title={variant === 'diff' ? '切換為積分' : '切換為微分'}>
                     {variant === 'diff' ? '∫' : 'd/dx'}
                 </button>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                    <span style={{ color: '#888' }}>w.r.t</span>
+                    <span style={{ color: 'var(--text-sub)' }}>w.r.t</span>
                     <input
                         className="nodrag"
                         type="text"
@@ -85,13 +86,15 @@ export function CalculusNode({ id, data, selected }: NodeProps<Node<NodeData>>) 
                         onChange={handleVariableChange}
                         style={{
                             width: '20px',
-                            background: 'rgba(255,255,255,0.1)',
-                            border: '1px solid rgba(255,255,255,0.2)',
-                            color: '#fff',
-                            borderRadius: '2px',
+                            background: 'var(--bg-input)',
+                            border: '1px solid var(--border-input)',
+                            color: 'var(--text-main)',
+                            borderRadius: '4px',
                             textAlign: 'center',
                             fontSize: '0.65rem',
-                            padding: '0'
+                            padding: '1px',
+                            fontFamily: 'inherit',
+                            outline: 'none'
                         }}
                     />
                 </div>
@@ -107,18 +110,20 @@ export function CalculusNode({ id, data, selected }: NodeProps<Node<NodeData>>) 
                     border-top: 2px solid #1e90ff !important;
                 }
                 .variant-toggle {
-                    background: rgba(255,255,255,0.1);
-                    border: 1px solid rgba(255,255,255,0.2);
-                    color: #ccc;
+                    background: var(--bg-input);
+                    border: 1px solid var(--border-node);
+                    color: var(--text-main);
                     border-radius: 4px;
                     padding: 1px 5px;
                     font-size: 0.65rem;
                     cursor: pointer;
                     transition: all 0.2s;
+                    font-family: inherit;
                 }
                 .variant-toggle:hover {
-                    background: rgba(255,255,255,0.2);
+                    background: var(--accent);
                     color: #fff;
+                    border-color: var(--accent);
                 }
             `}</style>
         </div>

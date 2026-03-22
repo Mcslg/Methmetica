@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
 import useStore, { type AppState, type NodeData } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
+import { Icons } from '../components/Icons';
 import 'mathlive';
 
 declare global {
@@ -52,13 +53,13 @@ export function NumberNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
           'trigger-out': '當傳入的數值更新時同步發出電流'
         }}
       />
-      <div className="node-header">Data</div>
+      <div className="node-header"><Icons.Number /> Data</div>
       <div className="node-content math-input-container">
         {/* @ts-ignore */}
         <math-field
           ref={mfRef}
           class="nodrag"
-          style={{ fontSize: '1.2rem', minWidth: '80px', padding: '5px' }}
+          style={{ fontSize: '1.2rem', minWidth: '80px', padding: '5px', color: 'var(--text-main)' }}
         >
           {data.value || ''}
           {/* @ts-ignore */}

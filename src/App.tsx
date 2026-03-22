@@ -1,43 +1,13 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ReactFlow, Background, Controls, ReactFlowProvider, useReactFlow } from '@xyflow/react';
+import { ReactFlow, Background, Controls, ReactFlowProvider, useReactFlow, BackgroundVariant } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import useStore, { dataNodeHandles, toolNodeHandles, textNodeHandles } from './store/useStore';
-import { NumberNode } from './nodes/NumberNode';
-import { CalculateNode } from './nodes/CalculateNode';
-import { TextNode } from './nodes/TextNode';
-import { DecimalNode } from './nodes/DecimalNode';
-import { CalculusNode } from './nodes/CalculusNode';
-import { AppendNode } from './nodes/AppendNode';
-import { ButtonNode } from './nodes/ButtonNode';
-import { GateNode } from './nodes/GateNode';
-import { RangeNode } from './nodes/RangeNode';
-import { ForEachNode } from './nodes/ForEachNode';
-import { GraphNode } from './nodes/GraphNode';
-import { SliderNode } from './nodes/SliderNode';
-import { SolveNode } from './nodes/SolveNode';
-import { calculusNodeHandles, buttonNodeHandles, appendNodeHandles, gateNodeHandles, rangeNodeHandles, forEachNodeHandles, graphNodeHandles, sliderNodeHandles } from './store/useStore';
+import useStore from './store/useStore';
+import { nodeTypes, nodeLibrary, getNodeDefinition } from './nodes/registry';
 import { Sidebar } from './components/Sidebar';
-
-const nodeTypes = {
-  numberNode: NumberNode,
-  calculateNode: CalculateNode,
-  textNode: TextNode,
-  decimalNode: DecimalNode,
-  calculusNode: CalculusNode,
-  appendNode: AppendNode,
-  buttonNode: ButtonNode,
-  gateNode: GateNode,
-  rangeNode: RangeNode,
-  forEachNode: ForEachNode,
-  graphNode: GraphNode,
-  sliderNode: SliderNode,
-  solveNode: SolveNode,
-};
-
 function Flow() {
-  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, removeNode, handleProximitySnap, checkProximity, addHandle, setAltPressed } = useStore();
+  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, removeNode, handleProximitySnap, checkProximity, addHandle, setAltPressed, theme } = useStore();
   const { screenToFlowPosition } = useReactFlow();
   const [paneMenu, setPaneMenu] = useState<{ x: number, y: number, screenX: number, screenY: number } | null>(null);
   const [radialMenu, setRadialMenu] = useState<{ x: number, y: number, screenX: number, screenY: number } | null>(null);
@@ -63,6 +33,10 @@ function Flow() {
       window.removeEventListener('keyup', handleKey);
     };
   }, [setAltPressed]);
+
+  useEffect(() => {
+    document.body.setAttribute('data-theme', theme);
+  }, [theme]);
 
   useEffect(() => {
     radialSelectionRef.current = radialSelection;
@@ -110,20 +84,7 @@ function Flow() {
     };
   }, [radialMenu]);
 
-  const nodeLibrary = [
-    { type: 'textNode', label: 'Text Logic', desc: 'Markdown & text processing', category: 'Logic', icon: '¶', color: '#4facfe' },
-    { type: 'calculateNode', label: 'Math Calculator', desc: 'Symbolic math expressions', category: 'Math', icon: 'fx', color: '#ffcc33' },
-    { type: 'decimalNode', label: 'To Decimal', desc: 'Convert fraction/LaTeX to float', category: 'Utils', icon: '0.1', color: '#43e97b' },
-    { type: 'calculusNode', label: 'Calculus Tool', desc: 'Derivatives & Integrals', category: 'Math', icon: '∫', color: '#a18cd1' },
-    { type: 'appendNode', label: 'Append Logger', desc: 'Append data to touching TextNode', category: 'Logic', icon: '⤓', color: '#43e97b' },
-    { type: 'buttonNode', label: 'Run Trigger', desc: 'Manual signal trigger', category: 'Logic', icon: '⚡', color: '#ffcc00' },
-    { type: 'gateNode', label: 'Trigger Gate', desc: 'Pass trigger if input is non-zero', category: 'Logic', icon: '⛩', color: '#4facfe' },
-    { type: 'rangeNode', label: 'Range Generator', desc: 'Generate a sequence of numbers', category: 'Math', icon: '{n}', color: '#43e97b' },
-    { type: 'forEachNode', label: 'For Each', desc: 'Process sequence items on neighbor', category: 'Logic', icon: '↻', color: '#6c5ce7' },
-    { type: 'graphNode', label: 'Graph Calculator', desc: 'Plot 2D dynamic mathematical functions', category: 'Math', icon: '📈', color: '#ff66b2' },
-    { type: 'sliderNode', label: 'Slider Input', desc: 'Interactive numeric value slider', category: 'Input', icon: '—○—', color: '#4facfe' },
-    { type: 'solveNode', label: 'Equation Solver', desc: 'Solve equations for a variable', category: 'Math', icon: '?', color: '#ff7e5f' },
-  ];
+// nodeLibrary is now imported from registry
 
   const filteredLibrary = nodeLibrary.filter(item =>
     item.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -198,47 +159,17 @@ function Flow() {
     if (!posSource) return;
 
     const position = screenToFlowPosition({ x: posSource.x, y: posSource.y });
-    const getHandles = (type: string) => {
-      switch (type) {
-        case 'numberNode': return dataNodeHandles;
-        case 'textNode': return textNodeHandles;
-        case 'calculusNode': return calculusNodeHandles;
-        case 'buttonNode': return buttonNodeHandles;
-        case 'appendNode': return appendNodeHandles;
-        case 'gateNode': return gateNodeHandles;
-        case 'rangeNode': return rangeNodeHandles;
-        case 'forEachNode': return forEachNodeHandles;
-        case 'graphNode': return graphNodeHandles;
-        case 'sliderNode': return sliderNodeHandles;
-        case 'solveNode': return [{ id: 'h-in', type: 'input', position: 'left', offset: 50, label: 'eq' }, { id: 'h-out', type: 'output', position: 'right', offset: 50 }];
-        default: return toolNodeHandles;
-      }
-    };
-
-    const getDefaultSize = (type: string) => {
-      switch (type) {
-        case 'textNode': return { width: 300, height: 180 };
-        case 'calculateNode':
-        case 'calculusNode': return { width: 160, height: 75 };
-        case 'rangeNode':
-        case 'forEachNode':
-        case 'gateNode': return { width: 180, height: 110 };
-        case 'graphNode': return { width: 300, height: 260 };
-        case 'numberNode': return { width: 120, height: 80 };
-        case 'sliderNode': return { width: 180, height: 110 };
-        case 'solveNode': return { width: 220, height: 160 };
-        case 'buttonNode': return { width: 120, height: 46 };
-        default: return { width: 200, height: 120 };
-      }
-    };
+    const def = getNodeDefinition(type);
+    const handles = def ? def.defaultHandles : [];
+    const size = def ? def.defaultSize : { width: 200, height: 120 };
 
     addNode({
       id: `${type}-${Date.now()}`,
       type,
       position,
-      style: getDefaultSize(type),
+      style: size,
       data: {
-        handles: getHandles(type),
+        handles: handles,
         ...(variant ? { variant } : {}),
         ...(type === 'rangeNode' ? { rangeDef: '0..10' } : {})
       }
@@ -321,7 +252,7 @@ function Flow() {
   }, [nodes, addHandle, onConnect]);
 
   return (
-    <div style={{ width: '100vw', height: '100vh', background: '#0a0a0a' }}>
+    <div style={{ width: '100vw', height: '100vh', background: 'var(--bg-page)' }}>
       <Sidebar />
         <ReactFlow
         nodes={nodes}
@@ -381,9 +312,13 @@ function Flow() {
           if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
         }}
         fitView
-        colorMode="dark"
+        colorMode={theme}
       >
-        <Background color="#333" gap={16} />
+        <Background 
+          color={theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(14, 47, 11, 0.08)'} 
+          gap={18} 
+          variant={BackgroundVariant.Dots}
+        />
         <Controls />
       </ReactFlow>
 
@@ -499,7 +434,9 @@ function Flow() {
                         onClick={() => handleAddNode(item.type)}
                       />
                       <g className="pie-label-group" transform={`translate(${tx}, ${ty})`}>
-                        <text className="pie-item-icon" y="-15" style={{ '--item-color': item.color } as any}>{item.icon}</text>
+                        <g transform="translate(-12, -35)" style={{ color: item.color }}>
+                          {item.icon}
+                        </g>
                         <text className="pie-item-label" y="5" style={{ fill: isActive ? '#fff' : '#ccc' }}>{item.label}</text>
                         <text className="pie-item-desc" y="20">{item.desc}</text>
                       </g>
@@ -535,16 +472,16 @@ function Flow() {
             position: 'fixed',
             left: idleTooltip.x + 20,
             top: idleTooltip.y + 20,
-            background: 'rgba(15, 15, 20, 0.75)',
+            background: 'var(--bg-node)',
             backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255, 255, 255, 0.12)',
+            border: '1px solid var(--border-node)',
             padding: '8px 14px',
-            borderRadius: '10px',
-            color: 'rgba(255, 255, 255, 0.5)',
-            fontSize: '0.7rem',
+            borderRadius: '12px',
+            color: 'var(--text-sub)',
+            fontSize: '0.75rem',
             pointerEvents: 'none',
             zIndex: 9999,
-            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+            boxShadow: 'var(--node-shadow)',
             display: 'flex',
             alignItems: 'center',
             gap: '8px',

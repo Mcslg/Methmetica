@@ -3,6 +3,7 @@ import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
 import useStore, { type NodeData, type AppState, type CustomHandle } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 import { getMathEngine } from '../utils/MathEngine';
+import { Icons } from '../components/Icons';
 import 'mathlive';
 
 
@@ -149,13 +150,18 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
                     'h-fn-in': '外部公式輸入 (f(x) string)'
                 }}
             />
-            <div className="node-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>Calculate</span>
+            <div className="node-header">
+                <span style={{ display: 'flex', alignItems: 'center' }}><Icons.Calculate /> Calculate</span>
                 <div style={{ display: 'flex', gap: '4px' }}>
                     <button
                         onClick={() => updateNodeData(id, { useExternalFormula: !useExternalFormula })}
                         className="variant-toggle"
-                        style={{ fontSize: '0.5rem', padding: '2px 4px', background: useExternalFormula ? 'rgba(79, 172, 254, 0.3)' : 'transparent' }}
+                        style={{ 
+                            fontSize: '0.5rem', 
+                            padding: '2px 4px', 
+                            background: useExternalFormula ? 'var(--accent)' : 'transparent',
+                            color: useExternalFormula ? '#fff' : 'inherit'
+                        }}
                     >
                         EXT
                     </button>
@@ -184,7 +190,7 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
                     <math-field
                         ref={mfRef}
                         class="nodrag formula-input"
-                        style={{ fontSize: '1rem', width: '100%', background: 'rgba(0,0,0,0.2)', padding: '4px', borderRadius: '4px' }}
+                        style={{ fontSize: '1rem', width: '100%', padding: '4px', borderRadius: '4px' }}
                     >
                         {data.formula || ''}
                     </math-field>
@@ -194,11 +200,11 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
                     <div style={{
                         marginTop: '4px',
                         padding: '6px',
-                        background: 'rgba(79, 172, 254, 0.1)',
-                        border: '1px solid rgba(79, 172, 254, 0.3)',
-                        borderRadius: '4px',
+                        background: 'rgba(74, 222, 128, 0.08)',
+                        border: '1px solid rgba(74, 222, 128, 0.2)',
+                        borderRadius: '6px',
                         fontSize: '1rem',
-                        color: '#fff',
+                        color: 'var(--text-main)',
                         textAlign: 'center',
                         overflowX: 'auto',
                         whiteSpace: 'nowrap'
@@ -220,16 +226,18 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
             </div>
             <style>{`
                 .variant-toggle {
-                    background: rgba(255,255,255,0.1);
-                    border: 1px solid rgba(255,255,255,0.2);
-                    color: #ccc;
+                    background: var(--bg-input);
+                    border: 1px solid var(--border-node);
+                    color: var(--text-main);
                     border-radius: 4px;
                     cursor: pointer;
                     transition: all 0.2s;
+                    font-family: inherit;
                 }
                 .variant-toggle:hover {
-                    background: rgba(255,255,255,0.2);
+                    background: var(--accent);
                     color: #fff;
+                    border-color: var(--accent);
                 }
             `}</style>
         </div>

@@ -3,6 +3,7 @@ import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
 import useStore, { type NodeData, type AppState } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 import { getMathEngine } from '../utils/MathEngine';
+import { Icons } from '../components/Icons';
 import 'mathlive';
 
 
@@ -171,7 +172,7 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         ctx.stroke();
 
         // Axis tick labels
-        ctx.font = '9px Outfit, sans-serif';
+        ctx.font = '9px var(--font-main), sans-serif';
         ctx.fillStyle = 'rgba(255,255,255,0.35)';
         ctx.textAlign = 'center';
         for (let i = leftUnits; i <= rightUnits; i++) {
@@ -189,7 +190,7 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         if (!formulaToParse) {
             // Draw placeholder
             ctx.fillStyle = 'rgba(255,255,255,0.15)';
-            ctx.font = '12px Outfit, sans-serif';
+            ctx.font = '12px var(--font-main), sans-serif';
             ctx.textAlign = 'center';
             ctx.fillText('Enter a formula above', clientWidth / 2, clientHeight / 2);
             return;
@@ -426,17 +427,20 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             />
 
             <div className="nowheel" style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', overflow: 'hidden', borderRadius: 'inherit' }}>
-                <div className="node-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.4)', zIndex: 2 }}>
-                    <span>Graph Plotter {isReceivingExternal && <span style={{ fontSize: '0.55rem', color: '#4facfe', marginLeft: 4 }}>● EXT</span>}</span>
+                <div className="node-header">
+                    <span style={{ display: 'flex', alignItems: 'center' }}>
+                        <Icons.Graph />
+                        Graph {isReceivingExternal && <span style={{ fontSize: '0.55rem', color: 'var(--accent-bright)', marginLeft: 4 }}>● EXT</span>}
+                    </span>
                 </div>
 
                 {/* Formula input — only show manual editor when NOT receiving external */}
                 {!isReceivingExternal && (
-                    <div style={{ padding: '6px 8px', background: 'rgba(0,0,0,0.3)', zIndex: 2 }}>
+                    <div style={{ padding: '6px 8px', background: 'var(--bg-input)', borderBottom: '1px solid var(--border-header)', zIndex: 2 }}>
                         <math-field
                             ref={mfRef}
                             class="nodrag formula-input"
-                            style={{ fontSize: '1rem', width: '100%', background: 'rgba(0,0,0,0.2)', padding: '2px', borderRadius: '4px' }}
+                            style={{ fontSize: '1rem', width: '100%', padding: '2px', borderRadius: '4px' }}
                         >
                             {manualFormula}
                         </math-field>
@@ -445,11 +449,11 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
 
                 {/* Show received formula when in external mode */}
                 {isReceivingExternal && (
-                    <div style={{ padding: '6px 8px', background: 'rgba(0,0,0,0.3)', zIndex: 2 }}>
+                    <div style={{ padding: '6px 8px', background: 'var(--bg-input)', borderBottom: '1px solid var(--border-header)', zIndex: 2 }}>
                         <div style={{
-                            width: '100%', background: 'rgba(79,172,254,0.08)', padding: '4px 8px',
-                            borderRadius: '4px', fontSize: '0.85rem', color: '#4facfe',
-                            minHeight: '28px', border: '1px solid rgba(79,172,254,0.25)',
+                            width: '100%', background: 'rgba(74,222,128,0.08)', padding: '4px 8px',
+                            borderRadius: '4px', fontSize: '0.85rem', color: 'var(--accent-bright)',
+                            minHeight: '28px', border: '1px solid rgba(74,222,128,0.25)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center'
                         }}>
                             {formulaInput}

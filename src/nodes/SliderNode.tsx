@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
 import useStore, { type NodeData, type AppState } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
+import { Icons } from '../components/Icons';
 
 export function SliderNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
@@ -55,8 +56,8 @@ export function SliderNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                 allowedTypes={['output']}
             />
             <div className="node-header">
-                <span>Slider</span>
-                <span style={{ fontSize: '0.8rem', color: '#4facfe', fontWeight: 'bold' }}>{value.toFixed(2)}</span>
+                <span style={{ display: 'flex', alignItems: 'center' }}><Icons.Slider /> Slider</span>
+                <span style={{ fontSize: '0.9rem', color: 'var(--accent-bright)', fontWeight: 'bold' }}>{value.toFixed(2)}</span>
             </div>
 
             <div className="node-content" style={{ flexGrow: 1, padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -79,7 +80,7 @@ export function SliderNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                             defaultValue={String(min)} 
                             onBlur={(e) => handleSettingsChange('min', e.target.value)}
                             className="nodrag"
-                            style={{ background: 'rgba(0,0,0,0.2)', border: 'none', color: '#ccc', padding: '2px', borderRadius: '2px' }}
+                    style={{ background: 'var(--bg-input)', border: '1px solid var(--border-input)', color: 'var(--text-main)', padding: '2px 4px', borderRadius: '4px', width: '100%', fontFamily: 'inherit', fontSize: '0.7rem', outline: 'none' }}
                         />
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
@@ -89,7 +90,7 @@ export function SliderNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                             defaultValue={String(max)} 
                             onBlur={(e) => handleSettingsChange('max', e.target.value)}
                             className="nodrag"
-                            style={{ background: 'rgba(0,0,0,0.2)', border: 'none', color: '#ccc', padding: '2px', borderRadius: '2px' }}
+                    style={{ background: 'var(--bg-input)', border: '1px solid var(--border-input)', color: 'var(--text-main)', padding: '2px 4px', borderRadius: '4px', width: '100%', fontFamily: 'inherit', fontSize: '0.7rem', outline: 'none' }}
                         />
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
@@ -99,7 +100,7 @@ export function SliderNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                             defaultValue={String(step)} 
                             onBlur={(e) => handleSettingsChange('step', e.target.value)}
                             className="nodrag"
-                            style={{ background: 'rgba(0,0,0,0.2)', border: 'none', color: '#ccc', padding: '2px', borderRadius: '2px' }}
+                    style={{ background: 'var(--bg-input)', border: '1px solid var(--border-input)', color: 'var(--text-main)', padding: '2px 4px', borderRadius: '4px', width: '100%', fontFamily: 'inherit', fontSize: '0.7rem', outline: 'none' }}
                         />
                     </div>
                 </div>

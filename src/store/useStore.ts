@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { type Edge } from '@xyflow/react';
 import {
     type Connection,
@@ -68,6 +69,8 @@ export type AppState = {
     setGraph: (nodes: AppNode[], edges: Edge[]) => void;
     isAltPressed: boolean;
     setAltPressed: (pressed: boolean) => void;
+    theme: 'light' | 'dark';
+    setTheme: (theme: 'light' | 'dark') => void;
 };
 
 export const dataNodeHandles: CustomHandle[] = [
@@ -128,17 +131,22 @@ export const sliderNodeHandles: CustomHandle[] = [
 // Initial setup nodes
 const initialNodes: AppNode[] = [];
 
-const useStore = create<AppState>((set, get) => ({
-    nodes: initialNodes,
-    edges: [],
-    implicitEdges: [],
+const useStore = create<AppState>()(
+    persist(
+        (set, get) => ({
+            nodes: initialNodes,
+            edges: [],
+            implicitEdges: [],
+            theme: 'dark',
+            setTheme: (theme) => set({ theme }),
 
-    setGraph: (nodes, edges) => {
-        set({ nodes, edges, implicitEdges: [] });
-    },
+            setGraph: (nodes, edges) => {
+                set({ nodes, edges, implicitEdges: [] });
+            },
 
-    isAltPressed: false,
-    setAltPressed: (pressed) => set({ isAltPressed: pressed }),
+            isAltPressed: false,
+            setAltPressed: (pressed) => set({ isAltPressed: pressed }),
+
 
     onNodesChange: (changes: NodeChange<AppNode>[]) => {
         set({
@@ -784,9 +792,17 @@ const useStore = create<AppState>((set, get) => ({
 
         set({ nodes: nextNodes });
     },
-
-
-}));
+  }),
+  {
+      name: 'methmetica-storage',
+      partialize: (state: AppState) => ({
+          nodes: state.nodes,
+          edges: state.edges,
+          theme: state.theme,
+      }),
+  }
+)
+);
 
 useStore.getState().evaluateGraph();
 

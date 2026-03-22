@@ -1,6 +1,7 @@
 import { NodeResizer, type NodeProps, type Node } from '@xyflow/react';
 import useStore, { type AppState, type NodeData } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
+import { Icons } from '../components/Icons';
 
 export function ForEachNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const nodes = useStore((state: AppState) => state.nodes);
@@ -22,32 +23,21 @@ export function ForEachNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                 flexDirection: 'column',
                 boxSizing: 'border-box',
                 padding: '0',
-                background: isAttached ? 'rgba(108, 92, 231, 0.08)' : 'rgba(255, 255, 255, 0.03)',
-                border: isAttached ? '1px solid #6c5ce7' : '1px solid rgba(255, 255, 255, 0.1)',
-                borderRadius: '8px',
+                border: isAttached ? '1px solid rgba(162, 155, 254, 0.4)' : '1px solid var(--border-node)',
             }}
         >
             <NodeResizer isVisible={selected} minWidth={150} minHeight={40} />
             
-            <div className="node-header" style={{ 
-                padding: '4px 10px', 
-                fontSize: '0.65rem', 
-                background: isAttached ? 'rgba(108, 92, 231, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                color: isAttached ? '#a29bfe' : '#888',
-                fontWeight: 'bold',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                minHeight: '28px'
-            }}>
+            <div className="node-header" style={{ color: isAttached ? 'var(--accent-bright)' : 'var(--text-sub)' }}>
                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                    <span>⚡ FOR EACH</span>
+                    <Icons.ForEach />
+                    <span>ForEach</span>
                 </div>
                 {isAttached && <span style={{ fontSize: '0.5rem', opacity: 0.6 }}>LINKED</span>}
             </div>
 
             <div style={{ padding: '8px 12px', flexGrow: 1, overflow: 'hidden' }}>
-                <div style={{ fontSize: '0.7rem', color: '#fff', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-main)', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {data.status || 'Ready / Standby'}
                 </div>
                 {isAttached && targetNode && (

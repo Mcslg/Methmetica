@@ -1,6 +1,7 @@
 import { NodeResizer, type NodeProps, type Node } from '@xyflow/react';
 import useStore, { type NodeData, appendNodeHandles, insertNodeHandles } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
+import { Icons } from '../components/Icons';
 
 export const AppendNode = ({ id, data, selected }: NodeProps<Node<NodeData>>) => {
     const nodes = useStore(state => state.nodes);
@@ -38,41 +39,27 @@ export const AppendNode = ({ id, data, selected }: NodeProps<Node<NodeData>>) =>
                 flexDirection: 'column',
                 boxSizing: 'border-box',
                 padding: '0',
-                background: isAttached ? 'rgba(67, 233, 123, 0.08)' : 'rgba(255, 255, 255, 0.03)',
-                border: isAttached ? '1px solid #43e97b' : '1px solid rgba(255, 255, 255, 0.1)',
-                borderRadius: '8px',
+                background: isAttached ? 'var(--bg-node)' : 'var(--bg-input)',
+                border: isAttached ? '1px solid var(--accent-bright)' : '1px solid var(--border-node)',
+                borderRadius: '12px',
             }}
         >
             <NodeResizer isVisible={selected} minWidth={160} minHeight={32} />
             
             <div className="node-header" style={{ 
-                padding: '4px 10px', 
-                fontSize: '0.65rem', 
-                background: isAttached ? 'rgba(67, 233, 123, 0.12)' : 'rgba(255, 255, 255, 0.05)',
-                color: isAttached ? '#43e97b' : '#888',
-                fontWeight: 'bold',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                minHeight: '28px',
-                borderRadius: '8px 8px 0 0'
+                color: isAttached ? 'var(--accent-bright)' : 'var(--text-sub)',
             }}>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <Icons.Append />
                     <button 
                         onClick={toggleMode}
+                        className="variant-toggle"
                         style={{
-                            background: 'rgba(255,255,255,0.1)',
-                            border: 'none',
-                            color: 'inherit',
-                            fontSize: '0.6rem',
                             padding: '2px 6px',
-                            borderRadius: '4px',
                             cursor: 'pointer',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em'
                         }}
                     >
-                        {isInsert ? 'Mode: Insert' : 'Mode: Append'}
+                        {isInsert ? 'Insert' : 'Append'}
                     </button>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>

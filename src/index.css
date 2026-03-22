@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Quicksand:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
 
 /* Hide ReactFlow watermark */
 .react-flow__attribution {
@@ -6,18 +6,67 @@
 }
 
 :root {
-  font-family: 'Outfit', system-ui, sans-serif;
+  --font-main: 'Outfit', 'Noto Sans TC', system-ui, -apple-system, sans-serif;
+  
+  /* Dark Mode (Default & Professional) */
+  --bg-page: #080d08;
+  --bg-node: rgba(15, 20, 15, 0.85);
+  --bg-sidebar: rgba(10, 10, 15, 0.8);
+  --bg-header: transparent;
+  --bg-input: rgba(0, 0, 0, 0.3);
+  --text-main: rgba(255, 255, 255, 0.9);
+  --text-sub: rgba(255, 255, 255, 0.4);
+  --border-node: rgba(255, 255, 255, 0.08);
+  --border-header: rgba(255, 255, 255, 0.05);
+  --border-input: rgba(255, 255, 255, 0.15);
+  --accent: #0E2F0B;
+  --accent-bright: #4ade80;
+  --edge-data: #3d5a80;
+  --edge-trigger: #b8860b;
+  --node-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  --node-hover-shadow: 0 8px 32px rgba(74, 222, 128, 0.15);
+  --scroll-thumb: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme='light'] {
+  --font-main: 'Quicksand', 'Noto Sans TC', system-ui, -apple-system, sans-serif;
+  /* Light Mode (Friendly & Approachable) */
+  --bg-page: #fdfbf7;      /* Warm off-white 米白色 */
+  --bg-node: #ffffff;
+  --bg-sidebar: #fcfaf2;
+  --bg-header: transparent;
+  --bg-input: rgba(14, 47, 11, 0.05);
+  --text-main: #0E2F0B;
+  --text-sub: rgba(14, 47, 11, 0.7);
+  --border-node: #0E2F0B;  /* Solid brand border */
+  --border-header: rgba(14, 47, 11, 0.1);
+  --border-input: rgba(14, 47, 11, 0.2);
+  --accent: #0E2F0B;
+  --accent-bright: #0E2F0B;
+  --edge-data: #0E2F0B;
+  --edge-trigger: #0E2F0B;
+  --node-shadow: 0 4px 20px rgba(14, 47, 11, 0.08);
+  --node-hover-shadow: 0 8px 30px rgba(14, 47, 11, 0.12);
+  --scroll-thumb: rgba(14, 47, 11, 0.2);
+}
+
+:root {
+  font-family: var(--font-main);
   line-height: 1.5;
   font-weight: 400;
 
   color-scheme: dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #0a0a0a;
+  color: var(--text-main);
+  background-color: var(--bg-page);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
 }
 
 body {
@@ -27,6 +76,7 @@ body {
   min-width: 320px;
   min-height: 100vh;
   overflow: hidden;
+  background-color: var(--bg-page);
 }
 
 #root {
@@ -34,31 +84,24 @@ body {
   height: 100vh;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-  margin: 0;
-  background: linear-gradient(45deg, #00f2fe, #4facfe);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-
 /* Glassmorphism Node Styles */
 .math-node {
-  background: rgba(15, 15, 20, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+  background: var(--bg-node);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border-node);
+  border-radius: 16px;
   min-width: 160px;
-  box-shadow: 0 10px 40px 0 rgba(0, 0, 0, 0.5);
+  box-shadow: var(--node-shadow);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .math-node:hover {
-  box-shadow: 0 8px 32px 0 rgba(0, 242, 254, 0.2);
+  box-shadow: var(--node-hover-shadow);
+  transform: translateY(-1px);
 }
 
 .react-flow__node,
@@ -67,75 +110,31 @@ h1 {
   box-shadow: none !important;
 }
 
-/* Transparent Resize Handles globally */
-.react-flow__resize-control.handle {
-  background-color: transparent !important;
-  border-color: transparent !important;
-}
-
 .math-node.selected {
-  outline: none !important;
-  box-shadow: 0 10px 40px 0 rgba(0, 0, 0, 0.5) !important; /* Removed 0 0 0 1px #4facfe blue border here */
+  border-color: var(--accent-bright) !important;
+  box-shadow: 0 0 0 1px var(--accent-bright), var(--node-shadow) !important;
 }
 
 .node-header {
-  padding: 4px 10px;
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  background: rgba(0, 0, 0, 0.4);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  border-top-left-radius: 4px;
-  border-top-right-radius: 4px;
-}
-
-/* Data nodes - subtle full thin border */
-.number-node {
-  border: 1px solid rgba(255, 126, 179, 0.4);
-}
-
-.result-node {
-  border: 1px solid rgba(67, 233, 123, 0.4);
-}
-
-/* Math Pill Selection Highlight */
-.data-pill-render *::selection {
-  background: rgba(79, 172, 254, 0.4) !important;
-  color: transparent !important;
-}
-
-/* For result pills (green theme) */
-.data-pill-render.alt-preview *::selection {
-  background: rgba(67, 233, 123, 0.4) !important;
-  color: transparent !important;
-}
-
-.number-node .node-header {
-  color: #ff7eb3;
-}
-
-.result-node .node-header {
-  color: #43e97b;
-}
-
-/* Tool nodes - standard dark look */
-.op-node {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.op-node .node-header {
-  color: #fff;
-  background: rgba(0, 0, 0, 0.6);
+  padding: 8px 12px 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border-header);
+  color: var(--text-sub);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .node-content {
-  padding: 15px;
+  padding: 16px;
   display: flex;
   justify-content: center;
   align-items: center;
-  border-bottom-left-radius: 4px;
-  border-bottom-right-radius: 4px;
+  flex-grow: 1;
 }
 
 .text-node .node-content {
@@ -165,16 +164,16 @@ h1 {
 
 .node-content input:not([type="checkbox"]) {
   width: 100%;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: white;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  color: var(--text-main);
   padding: 8px;
-  border-radius: 6px;
+  border-radius: 8px;
   font-family: inherit;
   font-size: 1rem;
   text-align: center;
   outline: none;
-  transition: border-color 0.2s;
+  transition: all 0.2s;
 }
 
 .node-content input[type="checkbox"] {
@@ -186,12 +185,12 @@ h1 {
 
 /* MathLive Input Overrides */
 math-field {
-  --caret-color: #fff;
-  --selection-background-color: rgba(255, 255, 255, 0.2);
-  --selection-color: #fff;
+  --caret-color: var(--accent-bright);
+  --selection-background-color: rgba(74, 222, 128, 0.2);
+  --selection-color: var(--text-main);
   border: none !important;
   background: transparent !important;
-  color: #fff;
+  color: var(--text-main);
   font-family: inherit;
   box-shadow: none !important;
   outline: none !important;
@@ -207,33 +206,36 @@ math-field::part(virtual-keyboard-toggle) {
 }
 
 .node-content input:focus {
-  border-color: #ff7eb3;
+  border-color: var(--accent-bright);
 }
 
 .exec-button {
   float: right;
   cursor: pointer;
-  background: #333;
-  border: none;
-  color: #fff;
-  border-radius: 2px;
-  padding: 2px 5px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-node);
+  color: var(--text-sub);
+  border-radius: 20px;
+  padding: 3px 10px;
   font-size: 8px;
-  transition: background 0.2s;
+  transition: all 0.2s;
+  font-family: inherit;
 }
 
 .exec-button:hover {
-  background: #444;
-  color: #00f2fe;
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
 }
 
 .formula-input {
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid var(--border-input) !important;
   transition: border-color 0.2s;
+  border-radius: 6px;
 }
 
 .formula-input:focus-within {
-  border-color: rgba(0, 242, 254, 0.5) !important;
+  border-color: var(--accent-bright) !important;
 }
 
 .handle-label {
@@ -244,16 +246,21 @@ math-field::part(virtual-keyboard-toggle) {
 .result-value {
   font-size: 1.5rem;
   font-weight: 700;
-  color: #fff;
-  text-shadow: 0 0 10px rgba(56, 249, 215, 0.5);
+  color: var(--text-main);
+  text-shadow: 0 0 15px var(--accent-bright);
+}
+
+[data-theme='light'] .result-value {
+    text-shadow: none;
+    color: var(--accent-bright);
 }
 
 /* Customizing React Flow Handles */
 .react-flow__handle {
   width: 14px;
   height: 14px;
-  background: #000;
-  border: 1px solid var(--handle-color);
+  background: var(--bg-page);
+  border: 2px solid var(--handle-color);
   z-index: 100 !important;
   pointer-events: all !important;
   display: flex !important;
@@ -261,7 +268,7 @@ math-field::part(virtual-keyboard-toggle) {
   justify-content: center !important;
   font-size: 8px;
   font-weight: bold;
-  transition: border-color 0.2s, filter 0.2s, transform 0.2s;
+  transition: all 0.2s;
   outline: none !important;
 }
 
@@ -281,7 +288,8 @@ math-field::part(virtual-keyboard-toggle) {
 
 .react-flow__handle:hover {
   z-index: 101 !important;
-  filter: brightness(1.3);
+  transform: scale(1.2);
+  filter: brightness(1.2);
 }
 
 /* Base Handle Shapes */
@@ -297,19 +305,20 @@ math-field::part(virtual-keyboard-toggle) {
 
 /* Current System - Dark Yellow */
 .trigger-edge .react-flow__edge-path {
-  stroke: #b8860b !important;
+  stroke: var(--edge-trigger) !important;
   stroke-dasharray: 5;
   animation: dash 1s linear infinite;
 }
 
 /* Data System - Dark Blue */
 .data-edge .react-flow__edge-path {
-  stroke: #3d5a80 !important;
+  stroke: var(--edge-data) !important;
 }
 
 .react-flow__edge.selected .react-flow__edge-path {
   stroke-width: 3;
   filter: brightness(1.2);
+  stroke: var(--accent-bright) !important;
 }
 
 @keyframes dash {
@@ -332,38 +341,26 @@ math-field::part(virtual-keyboard-toggle) {
 /* Color Labels and Themes */
 .handle-modify {
   --handle-color: #7B1FA2;
-  border-color: var(--handle-color);
-  color: var(--handle-color);
 }
 
 .handle-output {
   --handle-color: #E91E63;
-  border-color: var(--handle-color);
-  color: var(--handle-color);
 }
 
 .handle-input {
   --handle-color: #2196F3;
-  border-color: var(--handle-color);
-  color: var(--handle-color);
 }
 
 .handle-trigger-in {
   --handle-color: #FFEB3B;
-  border-color: var(--handle-color);
-  color: var(--handle-color);
 }
 
 .handle-trigger-out {
   --handle-color: #4CAF50;
-  border-color: var(--handle-color);
-  color: var(--handle-color);
 }
 
 .handle-trigger-err {
   --handle-color: #F44336;
-  border-color: var(--handle-color);
-  color: var(--handle-color);
 }
 
 /* Outset Handles */
@@ -386,38 +383,43 @@ math-field::part(virtual-keyboard-toggle) {
 /* Context Menu CSS */
 .node-context-menu {
   position: absolute;
-  background: #1a1a1a;
-  border: 1px solid #333;
-  border-radius: 4px;
+  background: var(--bg-node);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-node);
+  border-radius: 10px;
   padding: 5px 0;
   z-index: 1000;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--node-shadow);
+  overflow: hidden;
 }
 
 .menu-header {
-  padding: 5px 15px;
+  padding: 6px 14px;
   font-size: 9px;
-  color: #666;
-  font-weight: bold;
+  color: var(--text-sub);
+  font-weight: 700;
   text-transform: uppercase;
-  border-bottom: 1px solid #333;
+  letter-spacing: 1px;
+  border-bottom: 1px solid var(--border-header);
 }
 
 .menu-item {
-  padding: 8px 15px;
-  font-size: 11px;
-  color: #ccc;
+  padding: 9px 14px;
+  font-size: 0.78rem;
+  color: var(--text-main);
   cursor: pointer;
   white-space: nowrap;
+  transition: all 0.15s;
 }
 
 .menu-item:hover {
-  background: #333;
+  background: var(--accent);
   color: #fff;
 }
 
 .border-top {
-  border-top: 1px solid #333;
+  border-top: 1px solid var(--border-header);
 }
 
 /* Edge Hitboxes for adding Handles */

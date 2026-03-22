@@ -40,27 +40,14 @@ export const ButtonNode = ({ id, data, selected }: any) => {
                 display: 'flex',
                 flexDirection: 'column',
                 boxSizing: 'border-box',
-                background: 'rgba(255, 204, 0, 0.05)',
-                border: '1px solid #ffcc00',
-                borderRadius: '8px',
-                padding: '0',
-                boxShadow: '0 4px 12px rgba(255, 204, 0, 0.08)'
+                border: '1px solid var(--border-node)',
+                borderRadius: '16px',
+                boxShadow: 'var(--node-shadow)'
             }}
         >
             <NodeResizer minWidth={80} minHeight={40} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: '#ffcc00' }} />
 
-            <div className="node-header" style={{ 
-                padding: '2px 8px', 
-                fontSize: '0.6rem', 
-                background: 'rgba(255, 204, 0, 0.15)',
-                borderBottom: 'none',
-                color: '#ffcc00',
-                fontWeight: 'bold',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                minHeight: '26px'
-            }}>
+            <div className="node-header" style={{ color: '#ffcc00' }}>
                 <button 
                     onClick={handlePush}
                     className="nodrag"
@@ -68,21 +55,24 @@ export const ButtonNode = ({ id, data, selected }: any) => {
                         background: '#ffcc00',
                         border: 'none',
                         color: '#000',
-                        fontWeight: 'bold',
-                        padding: '2px 10px',
-                        borderRadius: '4px',
+                        fontWeight: '800',
+                        padding: '4px 12px',
+                        borderRadius: '20px',
                         cursor: 'pointer',
-                        fontSize: '0.65rem',
+                        fontSize: '0.7rem',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '4px',
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                        transition: 'transform 0.1s'
+                        gap: '6px',
+                        boxShadow: '0 2px 8px rgba(255, 204, 0, 0.3)',
+                        transition: 'all 0.1s',
+                        fontFamily: 'inherit'
                     }}
-                    onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.92)'; }}
+                    onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.94)'; }}
                     onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
                 >
-                    <span style={{ fontSize: '0.8rem' }}>⚡</span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                    </svg>
                     EXEC
                 </button>
             </div>
