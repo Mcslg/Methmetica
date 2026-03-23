@@ -7,7 +7,7 @@ import useStore from './store/useStore';
 import { nodeTypes, nodeLibrary, getNodeDefinition } from './nodes/registry';
 import { Sidebar } from './components/Sidebar';
 function Flow() {
-  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, removeNode, handleProximitySnap, checkProximity, addHandle, setAltPressed, theme } = useStore();
+  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, removeNode, handleProximitySnap, checkProximity, addHandle, setAltPressed, theme, isSidebarOpen, setDeletingHover } = useStore();
   const { screenToFlowPosition } = useReactFlow();
   const [paneMenu, setPaneMenu] = useState<{ x: number, y: number, screenX: number, screenY: number } | null>(null);
   const [radialMenu, setRadialMenu] = useState<{ x: number, y: number, screenX: number, screenY: number } | null>(null);
@@ -232,6 +232,7 @@ function Flow() {
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        connectOnClick={false}
         onMouseMove={(e) => {
           if (idleTooltip) setIdleTooltip(null);
           if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
@@ -255,7 +256,21 @@ function Flow() {
         onConnect={onConnect}
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
-        onNodeDragStop={(_, node) => handleProximitySnap(node.id)}
+        onNodeDrag={(event: any) => {
+          const x = 'clientX' in event ? event.clientX : (event.touches ? event.touches[0].clientX : 0);
+          const threshold = isSidebarOpen ? 180 : 40;
+          setDeletingHover(x < threshold);
+        }}
+        onNodeDragStop={(event: any, node) => {
+          setDeletingHover(false);
+          const x = 'clientX' in event ? event.clientX : (event.touches ? event.touches[0].clientX : 0);
+          const threshold = isSidebarOpen ? 180 : 40;
+          if (x < threshold) {
+            removeNode(node.id);
+          } else {
+            handleProximitySnap(node.id);
+          }
+        }}
         onPaneContextMenu={onPaneContextMenu}
         onMouseDown={(e: React.MouseEvent) => {
           setIdleTooltip(null);

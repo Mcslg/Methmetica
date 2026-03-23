@@ -1,6 +1,7 @@
 import { NodeResizer } from '@xyflow/react';
 import useStore from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
+import { Icons } from '../components/Icons';
 
 export const ButtonNode = ({ id, data, selected }: any) => {
     const implicitEdges = useStore(state => state.implicitEdges);
@@ -47,9 +48,7 @@ export const ButtonNode = ({ id, data, selected }: any) => {
 
             <div className="node-header">
                 <span>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M13 10V2L4 14h7v8l9-12h-7z" />
-                    </svg>
+                    <Icons.Trigger />
                 </span>
                 <button 
                     onClick={handlePush}
@@ -73,9 +72,7 @@ export const ButtonNode = ({ id, data, selected }: any) => {
                     onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.94)'; }}
                     onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
                 >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-                    </svg>
+                    <Icons.Trigger />
                     EXEC
                 </button>
             </div>

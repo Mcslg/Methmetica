@@ -102,7 +102,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'buttonNode',
         component: ButtonNode,
-        metadata: { label: 'Trigger', desc: 'Signal trigger', category: 'Logic', icon: <Icons.Calculate />, color: 'var(--accent-bright)' },
+        metadata: { label: 'Trigger', desc: 'Signal trigger', category: 'Logic', icon: <Icons.Trigger />, color: 'var(--accent-bright)' },
         defaultSize: { width: 120, height: 46 },
         defaultHandles: buttonNodeHandles
     },
@@ -155,7 +155,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'numberNode',
         component: NumberNode,
-        metadata: { label: 'Number', desc: 'Constant value', category: 'Math', icon: <Icons.Calculate />, color: 'var(--accent-bright)', hidden: true },
+        metadata: { label: 'Number', desc: 'Constant value', category: 'Math', icon: <Icons.Number />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 120, height: 80 },
         defaultHandles: dataNodeHandles
     }

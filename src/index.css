@@ -387,6 +387,10 @@ math-field::part(virtual-keyboard-toggle) {
   --handle-color: #F44336;
 }
 
+.handle-gate-in {
+  --handle-color: #4ade80;
+}
+
 /* Outset Handles */
 .react-flow__handle-right {
   right: -9px;

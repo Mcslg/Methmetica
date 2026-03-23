@@ -15,7 +15,7 @@ import {
     applyEdgeChanges,
 } from '@xyflow/react';
 
-export type HandleType = 'input' | 'output';
+export type HandleType = 'input' | 'output' | 'gate-in';
 
 export type CustomHandle = {
     id: string;
@@ -72,6 +72,10 @@ export type AppState = {
     setAltPressed: (pressed: boolean) => void;
     theme: 'light' | 'dark';
     setTheme: (theme: 'light' | 'dark') => void;
+    isSidebarOpen: boolean;
+    setSidebarOpen: (open: boolean) => void;
+    isDeletingHover: boolean;
+    setDeletingHover: (isHovering: boolean) => void;
 };
 
 // Initial setup nodes
@@ -85,6 +89,10 @@ const useStore = create<AppState>()(
             implicitEdges: [],
             theme: 'dark',
             setTheme: (theme) => set({ theme }),
+            isSidebarOpen: true,
+            setSidebarOpen: (isSidebarOpen) => set({ isSidebarOpen }),
+            isDeletingHover: false,
+            setDeletingHover: (isDeletingHover) => set({ isDeletingHover }),
 
             setGraph: (nodes, edges) => {
                 set({ nodes, edges, implicitEdges: [] });
@@ -501,6 +509,25 @@ const useStore = create<AppState>()(
                     ];
                     const valIn = values.find(v => v !== undefined);
 
+                    // --- [NEW] Global Gate Input Mapping ---
+                    const gateEdge = explicitEdges.find(e => e.targetHandle === 'h-gate-in');
+                    let gateValFromEdge: string | undefined = undefined;
+                    if (gateEdge) {
+                        const source = nextNodes.find(n => n.id === gateEdge.source);
+                        if (source) {
+                            gateValFromEdge = (gateEdge.sourceHandle && source.data.outputs?.[gateEdge.sourceHandle]) ?? source.data.value;
+                        }
+                    }
+
+                    if (gateValFromEdge !== undefined && gateValFromEdge !== node.data.gateValue) {
+                        return { ...node, data: { ...node.data, gateValue: gateValFromEdge } };
+                    }
+                    if (gateValFromEdge === undefined && node.data.gateValue !== undefined && node.data.slots?.gateNode) {
+                         // Clear gateValue if no longer connected but gate slot exists
+                         return { ...node, data: { ...node.data, gateValue: undefined } };
+                    }
+                    // --- END Gate Mapping ---
+
                     // Case for calculateNode & graphNode external formula input
                     if (node.type === 'calculateNode' || node.type === 'graphNode') {
                         const formulaEdges = edges.filter(e => e.target === node.id && e.targetHandle === 'h-fn-in');
@@ -608,6 +635,7 @@ const useStore = create<AppState>()(
           nodes: state.nodes,
           edges: state.edges,
           theme: state.theme,
+          isSidebarOpen: state.isSidebarOpen,
       }),
   }
 )

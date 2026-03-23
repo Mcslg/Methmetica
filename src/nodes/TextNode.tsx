@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useCallback, useMemo, useState } from 'react';
-import { type NodeProps, type Node, NodeResizer, useUpdateNodeInternals } from '@xyflow/react';
+import { type NodeProps, type Node, NodeResizer, useUpdateNodeInternals, Handle, Position } from '@xyflow/react';
 import { createPortal } from 'react-dom';
 import { EditorContent, useEditor, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -18,15 +18,19 @@ import { Icons } from '../components/Icons';
 const LINE_Y_THRESHOLD = 12; // px
 
 export const TextNodeContext = React.createContext<{
+    nodeId: string;
     isHandleActive: (id: string) => boolean;
     toggleHandle: (id: string) => void;
     editMath: (val: string, pos?: { x: number, y: number }) => void;
     renameTrigger: (oldLabel: string, newLabel: string) => void;
+    triggerSync: () => void;
 }>({
+    nodeId: '',
     isHandleActive: () => false,
     toggleHandle: () => { },
     editMath: () => { },
     renameTrigger: () => { },
+    triggerSync: () => { },
 });
 
 // ── CUSTOM TIPTAP EXTENSIONS ──────────────────────────────────────────────
@@ -85,11 +89,28 @@ const MathPill = TiptapNode.create({
             const name = node.attrs.name || '';
             const ctx = React.useContext(TextNodeContext);
             const isAltPressed = useStore(state => state.isAltPressed);
+            const edges = useStore(state => state.edges);
+            
+            // Generate a stable ID based on name or value (sanitized)
+            const safeVal = val.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
+            const stableHandleId = name ? `h-auto-out-${name}` : `h-auto-out-math-${safeVal}`;
             const [localShowHandle, setLocalShowHandle] = useState(ctx.isHandleActive(`math-${val}`));
+            
+            const isConnected = edges.some(e => e.source === ctx.nodeId && e.sourceHandle === stableHandleId);
+            const effectiveShowHandle = localShowHandle || isConnected;
+
+            // Trigger sync ONLY when connectivity changes, not on every render
+            const prevConnectedVal = useRef(isConnected);
+            useEffect(() => {
+                if (prevConnectedVal.current !== isConnected) {
+                    prevConnectedVal.current = isConnected;
+                    ctx.triggerSync();
+                }
+            }, [isConnected, ctx]);
+
             const [isHovered, setIsHovered] = useState(false);
             const pillRef = useRef<HTMLSpanElement>(null);
             const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
-            const [mouseDownPos, setMouseDownPos] = useState({ x: 0, y: 0 });
 
             useEffect(() => {
                 let rafId: number;
@@ -100,9 +121,7 @@ const MathPill = TiptapNode.create({
                         rafId = requestAnimationFrame(update);
                     }
                 };
-                if (isHovered) {
-                    update();
-                }
+                if (isHovered) update();
                 return () => cancelAnimationFrame(rafId);
             }, [isHovered]);
 
@@ -264,129 +283,98 @@ const MathPill = TiptapNode.create({
                 }
             }, [displayVal, sequenceData, isExpanded]);
 
+            // Right-click: open editor
             const onRightClick = (e: React.MouseEvent) => {
-                e.preventDefault();
-                e.stopPropagation();
-                ctx.toggleHandle(`math-${val}`);
-                setLocalShowHandle(!localShowHandle);
-            };
-
-            const handleMouseDown = async (e: React.MouseEvent) => {
-                // Only handle Left Click
-                if (e.button !== 0) return;
-
-                if (e.shiftKey || e.altKey || e.metaKey) {
-                    e.preventDefault();
-                    e.stopPropagation();
-
-                    const currentPos = typeof getPos === 'function' ? getPos() : null;
-                    if (typeof currentPos !== 'number') return;
-
-                    const rawVal = evaluatedVal || val;
-
-                    // Alt+Click Split Logic: x=3, y=5 or ["x=3","y=5"]
-                    if (e.altKey) {
-                        let equations: string[] = [];
-                        // Clean LaTeX bracket markers before splitting
-                        const normalizedStr = rawVal
-                            .replace(/\\left\[/g, '[').replace(/\\right\]/g, ']')
-                            .replace(/\\lbrack/g, '[').replace(/\\rbrack/g, ']')
-                            .replace(/\\lbrace/g, '').replace(/\\rbrace/g, '')
-                            .replace(/\\left\{/g, '').replace(/\\right\./g, '')
-                            .replace(/\\\{/g, '').replace(/\\\}/g, '')
-                            .replace(/[\[\]"]/g, '')
-                            .trim();
-
-                        if ((normalizedStr.includes('=') || normalizedStr.includes(':')) && normalizedStr.includes(',')) {
-                            // Split by comma BUT handle splitting only top-level commas if needed
-                            equations = normalizedStr.split(',').map((eq: string) => eq.trim()).filter(Boolean);
-                        } else if (rawVal.startsWith('[') && rawVal.endsWith(']')) {
-                            try {
-                                const parsed = JSON.parse(rawVal);
-                                if (Array.isArray(parsed)) equations = parsed.map(String);
-                            } catch (err) { }
-                        }
-
-                        if (equations.length >= 2) {
-                            // SPLIT!
-                            editor.chain().focus().command(({ tr }) => {
-                                // Delete current pill
-                                tr.delete(currentPos, currentPos + 1);
-
-                                let insertionPos = currentPos;
-                                equations.forEach((eqn, idx) => {
-                                    // Match x=3 or x:3
-                                    const match = eqn.match(/^([a-zA-Z\d\\_]+)[:=](.*)$/);
-                                    let nodeToInsert;
-                                    if (match) {
-                                        nodeToInsert = editor.schema.nodes.mathPill.create({
-                                            name: match[1].trim(),
-                                            value: match[2].trim()
-                                        });
-                                    } else {
-                                        nodeToInsert = editor.schema.nodes.mathPill.create({ value: eqn });
-                                    }
-
-                                    tr.insert(insertionPos, nodeToInsert);
-                                    insertionPos += 1; // Move past the newly inserted node
-
-                                    if (idx < equations.length - 1) {
-                                        tr.insertText(' ', insertionPos);
-                                        insertionPos += 1;
-                                    }
-                                });
-                                return true;
-                            }).run();
-                            return;
-                        }
-                    }
-
-                    // Fallback to simple replacement
-                    if (rawVal !== val) {
-                        editor.chain().focus().command(({ tr }) => {
-                            tr.setNodeMarkup(currentPos, undefined, { ...node.attrs, value: rawVal });
-                            return true;
-                        }).run();
-                    }
-                    return;
-                }
-
-                // Record mouse down position to distinguish click vs drag
-                setMouseDownPos({ x: e.clientX, y: e.clientY });
-                // Allow selection by NOT calling preventDefault() here when no modifiers are present
-            };
-
-            const handleMouseUp = (e: React.MouseEvent) => {
-                if (e.button !== 0 || e.shiftKey || e.altKey || e.metaKey) return;
-
-                // Check if user is trying to select text by measuring drag distance
-                const dragDist = Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y);
-                if (dragDist > 5) {
-                    return; // Likely a drag selection, don't open editor
-                }
-
                 e.preventDefault();
                 e.stopPropagation();
                 ctx.editMath(val, { x: e.clientX, y: e.clientY });
             };
 
-            const handleCopy = (e: React.ClipboardEvent) => {
-                const textToCopy = displayVal;
-                e.clipboardData.setData('text/plain', textToCopy);
+            // Alt+Click: split pill into multiple pills
+            const handleMouseDown = async (e: React.MouseEvent) => {
+                if (e.button !== 0) return;
+                if (!(e.shiftKey || e.altKey || e.metaKey)) return;
+
                 e.preventDefault();
-                e.stopPropagation(); // Stop propagation to parent (Tiptap)
+                e.stopPropagation();
+
+                const currentPos = typeof getPos === 'function' ? getPos() : null;
+                if (typeof currentPos !== 'number') return;
+
+                const rawVal = evaluatedVal || val;
+
+                if (e.altKey) {
+                    let equations: string[] = [];
+                    const normalizedStr = rawVal
+                        .replace(/\\left\[/g, '[').replace(/\\right\]/g, ']')
+                        .replace(/\\lbrack/g, '[').replace(/\\rbrack/g, ']')
+                        .replace(/\\lbrace/g, '').replace(/\\rbrace/g, '')
+                        .replace(/\\left\{/g, '').replace(/\\right\./g, '')
+                        .replace(/\\\{/g, '').replace(/\\\}/g, '')
+                        .replace(/[\[\]"]/g, '')
+                        .trim();
+
+                    if ((normalizedStr.includes('=') || normalizedStr.includes(':')) && normalizedStr.includes(',')) {
+                        equations = normalizedStr.split(',').map((eq: string) => eq.trim()).filter(Boolean);
+                    } else if (rawVal.startsWith('[') && rawVal.endsWith(']')) {
+                        try {
+                            const parsed = JSON.parse(rawVal);
+                            if (Array.isArray(parsed)) equations = parsed.map(String);
+                        } catch (err) { }
+                    }
+
+                    if (equations.length >= 2) {
+                        editor.chain().focus().command(({ tr }) => {
+                            tr.delete(currentPos, currentPos + 1);
+                            let insertionPos = currentPos;
+                            equations.forEach((eqn, idx) => {
+                                const match = eqn.match(/^([a-zA-Z\d\\_]+)[:=](.*)$/);
+                                let nodeToInsert;
+                                if (match) {
+                                    nodeToInsert = editor.schema.nodes.mathPill.create({
+                                        name: match[1].trim(),
+                                        value: match[2].trim()
+                                    });
+                                } else {
+                                    nodeToInsert = editor.schema.nodes.mathPill.create({ value: eqn });
+                                }
+                                tr.insert(insertionPos, nodeToInsert);
+                                insertionPos += 1;
+                                if (idx < equations.length - 1) {
+                                    tr.insertText(' ', insertionPos);
+                                    insertionPos += 1;
+                                }
+                            });
+                            return true;
+                        }).run();
+                        return;
+                    }
+                }
+
+                if (rawVal !== val) {
+                    editor.chain().focus().command(({ tr }) => {
+                        tr.setNodeMarkup(currentPos, undefined, { ...node.attrs, value: rawVal });
+                        return true;
+                    }).run();
+                }
+            };
+
+            const handleCopy = (e: React.ClipboardEvent) => {
+                e.clipboardData.setData('text/plain', displayVal);
+                e.preventDefault();
+                e.stopPropagation();
             };
 
             return (
                 <NodeViewWrapper
                     as="span"
-                    className={`data-pill-render ${localShowHandle ? 'has-handle' : ''} ${isAltPressed ? 'alt-preview' : ''}`}
+                    className={`data-pill-render ${effectiveShowHandle ? 'has-handle' : ''} ${isAltPressed ? 'alt-preview' : ''}`}
                     data-value={val}
                     data-name={name}
-                    data-show-handle={localShowHandle ? 'true' : 'false'}
+                    data-handle-id={stableHandleId}
+                    data-show-handle={effectiveShowHandle ? 'true' : 'false'}
                     onContextMenu={onRightClick}
                     onMouseDown={handleMouseDown}
-                    onMouseUp={handleMouseUp}
                     onCopy={handleCopy}
                     onMouseEnter={() => setIsHovered(true)}
                     onMouseLeave={() => setIsHovered(false)}
@@ -431,6 +419,27 @@ const MathPill = TiptapNode.create({
                         }}>
                             {name}
                         </span>
+                    )}
+
+                    {!effectiveShowHandle && (
+                        <Handle
+                            type="source"
+                            position={Position.Right}
+                            id={stableHandleId}
+                            style={{
+                                width: '100%',
+                                height: '100%',
+                                top: 0,
+                                left: 0,
+                                position: 'absolute',
+                                transform: 'none',
+                                background: 'transparent',
+                                border: 'none',
+                                opacity: 0,
+                                zIndex: 5,
+                                cursor: 'crosshair'
+                            }}
+                        />
                     )}
 
                     <span style={{
@@ -508,7 +517,7 @@ const MathPill = TiptapNode.create({
                             alignItems: 'center',
                             gap: '8px'
                         }}>
-                            <span style={{ color: '#4facfe' }}>🖱️</span> Edit | <span style={{ color: '#43e97b' }}>⌥+🖱️</span> Compute | <span style={{ color: '#ffcc33' }}>Right-click</span>: Handle
+                            <span style={{ color: '#4facfe' }}>🖱️ Drag</span>: Connect | <span style={{ color: '#43e97b' }}>⌥+🖱️</span>: Compute | <span style={{ color: '#ffcc33' }}>Right-click</span>: Edit
                         </div>,
                         document.body
                     )}
@@ -736,12 +745,11 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             group.elements.forEach((el, subIdx) => {
                 const isDataPill = el.classList.contains('data-pill-render');
                 const name = el.getAttribute('data-name');
+                const customHandleId = el.getAttribute('data-handle-id');
                 const hType: HandleType = 'output';
                 const hPrefix = 'out';
 
-                // Use variable name or trigger label if available for the handle ID
-                const identifier = (isDataPill && name) ? name : `${groupIdx}-${subIdx}`;
-                const hId = `h-auto-${hPrefix}-${identifier}`;
+                const hId = customHandleId || `h-auto-${hPrefix}-${(isDataPill && name) ? name : `${groupIdx}-${subIdx}`}`;
 
                 const staggerOffset = (subIdx - (totalInGroup - 1) / 2) * STAGGER_GAP;
                 const offset = Math.max(0, Math.min(100, ((group.centerY + staggerOffset - containerRect.top) / containerRect.height) * 100));
@@ -768,6 +776,10 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         }
         updateNodeInternals(id);
     }, [data.handles, id, updateNodeData, updateNodeInternals]);
+
+    const triggerSync = useCallback(() => {
+        setTimeout(syncHandlesFromDOM, 10);
+    }, [syncHandlesFromDOM]);
 
     useEffect(() => {
         const timer = setTimeout(syncHandlesFromDOM, 50);
@@ -850,8 +862,17 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         if (cmd === 'bulletList') editor.chain().toggleBulletList().run();
     };
 
+    const contextValue = useMemo(() => ({ 
+        nodeId: id, 
+        isHandleActive, 
+        toggleHandle, 
+        editMath, 
+        renameTrigger, 
+        triggerSync 
+    }), [id, isHandleActive, toggleHandle, editMath, renameTrigger, triggerSync]);
+
     return (
-        <TextNodeContext.Provider value={{ isHandleActive, toggleHandle, editMath, renameTrigger }}>
+        <TextNodeContext.Provider value={contextValue}>
             <div
                 id={`text-node-${id}`}
                 ref={containerRef}

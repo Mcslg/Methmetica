@@ -2,6 +2,39 @@
 
 所有對 **Methmetica** 的重大變更都將記錄在此。
 
+## [0.7.0] - 2026-03-23
+
+### ✨ 節點融合系統 (Node Absorption System)
+- **實體節點隱藏化**: 
+    - `ButtonNode` (按鈕) 與 `GateNode` (閘門) 現在可以被「吸入」至目標節點（Calculate, Solve, Calculus, Graph）。
+    - 被吸入後，目標節點內部會顯示相對應的 UI 控制項（例如：RUN 按鈕、開關狀態指示燈）。
+    - 支援 **Eject (退出)** 功能，隨時可將吸入的節點還原為獨立實體。
+- **動態接口擴充 (Dynamic Handle Expansion)**:
+    - 當 `GateNode` 被吸入時，目標節點會動態生出物理性的 `gate-in` 接口，支援無縫連線。
+    - 統一了吸入節點的執行邏輯，確保數據流與觸發訊號的一致性。
+
+### 🖱️ Math Pill 交互邏輯重構 (Math Pill Interaction Overhaul)
+- **直接拖曳連線 (Drag-to-Connect)**: 
+    - 現在可以直接從文字節點內的「數學藥丸」中心向外拖曳來建立連線。
+    - **接口自動顯示**：建立連線後，該藥丸對應的側面接口會自動激活並顯示。
+- **右鍵開發機制 (Right-Click to Edit)**:
+    - 為了解決單點擊連線與編輯之間的交互衝突，將 MathLive 編輯器的開啟方式改為 **「右鍵點擊」**。
+    - **左鍵拖曳** 專注於連線，**右鍵** 專注於內容編輯。
+- **性能優化與穩定性**:
+    - 通過 Context 快照與防抖機制，徹底修復了 MathPill 連線時可能導致的 `Maximum update depth exceeded` 死循環問題。
+    - 移除所有舊有的 Trigger 事件代碼，全面遷移至標準的 React Flow 資料流架構。
+
+### 🎨 視覺體系重整與淺色模式 (Visual Overhaul & Light Mode)
+- **加入淺色模式支援**: 全面優化了 UI 框架，在淺色模式下依然保持極佳的閱讀體驗與精緻感。
+- **風格統一化**: 重整了節點、菜單、側邊欄與 Command Palette 的視覺語境，減少雜訊。
+- **圖示語義化**: 更新 `ButtonNode`、`NumberNode` 等節點圖示，並為融合後的 RUN 按鈕加上 Trigger 識別圖示。
+
+### ⚙️ 核心邏輯簡化 (Core Streamlining)
+- **刪除電流系統 (Trigger System Removed)**: 移除所有繁瑣的「觸發/偵測」邏輯，系統回歸 100% 透明的反應式資料流 (Reactive Data-flow)。
+- **自動化運算**: 數據只要變動即自動流向終端節點進行求值，無需手動點擊執行。
+
+---
+
 ## [0.6.1] - 2026-03-21
 
 ### ✨ 交互與 UI 優化 (Interactive & UI Polish)

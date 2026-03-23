@@ -73,6 +73,11 @@ export function CalculusNode({ id, data, selected }: NodeProps<Node<NodeData>>) 
             .join(' ')
         : '';
 
+    const augmentedHandles = [...(data.handles || [])];
+    if (data.slots?.gateNode && !augmentedHandles.some(h => h.id === 'h-gate-in')) {
+        augmentedHandles.push({ id: 'h-gate-in', type: 'gate-in', position: 'left', offset: 20, label: 'Gate' });
+    }
+
     return (
         <div className={`math-node op-node calculus-node ${variant}-node ${touchingClasses}`} 
              style={{ 
@@ -86,7 +91,7 @@ export function CalculusNode({ id, data, selected }: NodeProps<Node<NodeData>>) 
             <NodeResizer minWidth={120} minHeight={50} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
             <DynamicHandles
                 nodeId={id}
-                handles={data.handles}
+                handles={augmentedHandles}
                 allowedTypes={['input', 'output']}
                 touchingEdges={data.touchingEdges}
             />
@@ -113,14 +118,24 @@ export function CalculusNode({ id, data, selected }: NodeProps<Node<NodeData>>) 
                                     onClick={handleManualRun}
                                     style={{ background: '#ffcc00', border: 'none', color: '#000', fontSize: '0.6rem', fontWeight: 800, padding: '2px 6px', borderRadius: '2px', cursor: 'pointer' }}
                                 >
-                                    RUN 🔒
+                                    <Icons.Trigger width={10} height={10} style={{ marginRight: 4 }} /> RUN
                                 </button>
                                 <button className="nodrag eject-btn" onClick={() => handleEject('buttonNode')} title="Eject Button">⏏️</button>
                             </div>
                         )}
                         {data.slots.gateNode && (
-                            <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(74, 222, 128, 0.1)', border: '1px solid rgba(74, 222, 128, 0.3)', borderRadius: '4px', padding: '2px 4px' }}>
-                                <span style={{ fontSize: '0.6em', color: '#4ade80', fontWeight: 'bold' }}>GATE</span>
+                            <div style={{ 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                background: Number(data.gateValue || 0) !== 0 ? 'rgba(74, 222, 128, 0.15)' : 'rgba(239, 68, 68, 0.1)', 
+                                border: `1px solid ${Number(data.gateValue || 0) !== 0 ? 'rgba(74, 222, 128, 0.4)' : 'rgba(239, 68, 68, 0.3)'}`, 
+                                borderRadius: '4px', 
+                                padding: '2px 4px',
+                                transition: 'all 0.2s'
+                            }}>
+                                <span style={{ fontSize: '0.6em', color: Number(data.gateValue || 0) !== 0 ? '#4ade80' : '#ef4444', fontWeight: 'bold' }}>
+                                    GATE {Number(data.gateValue || 0) !== 0 ? '✓' : '✗'}
+                                </span>
                                 <button className="nodrag eject-btn" onClick={() => handleEject('gateNode')} title="Eject Gate">⏏️</button>
                             </div>
                         )}

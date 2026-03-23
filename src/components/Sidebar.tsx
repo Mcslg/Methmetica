@@ -5,8 +5,7 @@ import TitleLogo from '../assets/Title.svg';
 import TitleDarkLogo from '../assets/Title_dark.svg';
 
 export function Sidebar() {
-    const { nodes, edges, setGraph, theme, setTheme } = useStore();
-    const [isOpen, setIsOpen] = React.useState(true);
+    const { nodes, edges, setGraph, theme, setTheme, isSidebarOpen, setSidebarOpen, isDeletingHover } = useStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleSave = () => {
@@ -50,7 +49,7 @@ export function Sidebar() {
     };
 
     return (
-        <div className={`sidebar-container ${isOpen ? 'open' : 'closed'}`}>
+        <div className={`sidebar-container ${isSidebarOpen ? 'open' : 'closed'}`}>
             <div className="sidebar-drawer">
                 <div className="sidebar-header">
                     <img
@@ -97,10 +96,17 @@ export function Sidebar() {
                     accept=".json"
                     onChange={handleLoad}
                 />
+                
+                {isDeletingHover && (
+                    <div className="delete-overlay">
+                        <Icons.Clear />
+                        <span>Drop to Delete</span>
+                    </div>
+                )}
             </div>
 
-            <button className="sidebar-toggle-btn" onClick={() => setIsOpen(!isOpen)}>
-                {isOpen ? '‹' : '›'}
+            <button className="sidebar-toggle-btn" onClick={() => setSidebarOpen(!isSidebarOpen)}>
+                {isSidebarOpen ? '‹' : '›'}
             </button>
 
             <style>{`
@@ -118,6 +124,7 @@ export function Sidebar() {
                     transform: translateX(-195px);
                 }
                 .sidebar-drawer {
+                    position: relative;
                     width: 160px;
                     height: 100%;
                     background: var(--bg-sidebar);
@@ -207,6 +214,32 @@ export function Sidebar() {
                 .sidebar-toggle-btn:hover {
                     color: var(--text-main);
                     padding-left: 4px;
+                }
+                .delete-overlay {
+                    position: absolute;
+                    inset: 0;
+                    background: rgba(239, 68, 68, 0.25);
+                    backdrop-filter: blur(10px);
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    color: #fff;
+                    font-size: 0.85rem;
+                    font-weight: 600;
+                    gap: 12px;
+                    z-index: 10000;
+                    pointer-events: none;
+                    animation: fadeIn 0.3s ease;
+                }
+                .delete-overlay svg {
+                    width: 48px;
+                    height: 48px;
+                    opacity: 0.9;
+                }
+                @keyframes fadeIn {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
                 }
             `}</style>
         </div>

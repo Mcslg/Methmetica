@@ -61,6 +61,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
     const panelItems: Record<string, { label: string, desc: string, icon: string, color: string }> = {
         'input': { label: '數據輸入', desc: '接收運算數據', icon: '●', color: '#2196F3' },
         'output': { label: '數據輸出', desc: '傳遞運算結果', icon: '●', color: '#E91E63' },
+        'gate-in': { label: 'Gate 控制', desc: '控制閘門開關 (1=開, 0=關)', icon: '⧁', color: '#4ade80' },
         'delete': { label: '刪除組件', desc: '移除此零件', icon: '🗑', color: '#ff4757' }
     };
 
@@ -330,6 +331,8 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
     };
 
     const getIconContent = () => {
+        const type = handles.find(h => h.id === movingHandle?.id)?.type;
+        if (type === 'gate-in') return '⧁';
         return '●';
     };
 
@@ -389,7 +392,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                     <Handle
                         key={h.id}
                         id={h.id}
-                        type={h.type === 'input' ? 'target' : 'source'}
+                        type={(h.type === 'input' || h.type === 'gate-in') ? 'target' : 'source'}
                         position={getPositionLiteral(h.position)}
                         isConnectable={!cmdPressed}
                         className={`${getShapeClass(h.type)} handle-${h.type} ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
@@ -406,7 +409,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                         }}
                     >
                         <div style={{ transform: `rotate(${getRotation(h.type, h.position)}deg)`, display: 'flex' }}>
-                            {getIconContent()}
+                            {h.type === 'gate-in' ? '⧁' : '●'}
                         </div>
                         {h.label && (
                             <div className="handle-label" style={{
