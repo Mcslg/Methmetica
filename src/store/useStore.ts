@@ -349,7 +349,7 @@ const useStore = create<AppState>()(
     },
 
     handleProximitySnap: (nodeId: string) => {
-        const { nodes, updateNodeData } = get();
+        const { nodes } = get();
         const aIndex = nodes.findIndex(n => n.id === nodeId);
         const a = nodes[aIndex];
         if (!a || !a.measured) return;

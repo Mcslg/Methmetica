@@ -330,12 +330,6 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
         }
     };
 
-    const getIconContent = () => {
-        const type = handles.find(h => h.id === movingHandle?.id)?.type;
-        if (type === 'gate-in') return '⧁';
-        return '●';
-    };
-
     const getRotation = (type: HandleType, side: string) => {
         const isInput = (type === 'input');
         if (isInput) {

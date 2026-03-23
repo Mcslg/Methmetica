@@ -18,7 +18,7 @@ export const calculusNodeHandles: CustomHandle[] = [
 export const textNodeHandles: CustomHandle[] = [];
 
 export const buttonNodeHandles: CustomHandle[] = [
-    { id: 'h-tr-out', type: 'trigger-out', position: 'right', offset: 50 }
+    { id: 'h-tr-out', type: 'output', position: 'right', offset: 50 }
 ];
 
 export const appendNodeHandles: CustomHandle[] = [
@@ -32,8 +32,8 @@ export const insertNodeHandles: CustomHandle[] = [
 
 export const gateNodeHandles: CustomHandle[] = [
     { id: 'h-in', type: 'input', position: 'top', offset: 50 },
-    { id: 'h-tr-in', type: 'trigger-in', position: 'left', offset: 50 },
-    { id: 'h-tr-out', type: 'trigger-out', position: 'right', offset: 50 },
+    { id: 'h-tr-in', type: 'input', position: 'left', offset: 50 },
+    { id: 'h-tr-out', type: 'output', position: 'right', offset: 50 },
 ];
 
 export const rangeNodeHandles: CustomHandle[] = [
@@ -41,9 +41,9 @@ export const rangeNodeHandles: CustomHandle[] = [
 ];
 
 export const forEachNodeHandles: CustomHandle[] = [
-    { id: 'h-tr-in', type: 'trigger-in', position: 'left', offset: 30 },
+    { id: 'h-tr-in', type: 'input', position: 'left', offset: 30 },
     { id: 'h-seq-in', type: 'input', position: 'left', offset: 70 },
-    { id: 'h-tr-out', type: 'trigger-out', position: 'right', offset: 50 }
+    { id: 'h-tr-out', type: 'output', position: 'right', offset: 50 }
 ];
 
 export const graphNodeHandles: CustomHandle[] = [

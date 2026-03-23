@@ -54,12 +54,8 @@ export function DecimalNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             <DynamicHandles
                 nodeId={id}
                 handles={data.handles}
-                allowedTypes={['input', 'output', 'trigger-in', 'trigger-out']}
+                allowedTypes={['input', 'output']}
                 touchingEdges={data.touchingEdges}
-                customDescriptions={{
-                    'trigger-in': '接收電流時執行小數轉換',
-                    'trigger-out': '轉換成功後發出電流'
-                }}
             />
             <div className="node-header">
                 <span><Icons.Decimal /> Decimal</span>

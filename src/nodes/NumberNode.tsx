@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
-import useStore, { type AppState, type NodeData } from '../store/useStore';
+import useStore, { type NodeData } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
 import 'mathlive';
@@ -14,7 +14,6 @@ declare global {
 }
 
 export function NumberNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
-  const updateNodeData = useStore((state: AppState) => state.updateNodeData);
   const mfRef = useRef<any>(null);
 
   useEffect(() => {
@@ -27,12 +26,12 @@ export function NumberNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     }
 
     const handleInput = (e: any) => {
-      updateNodeData(id, { value: e.target.value });
+      useStore.getState().updateNodeData(id, { value: e.target.value });
     };
 
     mf.addEventListener('input', handleInput);
     return () => mf.removeEventListener('input', handleInput);
-  }, [id, data.value, updateNodeData]);
+  }, [id, data.value]);
 
   const touchingClasses = data.touchingEdges
     ? Object.entries(data.touchingEdges)
@@ -47,11 +46,8 @@ export function NumberNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
       <DynamicHandles
         nodeId={id}
         handles={data.handles}
-        allowedTypes={['input', 'output', 'trigger-out']}
+        allowedTypes={['input', 'output']}
         touchingEdges={data.touchingEdges}
-        customDescriptions={{
-          'trigger-out': '當傳入的數值更新時同步發出電流'
-        }}
       />
       <div className="node-header"><span><Icons.Number /> Data</span></div>
       <div className="node-content math-input-container">

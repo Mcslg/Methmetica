@@ -52,7 +52,7 @@ export function RangeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             <DynamicHandles 
                 nodeId={id} 
                 handles={data.handles} 
-                allowedTypes={['output', 'trigger-out']} 
+                allowedTypes={['input', 'output']} 
                 touchingEdges={data.touchingEdges}
             />
         </div>
@@ -73,6 +73,5 @@ export const executeRangeNode = (node: AppNode, state: AppState): void => {
     const res = JSON.stringify(range);
 
     state.updateNodeData(node.id, { value: res });
-    node.data.handles?.filter(h => h.type === 'trigger-out').forEach(h => state.triggerNode(node.id, h.id));
     state.evaluateGraph();
 };

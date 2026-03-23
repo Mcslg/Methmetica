@@ -50,7 +50,7 @@ export function ForEachNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             <DynamicHandles 
                 nodeId={id} 
                 handles={data.handles} 
-                allowedTypes={['input', 'trigger-in', 'trigger-out']} 
+                allowedTypes={['input', 'output']} 
                 touchingEdges={data.touchingEdges}
             />
             
@@ -100,7 +100,6 @@ export const executeForEachNode = (node: AppNode, state: AppState): void => {
             await new Promise(r => setTimeout(r, 50));
         }
         state.updateNodeData(node.id, { status: 'Done' });
-        node.data.handles?.filter(h => h.type === 'trigger-out').forEach(h => state.triggerNode(node.id, h.id));
     };
     runLoop();
 };
