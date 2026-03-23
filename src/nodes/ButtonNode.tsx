@@ -3,23 +3,21 @@ import useStore from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 
 export const ButtonNode = ({ id, data, selected }: any) => {
-    const triggerNode = useStore(state => state.triggerNode);
     const implicitEdges = useStore(state => state.implicitEdges);
 
     const handlePush = () => {
-        // 1. Explicit trigger handles
-        const outHandle = data.handles?.find((h: any) => h.type === 'trigger-out');
-        if (outHandle) {
-            triggerNode(id, outHandle.id);
-        }
+        // Explicitly connected nodes
+        useStore.getState().edges
+            .filter(e => e.source === id)
+            .forEach(e => {
+                useStore.getState().executeNode(e.target);
+            });
 
-        // 2. Implicit triggers (snapped neighbors on the right/bottom)
+        // Implicit triggers (snapped neighbors on the right/bottom)
         implicitEdges
             .filter(e => e.source === id)
             .forEach(e => {
-                const neighborId = e.target;
-                // We use executeNode directly for reactive-like execution
-                useStore.getState().executeNode(neighborId);
+                useStore.getState().executeNode(e.target);
             });
     };
 
@@ -85,7 +83,7 @@ export const ButtonNode = ({ id, data, selected }: any) => {
             <DynamicHandles 
                 nodeId={id} 
                 handles={data.handles} 
-                allowedTypes={['trigger-out']} 
+                allowedTypes={[]} 
                 touchingEdges={data.touchingEdges}
             />
             

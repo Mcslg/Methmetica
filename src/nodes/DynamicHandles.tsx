@@ -61,9 +61,6 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
     const panelItems: Record<string, { label: string, desc: string, icon: string, color: string }> = {
         'input': { label: '數據輸入', desc: '接收運算數據', icon: '●', color: '#2196F3' },
         'output': { label: '數據輸出', desc: '傳遞運算結果', icon: '●', color: '#E91E63' },
-        'trigger-in': { label: '電流輸入', desc: '觸發執行信號', icon: '▶', color: '#FFEB3B' },
-        'trigger-out': { label: '電流輸出', desc: '執行成功信號', icon: '▶', color: '#4CAF50' },
-        'trigger-err': { label: '錯誤偵測', desc: '異常報警信號', icon: '▶', color: '#F44336' },
         'delete': { label: '刪除組件', desc: '移除此零件', icon: '🗑', color: '#ff4757' }
     };
 
@@ -332,13 +329,12 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
         }
     };
 
-    const getIconContent = (type: HandleType) => {
-        if (type === 'trigger-in' || type === 'trigger-out' || type === 'trigger-err') return '▶';
+    const getIconContent = () => {
         return '●';
     };
 
     const getRotation = (type: HandleType, side: string) => {
-        const isInput = (type === 'input' || type === 'trigger-in');
+        const isInput = (type === 'input');
         if (isInput) {
             if (side === 'left') return 0;
             if (side === 'top') return 90;
@@ -393,7 +389,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                     <Handle
                         key={h.id}
                         id={h.id}
-                        type={h.type === 'input' || h.type === 'trigger-in' ? 'target' : 'source'}
+                        type={h.type === 'input' ? 'target' : 'source'}
                         position={getPositionLiteral(h.position)}
                         isConnectable={!cmdPressed}
                         className={`${getShapeClass(h.type)} handle-${h.type} ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
@@ -410,7 +406,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                         }}
                     >
                         <div style={{ transform: `rotate(${getRotation(h.type, h.position)}deg)`, display: 'flex' }}>
-                            {getIconContent(h.type)}
+                            {getIconContent()}
                         </div>
                         {h.label && (
                             <div className="handle-label" style={{

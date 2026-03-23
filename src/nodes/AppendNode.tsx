@@ -75,7 +75,7 @@ export const AppendNode = ({ id, data, selected }: NodeProps<Node<NodeData>>) =>
             <DynamicHandles 
                 nodeId={id} 
                 handles={data.handles} 
-                allowedTypes={['input', 'trigger-in']} 
+                allowedTypes={['input']} 
                 touchingEdges={data.touchingEdges}
             />
 

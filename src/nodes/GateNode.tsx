@@ -1,5 +1,5 @@
 import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
-import { type AppState, type AppNode, type NodeData } from '../store/useStore';
+import { type NodeData } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
 
@@ -39,17 +39,11 @@ export function GateNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             <DynamicHandles 
                 nodeId={id} 
                 handles={data.handles} 
-                allowedTypes={['input', 'trigger-in', 'trigger-out']} 
+                allowedTypes={['input']} 
                 touchingEdges={data.touchingEdges}
             />
         </div>
     );
 }
 
-export const executeGateNode = (node: AppNode, state: AppState): void => {
-    const val = Number(node.data.value || 0);
-    if (val !== 0) {
-        // Fire all trigger-out handles
-        node.data.handles?.filter(h => h.type === 'trigger-out').forEach(h => state.triggerNode(node.id, h.id));
-    }
-};
+

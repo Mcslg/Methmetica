@@ -11,6 +11,36 @@ import 'mathlive';
 export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
 
+    const handleEject = (type: string) => {
+        const slotNode = data.slots?.[type];
+        if (!slotNode) return;
+        useStore.getState().addNode({
+            ...slotNode,
+            id: `${type}-${Date.now()}`,
+            position: { x: slotNode.position.x, y: slotNode.position.y - 80 },
+            selected: false
+        });
+        const newSlots = { ...data.slots };
+        delete newSlots[type];
+
+        // Update both data and dimensions (shrink -40px)
+        const store = useStore.getState();
+        const parentNode = store.nodes.find(n => n.id === id);
+        if (parentNode) {
+            const curWidth = parentNode.width ?? parentNode.measured?.width ?? 300;
+            const curHeight = parentNode.height ?? parentNode.measured?.height ?? 260;
+            
+            useStore.setState({
+                nodes: store.nodes.map(n => n.id === id ? {
+                    ...n,
+                    width: curWidth,
+                    height: Math.max(200, curHeight - 40),
+                    data: { ...n.data, slots: newSlots }
+                } : n)
+            });
+        }
+    };
+
     // Refs
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -427,11 +457,42 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             />
 
             <div className="nowheel" style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', overflow: 'hidden', borderRadius: 'inherit' }}>
-                <div className="node-header">
-                    <span>
-                        <Icons.Graph />
-                        Graph {isReceivingExternal && <span style={{ fontSize: '0.55rem', color: 'var(--accent-bright)', marginLeft: 4 }}>● EXT</span>}
-                    </span>
+                <div className="node-header" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>
+                            <Icons.Graph />
+                            Graph {isReceivingExternal && <span style={{ fontSize: '0.55rem', color: 'var(--accent-bright)', marginLeft: 4 }}>● EXT</span>}
+                        </span>
+                    </div>
+                    {/* Absorbed Slots Rendering */}
+                    {data.slots && Object.keys(data.slots).length > 0 && (
+                        <div style={{ 
+                            marginTop: '6px', 
+                            display: 'flex', 
+                            gap: '4px', 
+                            paddingTop: '6px', 
+                            borderTop: '1px solid rgba(255,255,255,0.1)' 
+                        }}>
+                            {data.slots.buttonNode && (
+                                <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(255, 204, 0, 0.1)', border: '1px solid rgba(255, 204, 0, 0.3)', borderRadius: '4px', padding: '2px 4px' }}>
+                                    <button
+                                        className="nodrag"
+                                        onClick={() => { /* Triggered graph draw could go here if manual lock was enabled */ }}
+                                        style={{ background: '#ffcc00', border: 'none', color: '#000', fontSize: '0.6rem', fontWeight: 800, padding: '2px 6px', borderRadius: '2px', cursor: 'pointer' }}
+                                    >
+                                        RUN 🔒
+                                    </button>
+                                    <button className="nodrag eject-btn" onClick={() => handleEject('buttonNode')} title="Eject Button">⏏️</button>
+                                </div>
+                            )}
+                            {data.slots.gateNode && (
+                                <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(74, 222, 128, 0.1)', border: '1px solid rgba(74, 222, 128, 0.3)', borderRadius: '4px', padding: '2px 4px' }}>
+                                    <span style={{ fontSize: '0.6em', color: '#4ade80', fontWeight: 'bold' }}>GATE</span>
+                                    <button className="nodrag eject-btn" onClick={() => handleEject('gateNode')} title="Eject Gate">⏏️</button>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 {/* Formula input — only show manual editor when NOT receiving external */}
@@ -482,6 +543,18 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             <style>{`
                 .graph-controls button { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
                 .graph-controls button:hover { background: rgba(255,255,255,0.2); }
+                .eject-btn {
+                    background: transparent;
+                    border: none;
+                    cursor: pointer;
+                    font-size: 0.7rem;
+                    margin-left: 4px;
+                    opacity: 0.6;
+                    transition: opacity 0.2s;
+                }
+                .eject-btn:hover {
+                    opacity: 1;
+                }
             `}</style>
         </div>
     );

@@ -536,174 +536,12 @@ const MathPill = TiptapNode.create({
     },
 });
 
-/**
- * TriggerButton Extension
- */
-const TriggerButton = TiptapNode.create({
-    name: 'triggerButton',
-    group: 'inline',
-    inline: true,
-    atom: true,
 
-    addAttributes() {
-        return {
-            label: {
-                default: 'Trigger',
-                parseHTML: element => element.getAttribute('data-label'),
-                renderHTML: attributes => ({
-                    'data-label': attributes.label,
-                })
-            },
-        };
-    },
-
-    parseHTML() {
-        return [
-            {
-                tag: 'button[data-type="trigger-btn"]',
-            },
-            {
-                tag: 'trigger-btn-md',
-                getAttrs: dom => ({ label: (dom as HTMLElement).getAttribute('label') })
-            }
-        ];
-    },
-
-    renderHTML({ HTMLAttributes }) {
-        return ['button', mergeAttributes(HTMLAttributes, { 'data-type': 'trigger-btn' }), 0];
-    },
-
-    addNodeView() {
-        return ReactNodeViewRenderer(({ node }: NodeViewProps) => {
-            const label = node.attrs.label || 'Trigger';
-            const ctx = React.useContext(TextNodeContext);
-            const [localShowHandle, setLocalShowHandle] = useState(ctx.isHandleActive(`trig-${label}`));
-            const [isEditing, setIsEditing] = useState(false);
-            const [editVal, setEditVal] = useState(label);
-
-            useEffect(() => {
-                setLocalShowHandle(ctx.isHandleActive(`trig-${label}`));
-            }, [ctx, label]);
-
-            const onRightClick = (e: React.MouseEvent) => {
-                e.preventDefault();
-                e.stopPropagation();
-                ctx.toggleHandle(`trig-${label}`);
-                setLocalShowHandle(!localShowHandle);
-            };
-
-            const onClick = (e: React.MouseEvent) => {
-                if (isEditing) return;
-                e.preventDefault();
-                e.stopPropagation();
-                const btn = e.currentTarget as HTMLElement;
-                const handleId = btn.getAttribute('data-handle-id');
-                if (handleId) {
-                    const event = new CustomEvent('node-trigger', { detail: { handleId } });
-                    btn.dispatchEvent(event);
-                }
-            };
-
-            const onDoubleClick = (e: React.MouseEvent) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setEditVal(label);
-                setIsEditing(true);
-            };
-
-            const handleKeyDown = (e: React.KeyboardEvent) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    finishEditing();
-                } else if (e.key === 'Escape') {
-                    setIsEditing(false);
-                }
-            };
-
-            const finishEditing = () => {
-                setIsEditing(false);
-                if (editVal.trim() && editVal !== label) {
-                    ctx.renameTrigger(label, editVal.trim());
-                }
-            };
-
-            return (
-                <NodeViewWrapper
-                    as="span"
-                    className={`trigger-btn ${localShowHandle ? 'has-handle' : ''}`}
-                    data-label={label}
-                    data-show-handle={localShowHandle ? 'true' : 'false'}
-                    onContextMenu={onRightClick}
-                    onClick={onClick}
-                    onDoubleClick={onDoubleClick}
-                    contentEditable={false}
-                    style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        background: 'rgba(184,134,11,0.15)',
-                        border: localShowHandle ? '1px solid #ffcc00' : '1px solid rgba(184,134,11,0.4)',
-                        color: '#ffcc00',
-                        padding: isEditing ? '0px 8px' : '2px 12px',
-                        borderRadius: '12px',
-                        fontSize: '0.75rem',
-                        cursor: isEditing ? 'text' : 'pointer',
-                        margin: '2px 6px',
-                        fontWeight: 700,
-                        verticalAlign: 'baseline',
-                        letterSpacing: '0.05em',
-                        transition: 'all 0.2s ease',
-                        boxShadow: localShowHandle ? '0 0 10px rgba(255, 204, 0, 0.2)' : 'none'
-                    }}
-                >
-                    <span style={{ marginRight: '4px', fontSize: '0.9em', pointerEvents: 'none' }}>⚡</span>
-                    {isEditing ? (
-                        <input
-                            autoFocus
-                            value={editVal}
-                            onChange={e => setEditVal(e.target.value)}
-                            onBlur={finishEditing}
-                            onKeyDown={handleKeyDown}
-                            style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: '#ffcc00',
-                                width: `${Math.max(editVal.length, 3)}ch`,
-                                outline: 'none',
-                                fontFamily: 'inherit',
-                                fontSize: 'inherit',
-                                fontWeight: 'inherit',
-                                textTransform: 'inherit'
-                            }}
-                        />
-                    ) : (
-                        <span style={{ pointerEvents: 'none' }}>{label}</span>
-                    )}
-                </NodeViewWrapper>
-            );
-        });
-    },
-
-    addInputRules() {
-        return [
-            {
-                find: /\[(.+)\]\(trigger\)\s$/,
-                handler: ({ state, range, match }: { state: EditorState, range: Range, match: ExtendedRegExpMatchArray }) => {
-                    const { tr } = state;
-                    const label = match[1];
-                    if (label) {
-                        tr.replaceWith(range.from, range.to, this.type.create({ label }));
-                    }
-                },
-            } as any,
-        ];
-    },
-});
 
 // ── MAIN COMPONENT ────────────────────────────────────────────────────────
 
 export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
-    const triggerNode = useStore((state: AppState) => state.triggerNode);
     const updateNodeInternals = useUpdateNodeInternals();
     const containerRef = useRef<HTMLDivElement>(null);
     const contentRef = useRef<HTMLDivElement>(null);
@@ -735,8 +573,7 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     // ── TIPTAP EDITOR SETUP ──────────────────────────────────────────────
     const parseMarkdownToCustomNodes = (md: string) => {
         return md
-            .replace(/\$\$(.*?)\$\$/g, '<math-pill-md value="$1"></math-pill-md>')
-            .replace(/\[(.*?)\]\(trigger\)/g, '<trigger-btn-md label="$1"></trigger-btn-md>');
+            .replace(/\$\$(.*?)\$\$/g, '<math-pill-md value="$1"></math-pill-md>');
     };
 
 
@@ -752,7 +589,6 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                 linkify: false,
             }),
             MathPill,
-            TriggerButton,
         ],
         content: (() => {
             const t = data.text || '';
@@ -843,35 +679,7 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         }, 100);
     }, [editor]);
 
-    const renameTrigger = useCallback((oldLabel: string, newLabel: string) => {
-        if (newLabel && newLabel.trim() !== '' && newLabel !== oldLabel && editor) {
-            let foundPos = -1;
-            let attrs: any = null;
-            editor.state.doc.descendants((node, pos) => {
-                if (node.type.name === 'triggerButton' && node.attrs.label === oldLabel) {
-                    foundPos = pos;
-                    attrs = node.attrs;
-                    return false; // Stop descending
-                }
-            });
-
-            if (foundPos !== -1) {
-                editor.commands.command(({ tr }) => {
-                    tr.setNodeMarkup(foundPos, undefined, { ...attrs, label: newLabel });
-                    return true;
-                });
-
-                if (activeHandles.has(`trig-${oldLabel}`)) {
-                    setActiveHandles(prev => {
-                        const next = new Set(prev);
-                        next.delete(`trig-${oldLabel}`);
-                        next.add(`trig-${newLabel}`);
-                        return next;
-                    });
-                }
-            }
-        }
-    }, [editor, activeHandles]);
+    const renameTrigger = useCallback((_oldLabel: string, _newLabel: string) => {}, []);
 
     // Sync external changes
     useEffect(() => {
@@ -927,14 +735,12 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
 
             group.elements.forEach((el, subIdx) => {
                 const isDataPill = el.classList.contains('data-pill-render');
-                const isTriggerBtn = el.classList.contains('trigger-btn');
                 const name = el.getAttribute('data-name');
-                const label = el.getAttribute('data-label');
-                const hType: HandleType = isTriggerBtn ? 'trigger-out' : 'output';
-                const hPrefix = isTriggerBtn ? 'tr' : 'out';
+                const hType: HandleType = 'output';
+                const hPrefix = 'out';
 
                 // Use variable name or trigger label if available for the handle ID
-                const identifier = (isDataPill && name) ? name : (isTriggerBtn && label) ? label : `${groupIdx}-${subIdx}`;
+                const identifier = (isDataPill && name) ? name : `${groupIdx}-${subIdx}`;
                 const hId = `h-auto-${hPrefix}-${identifier}`;
 
                 const staggerOffset = (subIdx - (totalInGroup - 1) / 2) * STAGGER_GAP;
@@ -975,16 +781,6 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         return () => observer.disconnect();
     }, [syncHandlesFromDOM]);
 
-    useEffect(() => {
-        const el = contentRef.current;
-        if (!el) return;
-        const handler = (e: any) => {
-            const handleId = e.detail.handleId;
-            if (handleId) triggerNode(id, handleId);
-        };
-        el.addEventListener('node-trigger', handler);
-        return () => el.removeEventListener('node-trigger', handler);
-    }, [id, triggerNode]);
 
     // Toolbar application
     const insertMathOrData = () => {
@@ -1105,15 +901,6 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                         <button title="Add Data Pill" onClick={() => {
                             editMath('');
                         }} style={{ color: '#4facfe', fontWeight: 'bold' }}>$$ math $$</button>
-                        <button title="Trigger button" onClick={() => {
-                            // Count existing triggerButton nodes directly in the doc
-                            let count = 0;
-                            editor?.state.doc.descendants(node => {
-                                if (node.type.name === 'triggerButton') count++;
-                            });
-                            const defaultLabel = `Trigger ${count + 1}`;
-                            editor?.chain().insertContent({ type: 'triggerButton', attrs: { label: defaultLabel } }).insertContent(' ').focus().run();
-                        }} style={{ color: '#ffcc00', fontWeight: 'bold' }}>[ ⚡ ](trig)</button>
 
                         <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '8px', alignItems: 'center' }}>
                             {['#ffffff', '#ff7eb9', '#7afcff', '#4facfe', '#43e97b', '#ffcc33'].map(col => (

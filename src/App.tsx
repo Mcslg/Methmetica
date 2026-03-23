@@ -215,36 +215,10 @@ function Flow() {
 
     if (nodeElement && !event.target.closest('.react-flow__handle')) {
       const targetNodeId = nodeElement.getAttribute('data-id');
-      const { nodeId: sourceNodeId, handleId: sourceHandleId } = connectingNodeRef.current;
+      const { nodeId: sourceNodeId } = connectingNodeRef.current;
 
       if (targetNodeId && targetNodeId !== sourceNodeId) {
-        const sourceNode = nodes.find(n => n.id === sourceNodeId);
-        const sourceHandle = sourceNode?.data.handles?.find(h => h.id === sourceHandleId);
-
-        // Only auto-create if it's a trigger connection
-        if (sourceHandle?.type.startsWith('trigger')) {
-          const rect = nodeElement.getBoundingClientRect();
-          const relativeY = ((event.clientY - rect.top) / rect.height) * 100;
-          const newHandleId = `h-auto-tr-in-${Date.now()}`;
-
-          // Add the handle
-          addHandle(targetNodeId, {
-            id: newHandleId,
-            type: 'trigger-in',
-            position: 'left', // Default to left side for auto-generated trigger inputs
-            offset: Math.max(0, Math.min(100, relativeY))
-          });
-
-          // Connect it
-          setTimeout(() => {
-            onConnect({
-              source: sourceNodeId,
-              sourceHandle: sourceHandleId,
-              target: targetNodeId,
-              targetHandle: newHandleId
-            });
-          }, 50);
-        }
+          // Additional logic for edge drops can go here
       }
     }
 

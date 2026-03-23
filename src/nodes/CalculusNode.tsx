@@ -10,6 +10,42 @@ export function CalculusNode({ id, data, selected }: NodeProps<Node<NodeData>>) 
     const variant = data.variant || 'diff'; // 'diff' or 'integ'
     const variable = data.variable || 'x';
 
+    const handleEject = (type: string) => {
+        const slotNode = data.slots?.[type];
+        if (!slotNode) return;
+        
+        useStore.getState().addNode({
+            ...slotNode,
+            id: `${type}-${Date.now()}`,
+            position: { x: slotNode.position.x, y: slotNode.position.y - 80 },
+            selected: false
+        });
+        
+        const newSlots = { ...data.slots };
+        delete newSlots[type];
+
+        // Update both data and dimensions (shrink -40px)
+        const store = useStore.getState();
+        const parentNode = store.nodes.find(n => n.id === id);
+        if (parentNode) {
+            const curWidth = parentNode.width ?? parentNode.measured?.width ?? 160;
+            const curHeight = parentNode.height ?? parentNode.measured?.height ?? 100;
+            
+            useStore.setState({
+                nodes: store.nodes.map(n => n.id === id ? {
+                    ...n,
+                    width: curWidth,
+                    height: Math.max(60, curHeight - 40),
+                    data: { ...n.data, slots: newSlots }
+                } : n)
+            });
+        }
+    };
+
+    const handleManualRun = () => {
+        executeNode(id, true);
+    };
+
     const toggleVariant = () => {
         updateNodeData(id, { variant: variant === 'diff' ? 'integ' : 'diff' });
         // Execute after state updates (timeout ensures state is flushed)
@@ -51,19 +87,45 @@ export function CalculusNode({ id, data, selected }: NodeProps<Node<NodeData>>) 
             <DynamicHandles
                 nodeId={id}
                 handles={data.handles}
-                allowedTypes={['input', 'output', 'trigger-in', 'trigger-out', 'trigger-err']}
+                allowedTypes={['input', 'output']}
                 touchingEdges={data.touchingEdges}
-                customDescriptions={{
-                    'trigger-in': variant === 'diff' ? '接收電流時執行微分' : '接收電流時執行積分',
-                    'trigger-out': '運算成功後發出電流',
-                    'trigger-err': '計算出錯時發出電流'
-                }}
             />
-            <div className="node-header">
-                <span>
-                    <Icons.Calculus />
-                    {variant === 'diff' ? 'Differentiate (d/dx)' : 'Integrate (∫)'}
-                </span>
+            <div className="node-header" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>
+                        <Icons.Calculus />
+                        {variant === 'diff' ? 'Differentiate (d/dx)' : 'Integrate (∫)'}
+                    </span>
+                </div>
+                {/* Absorbed Slots Rendering */}
+                {data.slots && Object.keys(data.slots).length > 0 && (
+                    <div style={{ 
+                        marginTop: '6px', 
+                        display: 'flex', 
+                        gap: '4px', 
+                        paddingTop: '6px', 
+                        borderTop: '1px solid rgba(255,255,255,0.1)' 
+                    }}>
+                        {data.slots.buttonNode && (
+                            <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(255, 204, 0, 0.1)', border: '1px solid rgba(255, 204, 0, 0.3)', borderRadius: '4px', padding: '2px 4px' }}>
+                                <button
+                                    className="nodrag"
+                                    onClick={handleManualRun}
+                                    style={{ background: '#ffcc00', border: 'none', color: '#000', fontSize: '0.6rem', fontWeight: 800, padding: '2px 6px', borderRadius: '2px', cursor: 'pointer' }}
+                                >
+                                    RUN 🔒
+                                </button>
+                                <button className="nodrag eject-btn" onClick={() => handleEject('buttonNode')} title="Eject Button">⏏️</button>
+                            </div>
+                        )}
+                        {data.slots.gateNode && (
+                            <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(74, 222, 128, 0.1)', border: '1px solid rgba(74, 222, 128, 0.3)', borderRadius: '4px', padding: '2px 4px' }}>
+                                <span style={{ fontSize: '0.6em', color: '#4ade80', fontWeight: 'bold' }}>GATE</span>
+                                <button className="nodrag eject-btn" onClick={() => handleEject('gateNode')} title="Eject Gate">⏏️</button>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             <div className="calc-controls" style={{
@@ -127,6 +189,18 @@ export function CalculusNode({ id, data, selected }: NodeProps<Node<NodeData>>) 
                     background: var(--accent);
                     color: #fff;
                     border-color: var(--accent);
+                }
+                .eject-btn {
+                    background: transparent;
+                    border: none;
+                    cursor: pointer;
+                    font-size: 0.7rem;
+                    margin-left: 4px;
+                    opacity: 0.6;
+                    transition: opacity 0.2s;
+                }
+                .eject-btn:hover {
+                    opacity: 1;
                 }
             `}</style>
         </div>

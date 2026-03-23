@@ -15,7 +15,7 @@ import {
     applyEdgeChanges,
 } from '@xyflow/react';
 
-export type HandleType = 'input' | 'output' | 'trigger-in' | 'trigger-out' | 'trigger-err';
+export type HandleType = 'input' | 'output';
 
 export type CustomHandle = {
     id: string;
@@ -44,6 +44,8 @@ export type NodeData = {
     min?: number; // For SliderNode
     max?: number; // For SliderNode
     step?: number; // For SliderNode
+    slots?: Record<string, AppNode>; // Absorbed nodes like gate or button
+    gateValue?: string; // Value representing gate pass/block state
 };
 
 export type AppNode = Node<NodeData>;
@@ -60,8 +62,7 @@ export type AppState = {
     updateHandle: (nodeId: string, handleId: string, patch: Partial<CustomHandle>) => void;
     addNode: (node: AppNode) => void;
     removeNode: (nodeId: string) => void;
-    executeNode: (nodeId: string) => void;
-    triggerNode: (nodeId: string, handleId: string) => void;
+    executeNode: (nodeId: string, force?: boolean) => void;
     checkProximity: () => void;
     handleProximitySnap: (nodeId: string) => void;
     implicitEdges: { source: string, target: string }[];
@@ -108,26 +109,6 @@ const useStore = create<AppState>()(
     onEdgesChange: (changes: EdgeChange[]) => {
         const currentEdges = get().edges;
         const nextEdges = applyEdgeChanges(changes, currentEdges);
-        
-        // Check for removed edges to cleanup trigger-in handles
-        changes.forEach(change => {
-            if (change.type === 'remove') {
-                const edge = currentEdges.find(e => e.id === change.id);
-                if (edge && edge.targetHandle) {
-                    const targetNode = get().nodes.find(n => n.id === edge.target);
-                    const handle = targetNode?.data.handles?.find(h => h.id === edge.targetHandle);
-                    
-                    if (handle?.type === 'trigger-in') {
-                        // If no other edge is using this handle in the NEXT state, remove it
-                        const isStillUsed = nextEdges.some(e => e.target === edge.target && e.targetHandle === edge.targetHandle);
-                        if (!isStillUsed) {
-                            // Defer handle removal to avoid React Flow update conflicts during onEdgesChange
-                            setTimeout(() => get().removeHandle(edge.target, edge.targetHandle!), 0);
-                        }
-                    }
-                }
-            }
-        });
 
         const removedDataEdges = currentEdges.filter(e => 
             (!e.sourceHandle || !e.sourceHandle.startsWith('h-tr')) && 
@@ -144,20 +125,13 @@ const useStore = create<AppState>()(
     },
 
     onConnect: (connection: Connection) => {
-        const { nodes } = get();
-        const sourceNode = nodes.find(n => n.id === connection.source);
-        const sourceHandle = sourceNode?.data.handles?.find(h => h.id === connection.sourceHandle);
-
-        const isTrigger = sourceHandle?.type.startsWith('trigger');
-
         const newEdge = {
             ...connection,
             type: 'default',
-            animated: isTrigger,
-            className: isTrigger ? 'trigger-edge' : 'data-edge',
+            className: 'data-edge',
             style: {
                 strokeWidth: 2,
-                stroke: isTrigger ? '#b8860b' : '#3d5a80'
+                stroke: '#3d5a80'
             }
         };
 
@@ -255,33 +229,30 @@ const useStore = create<AppState>()(
         get().evaluateGraph();
     },
 
-    executeNode: (nodeId: string) => {
+    executeNode: (nodeId: string, force?: boolean) => {
         const { nodes } = get();
         const node = nodes.find(n => n.id === nodeId);
         if (!node) return;
+
+        if (!force && node.data.slots && Object.keys(node.data.slots).length > 0) {
+            if (node.data.slots.buttonNode) return; // Locked by button
+            if (node.data.slots.gateNode) {
+                const gateVal = Number(node.data.gateValue || 0);
+                if (gateVal === 0) return; // Blocked by gate
+            }
+        }
 
         const handleResult = (res: string) => {
             const currentNodes = get().nodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, value: res } } : n);
             set({ nodes: currentNodes });
 
-            // Fire Trigger-Out
-            const updatedNode = currentNodes.find(n => n.id === nodeId);
-            updatedNode?.data.handles?.filter(h => h.type === 'trigger-out').forEach(h => get().triggerNode(nodeId, h.id));
-
-            // Implicit connections
-            get().implicitEdges.filter(e => e.source === nodeId).forEach(edge => get().executeNode(edge.target));
-
-            // Explicit connections (but not triggers)
-            get().edges.filter(e => e.source === nodeId && (!e.sourceHandle || !e.sourceHandle.startsWith('h-tr'))).forEach(edge => get().executeNode(edge.target));
-
+            // implicit and explicit connections are handled by evaluateGraph
             get().evaluateGraph();
         };
 
         const handleError = (err: string) => {
             set({ nodes: get().nodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, value: err } } : n) });
-            const updatedNode = get().nodes.find(n => n.id === nodeId);
-            updatedNode?.data.handles?.filter(h => h.type === 'trigger-err').forEach(h => get().triggerNode(nodeId, h.id));
-            get().implicitEdges.filter(e => e.source === nodeId).forEach(edge => get().executeNode(edge.target));
+            get().evaluateGraph();
         };
 
         const def = getNodeDefinition(node.type || '');
@@ -297,21 +268,6 @@ const useStore = create<AppState>()(
                 handleError(e instanceof Error ? e.message : String(e));
             }
         }
-    },
-
-    triggerNode: (nodeId: string, handleId: string) => {
-        const { edges, nodes } = get();
-        edges
-            .filter(e => e.source === nodeId && e.sourceHandle === handleId)
-            .forEach(e => {
-                const targetNode = nodes.find(n => n.id === e.target);
-                const targetHandle = targetNode?.data.handles?.find(h => h.id === e.targetHandle);
-                // Fire if connecting to a trigger-in or plain input handle (by type, not ID)
-                if (targetHandle?.type === 'trigger-in' || targetHandle?.type === 'input'
-                    || e.targetHandle?.startsWith('h-tr-in') || e.targetHandle === 'h-in') {
-                    get().executeNode(e.target);
-                }
-            });
     },
 
     checkProximity: () => {
@@ -385,10 +341,57 @@ const useStore = create<AppState>()(
     },
 
     handleProximitySnap: (nodeId: string) => {
-        const { nodes } = get();
+        const { nodes, updateNodeData } = get();
         const aIndex = nodes.findIndex(n => n.id === nodeId);
         const a = nodes[aIndex];
         if (!a || !a.measured) return;
+
+        // --- Node Absorption Check ---
+        if (a.type === 'buttonNode' || a.type === 'gateNode') {
+            const aCenterX = a.position.x + (a.measured.width || 0) / 2;
+            const aCenterY = a.position.y + (a.measured.height || 0) / 2;
+
+            for (const b of nodes) {
+                if (b.id === nodeId || !b.measured) continue;
+                
+                // Allowed absorber nodes
+                if (b.type === 'calculateNode' || b.type === 'solveNode' || b.type === 'calculusNode' || b.type === 'graphNode') {
+                    const bX = b.position.x;
+                    const bY = b.position.y;
+                    const bWidth = b.measured.width || 0;
+
+                    // Check top boundary collision: A center is within B width and horizontally near B's top edge (-30px to +40px)
+                    if (aCenterX >= bX && aCenterX <= bX + bWidth &&
+                        aCenterY >= bY - 30 && aCenterY <= bY + 40) {
+                        
+                        const currentSlots = b.data.slots || {};
+                        const newSlots = { ...currentSlots, [a.type]: a };
+                        
+                        // Increase height of absorber node (+40px)
+                        set({
+                            nodes: get().nodes.map(n => {
+                                if (n.id === b.id) {
+                                    const curHeight = n.height ?? n.measured?.height ?? 100;
+                                    const curWidth = n.width ?? n.measured?.width ?? 160;
+                                    return {
+                                        ...n,
+                                        width: curWidth,
+                                        height: curHeight + 40,
+                                        data: { ...n.data, slots: newSlots }
+                                    };
+                                }
+                                return n;
+                            })
+                        });
+                        
+                        // Remove node a
+                        setTimeout(() => get().removeNode(a.id), 0);
+                        return; // Stop snapping
+                    }
+                }
+            }
+        }
+        // --- End Absorption ---
 
         const aWidth = a.measured.width || 0;
         const aHeight = a.measured.height || 0;

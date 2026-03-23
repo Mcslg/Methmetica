@@ -7,7 +7,7 @@ import { DecimalNode } from './DecimalNode';
 import { CalculusNode } from './CalculusNode';
 import { AppendNode, executeAppendNode } from './AppendNode';
 import { ButtonNode } from './ButtonNode';
-import { GateNode, executeGateNode } from './GateNode';
+import { GateNode } from './GateNode';
 import { RangeNode, executeRangeNode } from './RangeNode';
 import { ForEachNode, executeForEachNode } from './ForEachNode';
 import { GraphNode } from './GraphNode';
@@ -111,8 +111,7 @@ export const nodeRegistry: NodeDefinition[] = [
         component: GateNode,
         metadata: { label: 'Gate', desc: 'Pass/Block trigger', category: 'Logic', icon: <Icons.Gate />, color: 'var(--accent-bright)' },
         defaultSize: { width: 180, height: 110 },
-        defaultHandles: gateNodeHandles,
-        execute: executeGateNode
+        defaultHandles: gateNodeHandles
     },
     {
         type: 'rangeNode',

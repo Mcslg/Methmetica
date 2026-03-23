@@ -111,12 +111,53 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
         return () => mf.removeEventListener('input', handleInput);
     }, [id, data.formula, useExternalFormula, updateNodeData]);
 
-    // Re-execute when external formula input changes
+    const isLocked = !!data.slots?.buttonNode;
+
+    // Re-execute when external formula input changes, UNLESS locked
     useEffect(() => {
         if (useExternalFormula && data.formulaInput !== undefined) {
-            executeNode(id);
+            if (!isLocked) {
+                executeNode(id);
+            }
         }
-    }, [data.formulaInput, useExternalFormula, id, executeNode]);
+    }, [data.formulaInput, useExternalFormula, id, executeNode, isLocked]);
+
+    const handleEject = (type: string) => {
+        const slotNode = data.slots?.[type];
+        if (!slotNode) return;
+        
+        // Restore to canvas slightly higher
+        useStore.getState().addNode({
+            ...slotNode,
+            id: `${type}-${Date.now()}`,
+            position: { x: slotNode.position.x, y: slotNode.position.y - 80 },
+            selected: false
+        });
+        
+        const newSlots = { ...data.slots };
+        delete newSlots[type];
+        
+        // Update both data and dimensions (shrink -40px)
+        const store = useStore.getState();
+        const parentNode = store.nodes.find(n => n.id === id);
+        if (parentNode) {
+            const curWidth = parentNode.width ?? parentNode.measured?.width ?? 160;
+            const curHeight = parentNode.height ?? parentNode.measured?.height ?? 100;
+            
+            useStore.setState({
+                nodes: store.nodes.map(n => n.id === id ? {
+                    ...n,
+                    width: curWidth,
+                    height: Math.max(60, curHeight - 40),
+                    data: { ...n.data, slots: newSlots }
+                } : n)
+            });
+        }
+    };
+
+    const handleManualRun = () => {
+        executeNode(id);
+    };
 
 
     const touchingClasses = data.touchingEdges
@@ -141,31 +182,60 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
                 nodeId={id}
                 handles={data.handles}
                 locked={true}
-                allowedTypes={['output', 'trigger-in', 'trigger-out', 'trigger-err']}
+                allowedTypes={['output']}
                 touchingEdges={data.touchingEdges}
                 customDescriptions={{
-                    'trigger-in': '接收電流時自動執行運算',
-                    'trigger-out': '運算成功後發出電流',
-                    'trigger-err': '公式出錯或無效時發出電流',
                     'h-fn-in': '外部公式輸入 (f(x) string)'
                 }}
             />
-            <div className="node-header">
-                <span style={{ display: 'flex', alignItems: 'center' }}><Icons.Calculate /> Calculate</span>
-                <div style={{ display: 'flex', gap: '4px' }}>
-                    <button
-                        onClick={() => updateNodeData(id, { useExternalFormula: !useExternalFormula })}
-                        className="variant-toggle"
-                        style={{ 
-                            fontSize: '0.5rem', 
-                            padding: '2px 4px', 
-                            background: useExternalFormula ? 'var(--accent)' : 'transparent',
-                            color: useExternalFormula ? '#fff' : 'inherit'
-                        }}
-                    >
-                        EXT
-                    </button>
+            <div className="node-header" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ display: 'flex', alignItems: 'center' }}><Icons.Calculate /> Calculate</span>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                        <button
+                            onClick={() => updateNodeData(id, { useExternalFormula: !useExternalFormula })}
+                            className="variant-toggle"
+                            style={{ 
+                                fontSize: '0.5rem', 
+                                padding: '2px 4px', 
+                                background: useExternalFormula ? 'var(--accent)' : 'transparent',
+                                color: useExternalFormula ? '#fff' : 'inherit'
+                            }}
+                        >
+                            EXT
+                        </button>
+                    </div>
                 </div>
+
+                {/* Absorbed Slots Rendering */}
+                {data.slots && Object.keys(data.slots).length > 0 && (
+                    <div style={{ 
+                        marginTop: '6px', 
+                        display: 'flex', 
+                        gap: '4px', 
+                        paddingTop: '6px', 
+                        borderTop: '1px solid rgba(255,255,255,0.1)' 
+                    }}>
+                        {data.slots.buttonNode && (
+                            <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(255, 204, 0, 0.1)', border: '1px solid rgba(255, 204, 0, 0.3)', borderRadius: '4px', padding: '2px 4px' }}>
+                                <button
+                                    className="nodrag"
+                                    onClick={handleManualRun}
+                                    style={{ background: '#ffcc00', border: 'none', color: '#000', fontSize: '0.6rem', fontWeight: 800, padding: '2px 6px', borderRadius: '2px', cursor: 'pointer' }}
+                                >
+                                    RUN 🔒
+                                </button>
+                                <button className="nodrag eject-btn" onClick={() => handleEject('buttonNode')} title="Eject Button">⏏️</button>
+                            </div>
+                        )}
+                        {data.slots.gateNode && (
+                            <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(74, 222, 128, 0.1)', border: '1px solid rgba(74, 222, 128, 0.3)', borderRadius: '4px', padding: '2px 4px' }}>
+                                <span style={{ fontSize: '0.6em', color: '#4ade80', fontWeight: 'bold' }}>GATE</span>
+                                <button className="nodrag eject-btn" onClick={() => handleEject('gateNode')} title="Eject Gate">⏏️</button>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             <div className="node-content custom-scrollbar" style={{ flexGrow: 1, padding: '4px 8px', overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -238,6 +308,18 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
                     background: var(--accent);
                     color: #fff;
                     border-color: var(--accent);
+                }
+                .eject-btn {
+                    background: transparent;
+                    border: none;
+                    cursor: pointer;
+                    font-size: 0.7rem;
+                    margin-left: 4px;
+                    opacity: 0.6;
+                    transition: opacity 0.2s;
+                }
+                .eject-btn:hover {
+                    opacity: 1;
                 }
             `}</style>
         </div>
