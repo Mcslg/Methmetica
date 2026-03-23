@@ -417,7 +417,7 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             className={`math-node op-node graph-node ${touchingClasses}`}
             style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'visible', boxSizing: 'border-box' }}
         >
-            <NodeResizer minWidth={250} minHeight={200} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: '#4facfe' }} />
+            <NodeResizer minWidth={250} minHeight={200} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
             <DynamicHandles
                 nodeId={id}
                 handles={data.handles}
@@ -428,7 +428,7 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
 
             <div className="nowheel" style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', overflow: 'hidden', borderRadius: 'inherit' }}>
                 <div className="node-header">
-                    <span style={{ display: 'flex', alignItems: 'center' }}>
+                    <span>
                         <Icons.Graph />
                         Graph {isReceivingExternal && <span style={{ fontSize: '0.55rem', color: 'var(--accent-bright)', marginLeft: 4 }}>● EXT</span>}
                     </span>
@@ -451,9 +451,9 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                 {isReceivingExternal && (
                     <div style={{ padding: '6px 8px', background: 'var(--bg-input)', borderBottom: '1px solid var(--border-header)', zIndex: 2 }}>
                         <div style={{
-                            width: '100%', background: 'rgba(74,222,128,0.08)', padding: '4px 8px',
+                            width: '100%', background: 'var(--accent-light)', padding: '4px 8px',
                             borderRadius: '4px', fontSize: '0.85rem', color: 'var(--accent-bright)',
-                            minHeight: '28px', border: '1px solid rgba(74,222,128,0.25)',
+                            minHeight: '28px', border: '1px solid var(--border-node)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center'
                         }}>
                             {formulaInput}

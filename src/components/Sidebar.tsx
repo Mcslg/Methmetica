@@ -1,6 +1,8 @@
 import React, { useRef } from 'react';
 import useStore from '../store/useStore';
 import { Icons } from './Icons';
+import TitleLogo from '../assets/Title.svg';
+import TitleDarkLogo from '../assets/Title_dark.svg';
 
 export function Sidebar() {
     const { nodes, edges, setGraph, theme, setTheme } = useStore();
@@ -51,8 +53,12 @@ export function Sidebar() {
         <div className={`sidebar-container ${isOpen ? 'open' : 'closed'}`}>
             <div className="sidebar-drawer">
                 <div className="sidebar-header">
-                    <h2>methmatica</h2>
-                    <p>v0.6.1</p>
+                    <img
+                        src={theme === 'dark' ? TitleDarkLogo : TitleLogo}
+                        alt="methmatica"
+                        style={{ height: '64px', width: 'auto', marginTop: '6px' }}
+                    />
+                    <p style={{ marginTop: '4px' }}>v0.6.1</p>
                 </div>
 
                 <div className="sidebar-section">
@@ -109,10 +115,10 @@ export function Sidebar() {
                     transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1);
                 }
                 .sidebar-container.closed {
-                    transform: translateX(-260px);
+                    transform: translateX(-195px);
                 }
                 .sidebar-drawer {
-                    width: 260px;
+                    width: 160px;
                     height: 100%;
                     background: var(--bg-sidebar);
                     backdrop-filter: blur(20px);
@@ -124,14 +130,11 @@ export function Sidebar() {
                     gap: 28px;
                     box-shadow: 20px 0 50px rgba(0,0,0,0.15);
                 }
-                .sidebar-header h2 {
-                    margin: 0;
-                    font-size: 1.4rem;
-                    letter-spacing: -0.5px;
-                    background: linear-gradient(135deg, #4ade80, #0E2F0B);
-                    -webkit-background-clip: text;
-                    -webkit-text-fill-color: transparent;
-                    font-weight: 800;
+                .sidebar-header {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: flex-start;
+                    pointer-events: none;
                 }
                 .sidebar-header p {
                     margin: 4px 0 0 0;

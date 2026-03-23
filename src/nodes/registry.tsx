@@ -5,14 +5,15 @@ import { CalculateNode } from './CalculateNode';
 import { TextNode } from './TextNode';
 import { DecimalNode } from './DecimalNode';
 import { CalculusNode } from './CalculusNode';
-import { AppendNode } from './AppendNode';
+import { AppendNode, executeAppendNode } from './AppendNode';
 import { ButtonNode } from './ButtonNode';
-import { GateNode } from './GateNode';
-import { RangeNode } from './RangeNode';
-import { ForEachNode } from './ForEachNode';
+import { GateNode, executeGateNode } from './GateNode';
+import { RangeNode, executeRangeNode } from './RangeNode';
+import { ForEachNode, executeForEachNode } from './ForEachNode';
 import { GraphNode } from './GraphNode';
 import { SliderNode } from './SliderNode';
 import { SolveNode } from './SolveNode';
+import { CalculationService } from '../utils/CalculationService';
 import {
     dataNodeHandles,
     toolNodeHandles,
@@ -24,8 +25,12 @@ import {
     rangeNodeHandles,
     forEachNodeHandles,
     graphNodeHandles,
-    sliderNodeHandles,
-    type CustomHandle
+    sliderNodeHandles
+} from './handles';
+import {
+    type CustomHandle,
+    type AppState,
+    type AppNode
 } from '../store/useStore';
 
 export interface NodeMetadata {
@@ -43,7 +48,16 @@ export interface NodeDefinition {
     metadata: NodeMetadata;
     defaultSize: { width: number; height: number };
     defaultHandles: CustomHandle[];
+    execute?: (node: AppNode, state: AppState) => Promise<string | void> | string | void;
 }
+
+const mathExecute = (node: AppNode, state: AppState) => {
+    return CalculationService.calculate(node, {
+        nodes: state.nodes,
+        edges: state.edges,
+        implicitEdges: state.implicitEdges
+    });
+};
 
 export const nodeRegistry: NodeDefinition[] = [
     {
@@ -58,28 +72,32 @@ export const nodeRegistry: NodeDefinition[] = [
         component: CalculateNode,
         metadata: { label: 'Math Calc', desc: 'Symbolic math expressions', category: 'Math', icon: <Icons.Calculate />, color: 'var(--accent-bright)' },
         defaultSize: { width: 160, height: 75 },
-        defaultHandles: toolNodeHandles
+        defaultHandles: toolNodeHandles,
+        execute: mathExecute
     },
     {
         type: 'decimalNode',
         component: DecimalNode,
         metadata: { label: 'Decimal', desc: 'Fraction to float', category: 'Utils', icon: <Icons.Decimal />, color: 'var(--accent-bright)' },
         defaultSize: { width: 200, height: 120 },
-        defaultHandles: toolNodeHandles
+        defaultHandles: toolNodeHandles,
+        execute: mathExecute
     },
     {
         type: 'calculusNode',
         component: CalculusNode,
         metadata: { label: 'Calculus', desc: 'Derivatives & Integrals', category: 'Math', icon: <Icons.Calculus />, color: 'var(--accent-bright)' },
         defaultSize: { width: 160, height: 75 },
-        defaultHandles: calculusNodeHandles
+        defaultHandles: calculusNodeHandles,
+        execute: mathExecute
     },
     {
         type: 'appendNode',
         component: AppendNode,
         metadata: { label: 'Logger', desc: 'Append to TextNode', category: 'Logic', icon: <Icons.Append />, color: 'var(--accent-bright)' },
         defaultSize: { width: 200, height: 120 },
-        defaultHandles: appendNodeHandles
+        defaultHandles: appendNodeHandles,
+        execute: executeAppendNode
     },
     {
         type: 'buttonNode',
@@ -93,28 +111,32 @@ export const nodeRegistry: NodeDefinition[] = [
         component: GateNode,
         metadata: { label: 'Gate', desc: 'Pass/Block trigger', category: 'Logic', icon: <Icons.Gate />, color: 'var(--accent-bright)' },
         defaultSize: { width: 180, height: 110 },
-        defaultHandles: gateNodeHandles
+        defaultHandles: gateNodeHandles,
+        execute: executeGateNode
     },
     {
         type: 'rangeNode',
         component: RangeNode,
         metadata: { label: 'Range', desc: 'Number sequence', category: 'Math', icon: <Icons.Range />, color: 'var(--accent-bright)' },
         defaultSize: { width: 180, height: 110 },
-        defaultHandles: rangeNodeHandles
+        defaultHandles: rangeNodeHandles,
+        execute: executeRangeNode
     },
     {
         type: 'forEachNode',
         component: ForEachNode,
         metadata: { label: 'ForEach', desc: 'Loop neighbor nodes', category: 'Logic', icon: <Icons.ForEach />, color: 'var(--accent-bright)' },
         defaultSize: { width: 180, height: 110 },
-        defaultHandles: forEachNodeHandles
+        defaultHandles: forEachNodeHandles,
+        execute: executeForEachNode
     },
     {
         type: 'graphNode',
         component: GraphNode,
         metadata: { label: 'Graph', desc: 'Plot 2D dynamic functions', category: 'Math', icon: <Icons.Graph />, color: 'var(--accent-bright)' },
         defaultSize: { width: 300, height: 260 },
-        defaultHandles: graphNodeHandles
+        defaultHandles: graphNodeHandles,
+        execute: mathExecute
     },
     {
         type: 'sliderNode',
@@ -128,7 +150,8 @@ export const nodeRegistry: NodeDefinition[] = [
         component: SolveNode,
         metadata: { label: 'Solver', desc: 'Equation solver', category: 'Math', icon: <Icons.Solve />, color: 'var(--accent-bright)' },
         defaultSize: { width: 220, height: 160 },
-        defaultHandles: [{ id: 'h-in', type: 'input', position: 'left', offset: 50, label: 'eq' }, { id: 'h-out', type: 'output', position: 'right', offset: 50 }]
+        defaultHandles: [{ id: 'h-in', type: 'input', position: 'left', offset: 50, label: 'eq' }, { id: 'h-out', type: 'output', position: 'right', offset: 50 }],
+        execute: mathExecute
     },
     {
         type: 'numberNode',

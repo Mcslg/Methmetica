@@ -48,7 +48,7 @@ export function SliderNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                  overflow: 'visible',
                  boxSizing: 'border-box'
              }}>
-            <NodeResizer minWidth={180} minHeight={100} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: '#4facfe' }} />
+            <NodeResizer minWidth={180} minHeight={100} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
             <DynamicHandles
                 nodeId={id}
                 handles={data.handles || [{ id: 'h-out', type: 'output', position: 'right', offset: 50, label: 'val' }]}

@@ -47,7 +47,7 @@ export function CalculusNode({ id, data, selected }: NodeProps<Node<NodeData>>) 
                  overflow: 'visible',
                  boxSizing: 'border-box'
              }}>
-            <NodeResizer minWidth={120} minHeight={50} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: variant === 'diff' ? '#ff4757' : '#1e90ff' }} />
+            <NodeResizer minWidth={120} minHeight={50} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
             <DynamicHandles
                 nodeId={id}
                 handles={data.handles}
@@ -60,7 +60,10 @@ export function CalculusNode({ id, data, selected }: NodeProps<Node<NodeData>>) 
                 }}
             />
             <div className="node-header">
-                <span style={{ display: 'flex', alignItems: 'center' }}><Icons.Calculus /> {variant === 'diff' ? 'Differentiate' : 'Integrate'}</span>
+                <span>
+                    <Icons.Calculus />
+                    {variant === 'diff' ? 'Differentiate (d/dx)' : 'Integrate (∫)'}
+                </span>
             </div>
 
             <div className="calc-controls" style={{

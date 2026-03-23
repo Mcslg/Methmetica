@@ -136,7 +136,7 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
                  overflow: 'visible',
                  boxSizing: 'border-box'
              }}>
-            <NodeResizer minWidth={160} minHeight={120} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: '#4facfe' }} />
+            <NodeResizer minWidth={160} minHeight={120} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
             <DynamicHandles
                 nodeId={id}
                 handles={data.handles}

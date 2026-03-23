@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { type Edge } from '@xyflow/react';
+import { getNodeDefinition } from '../nodes/registry';
 import {
     type Connection,
     type EdgeChange,
@@ -13,7 +14,6 @@ import {
     applyNodeChanges,
     applyEdgeChanges,
 } from '@xyflow/react';
-import { CalculationService } from '../utils/CalculationService';
 
 export type HandleType = 'input' | 'output' | 'trigger-in' | 'trigger-out' | 'trigger-err';
 
@@ -72,61 +72,6 @@ export type AppState = {
     theme: 'light' | 'dark';
     setTheme: (theme: 'light' | 'dark') => void;
 };
-
-export const dataNodeHandles: CustomHandle[] = [
-    { id: 'h-in', type: 'input', position: 'left', offset: 50 },
-    { id: 'h-out', type: 'output', position: 'right', offset: 50 }
-];
-
-export const toolNodeHandles: CustomHandle[] = [
-    { id: 'h-in', type: 'input', position: 'left', offset: 50 },
-    { id: 'h-out', type: 'output', position: 'right', offset: 50 },
-];
-
-export const calculusNodeHandles: CustomHandle[] = [
-    { id: 'h-in', type: 'input', position: 'left', offset: 50 },
-    { id: 'h-out', type: 'output', position: 'right', offset: 50 },
-];
-
-export const textNodeHandles: CustomHandle[] = [];
-
-export const buttonNodeHandles: CustomHandle[] = [
-    { id: 'h-tr-out', type: 'trigger-out', position: 'right', offset: 50 }
-];
-
-export const appendNodeHandles: CustomHandle[] = [
-    { id: 'h-in', type: 'input', position: 'left', offset: 50 },
-];
-
-export const insertNodeHandles: CustomHandle[] = [
-    { id: 'h-in', type: 'input', position: 'left', offset: 30, label: 'Value' },
-    { id: 'h-index', type: 'input', position: 'left', offset: 70, label: 'Line index' },
-];
-
-export const gateNodeHandles: CustomHandle[] = [
-    { id: 'h-in', type: 'input', position: 'top', offset: 50 },
-    { id: 'h-tr-in', type: 'trigger-in', position: 'left', offset: 50 },
-    { id: 'h-tr-out', type: 'trigger-out', position: 'right', offset: 50 },
-];
-
-export const rangeNodeHandles: CustomHandle[] = [
-    { id: 'h-out', type: 'output', position: 'right', offset: 50 }
-];
-
-export const forEachNodeHandles: CustomHandle[] = [
-    { id: 'h-tr-in', type: 'trigger-in', position: 'left', offset: 30 },
-    { id: 'h-seq-in', type: 'input', position: 'left', offset: 70 },
-    { id: 'h-tr-out', type: 'trigger-out', position: 'right', offset: 50 }
-];
-
-export const graphNodeHandles: CustomHandle[] = [
-    { id: 'h-fn-in', type: 'input', position: 'left', offset: 50, label: 'f(x)' }
-];
-
-export const sliderNodeHandles: CustomHandle[] = [
-    { id: 'h-out', type: 'output', position: 'right', offset: 50, label: 'val' }
-];
-
 
 // Initial setup nodes
 const initialNodes: AppNode[] = [];
@@ -315,181 +260,42 @@ const useStore = create<AppState>()(
         const node = nodes.find(n => n.id === nodeId);
         if (!node) return;
 
-        if (['addNode', 'calculateNode', 'solveNode', 'toolNode', 'decimalNode', 'calculusNode', 'appendNode', 'gateNode', 'rangeNode', 'forEachNode'].includes(node.type || '')) {
-            if (node.type === 'forEachNode') {
-                const seqVal = node.data.input || '[]';
-                let seq: any[] = [];
-                try {
-                    seq = JSON.parse(seqVal);
-                    if (!Array.isArray(seq)) seq = [seqVal];
-                } catch {
-                    seq = [seqVal];
+        const handleResult = (res: string) => {
+            const currentNodes = get().nodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, value: res } } : n);
+            set({ nodes: currentNodes });
+
+            // Fire Trigger-Out
+            const updatedNode = currentNodes.find(n => n.id === nodeId);
+            updatedNode?.data.handles?.filter(h => h.type === 'trigger-out').forEach(h => get().triggerNode(nodeId, h.id));
+
+            // Implicit connections
+            get().implicitEdges.filter(e => e.source === nodeId).forEach(edge => get().executeNode(edge.target));
+
+            // Explicit connections (but not triggers)
+            get().edges.filter(e => e.source === nodeId && (!e.sourceHandle || !e.sourceHandle.startsWith('h-tr'))).forEach(edge => get().executeNode(edge.target));
+
+            get().evaluateGraph();
+        };
+
+        const handleError = (err: string) => {
+            set({ nodes: get().nodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, value: err } } : n) });
+            const updatedNode = get().nodes.find(n => n.id === nodeId);
+            updatedNode?.data.handles?.filter(h => h.type === 'trigger-err').forEach(h => get().triggerNode(nodeId, h.id));
+            get().implicitEdges.filter(e => e.source === nodeId).forEach(edge => get().executeNode(edge.target));
+        };
+
+        const def = getNodeDefinition(node.type || '');
+        if (def && def.execute) {
+            try {
+                const result = def.execute(node, get());
+                if (result instanceof Promise) {
+                    result.then((res) => { if (res !== undefined) handleResult(res); }).catch(handleError);
+                } else if (typeof result === 'string') {
+                    handleResult(result);
                 }
-
-                if (seq.length === 0) return;
-
-                // Find neighbor (prioritize magnetic/implicit connection on right or bottom)
-                const implicitNeighbor = get().implicitEdges.find(e => e.source === nodeId)?.target;
-                const explicitNeighbor = get().edges.find(e => e.source === nodeId)?.target;
-                const neighborId = implicitNeighbor || explicitNeighbor;
-                
-                if (!neighborId) {
-                    get().updateNodeData(nodeId, { status: 'Error: No Target' });
-                    return;
-                }
-
-                const runLoop = async () => {
-                    for (let i = 0; i < seq.length; i++) {
-                        const item = seq[i];
-                        // Update its own value so connected nodes can read it (like CalculateNode)
-                        get().updateNodeData(nodeId, { 
-                            status: `Item ${i+1}/${seq.length}`,
-                            value: String(item)
-                        });
-                        
-                        // Also update the target's explicit input (like Calculus or Decimal node)
-                        get().updateNodeData(neighborId, { input: String(item) });
-                        await new Promise(r => setTimeout(r, 100));
-                        get().executeNode(neighborId);
-                        await new Promise(r => setTimeout(r, 50));
-                    }
-                    get().updateNodeData(nodeId, { status: 'Done' });
-                    node.data.handles?.filter(h => h.type === 'trigger-out').forEach(h => get().triggerNode(nodeId, h.id));
-                };
-                runLoop();
-                return;
+            } catch (e) {
+                handleError(e instanceof Error ? e.message : String(e));
             }
-            if (node.type === 'rangeNode') {
-                const inputs = (node.data.rangeDef || '0..10').split('..');
-                const start = parseInt(inputs[0] || '0');
-                const end = parseInt(inputs[1] || '10');
-                const range = [];
-                // Safety cap to prevent browser hang
-                const count = Math.min(Math.abs(end - start) + 1, 1000);
-                const step = start <= end ? 1 : -1;
-                for(let i = 0; i < count; i++) {
-                    range.push(start + (i * step));
-                }
-                const res = JSON.stringify(range);
-                
-                set({ nodes: get().nodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, value: res } } : n) });
-                node.data.handles?.filter(h => h.type === 'trigger-out').forEach(h => get().triggerNode(nodeId, h.id));
-                get().evaluateGraph();
-                return;
-            }
-            if (node.type === 'gateNode') {
-                const val = Number(node.data.value || 0);
-                if (val !== 0) {
-                    // Fire all trigger-out handles
-                    node.data.handles?.filter(h => h.type === 'trigger-out').forEach(h => get().triggerNode(nodeId, h.id));
-                }
-                return;
-            }
-            if (node.type === 'appendNode') {
-                const explicitEdges = get().edges.filter(e => e.target === nodeId);
-                const implicitInputs = get().implicitEdges.filter(e => e.target === nodeId);
-                
-                const values = [
-                    ...explicitEdges.map(e => {
-                        const source = nodes.find(n => n.id === e.source);
-                        return (e.sourceHandle && source?.data.outputs?.[e.sourceHandle]) ?? source?.data.value;
-                    }),
-                    ...implicitInputs.map(e => nodes.find(n => n.id === e.source)?.data?.value)
-                ].filter(v => v !== undefined);
-                
-                const val = values[0];
-                if (val !== undefined && val !== '') {
-                    // Find all implicit neighbors
-                    const neighbors = get().implicitEdges
-                        .filter(e => e.source === nodeId || e.target === nodeId)
-                        .map(e => e.source === nodeId ? e.target : e.source);
-                    
-                    // Specifically find the textNode among neighbors
-                    const targetNode = nodes.find(n => neighbors.includes(n.id) && n.type === 'textNode');
-                    
-                        if (targetNode?.type === 'textNode') {
-                            const oldText = targetNode.data.text || '';
-                            let lines = oldText.split('\n');
-                            let appendix = String(val);
-                            
-                            // Detect if it's a number, formula, or already wrapped
-                            const isNumeric = !isNaN(Number(appendix)) && appendix.trim() !== '';
-                            const isLaTeX = appendix.includes('\\') || appendix.includes('{');
-                            const alreadyWrapped = (appendix.startsWith('$$') && appendix.endsWith('$$')) || (appendix.startsWith('[[') && appendix.endsWith(']]'));
-
-                            
-                            if ((isNumeric || isLaTeX) && !alreadyWrapped) {
-                                appendix = `$$${appendix.trim()}$$`;
-                            }
-
-
-                            if (node.data.variant === 'insert') {
-                                // Find line index input
-                                const indexEdge = get().edges.find(e => e.target === nodeId && e.targetHandle === 'h-index');
-                                let lineIndex = 0;
-                                if (indexEdge) {
-                                    const source = nodes.find(n => n.id === indexEdge.source);
-                                    lineIndex = Number((indexEdge.sourceHandle && source?.data.outputs?.[indexEdge.sourceHandle]) ?? source?.data.value ?? 0);
-                                } else {
-                                    // Try implicit index if any (though usually explicit is better for index)
-                                    const implicitIndex = get().implicitEdges.find(e => e.target === nodeId);
-                                    if (implicitIndex) {
-                                        const source = nodes.find(n => n.id === implicitIndex.source);
-                                        lineIndex = Number(source?.data.value || 0);
-                                    }
-                                }
-                                
-                                // Clean up lines: if all empty, reset
-                                if (lines.length === 1 && lines[0] === '') lines = [];
-                                
-                                // Insert at index
-                                const idx = Math.max(0, Math.min(lines.length, Math.floor(lineIndex)));
-                                lines.splice(idx, 0, appendix);
-                                get().updateNodeData(targetNode.id, { text: lines.join('\n') });
-                            } else {
-                                // Default Append mode
-                                get().updateNodeData(targetNode.id, { text: oldText + (oldText ? '\n' : '') + appendix });
-                            }
-                        }
-                    // Update our own display value
-                    set({ nodes: get().nodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, value: val } } : n) });
-                }
-                return;
-            }
-
-            const handleResult = (res: string) => {
-                const currentNodes = get().nodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, value: res } } : n);
-                set({ nodes: currentNodes });
-
-                // Fire Trigger-Out
-                const updatedNode = currentNodes.find(n => n.id === nodeId);
-                updatedNode?.data.handles?.filter(h => h.type === 'trigger-out').forEach(h => get().triggerNode(nodeId, h.id));
-
-                // Implicit connections
-                get().implicitEdges.filter(e => e.source === nodeId).forEach(edge => get().executeNode(edge.target));
-
-                // Explicit connections (but not triggers)
-                get().edges.filter(e => e.source === nodeId && (!e.sourceHandle || !e.sourceHandle.startsWith('h-tr'))).forEach(edge => get().executeNode(edge.target));
-
-                get().evaluateGraph();
-            };
-
-            const handleError = (err: string) => {
-                set({ nodes: get().nodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, value: err } } : n) });
-                const updatedNode = get().nodes.find(n => n.id === nodeId);
-                updatedNode?.data.handles?.filter(h => h.type === 'trigger-err').forEach(h => get().triggerNode(nodeId, h.id));
-                get().implicitEdges.filter(e => e.source === nodeId).forEach(edge => get().executeNode(edge.target));
-            };
-
-            CalculationService.calculate(node, {
-                nodes: get().nodes,
-                edges: get().edges,
-                implicitEdges: get().implicitEdges
-            })
-                .then(handleResult)
-                .catch((e) => {
-                    handleError(e?.message || String(e));
-                });
         }
     },
 

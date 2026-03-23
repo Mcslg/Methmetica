@@ -51,12 +51,9 @@ export function SolveNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             height: '100%', 
             display: 'flex', 
             flexDirection: 'column', 
-            boxSizing: 'border-box', 
             overflow: 'visible',
-            borderRadius: '12px',
-        border: '1px solid rgba(255, 126, 95, 0.25)'
         }}>
-            <NodeResizer minWidth={160} minHeight={120} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: '#ff7e5f' }} />
+            <NodeResizer minWidth={160} minHeight={120} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
             <DynamicHandles
                 nodeId={id}
                 handles={data.handles}
@@ -69,10 +66,10 @@ export function SolveNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                 }}
             />
             
-            <div className="node-header" style={{ justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div className="node-header">
+                <span>
                     <Icons.Solve />
-                    <span>Solve for</span>
+                    Solve for
                     <input 
                         defaultValue={wrt}
                         onBlur={(e) => updateNodeData(id, { variable: e.target.value })}
@@ -91,7 +88,7 @@ export function SolveNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                             fontFamily: 'inherit'
                         }}
                     />
-                </div>
+                </span>
             </div>
 
             <div className="node-content custom-scrollbar" style={{ 

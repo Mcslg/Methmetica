@@ -50,7 +50,7 @@ export function DecimalNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
 
     return (
         <div className={`math-node op-node decimal-node ${touchingClasses}`} style={{ width: '100%', height: '100%' }}>
-            <NodeResizer minWidth={120} minHeight={80} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: '#43e97b' }} />
+            <NodeResizer minWidth={120} minHeight={80} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
             <DynamicHandles
                 nodeId={id}
                 handles={data.handles}
@@ -62,7 +62,7 @@ export function DecimalNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                 }}
             />
             <div className="node-header">
-                <span style={{ display: 'flex', alignItems: 'center' }}><Icons.Decimal /> Decimal</span>
+                <span><Icons.Decimal /> Decimal</span>
                 <button onClick={() => handleToDecimal()} className="exec-button">CONV</button>
             </div>
             <div className="node-content">

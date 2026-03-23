@@ -269,8 +269,8 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                                         <text className="pie-item-icon" y="-15" style={{ '--item-color': item.color } as any}>
                                             {item.icon}
                                         </text>
-                                        <text className="pie-item-label" y="5" style={{ fill: menu.activeIndex === i ? '#fff' : '#ccc' }}>{item.label}</text>
-                                        <text className="pie-item-desc" y="20">{item.desc}</text>
+                                        <text className="pie-item-label" y="5" style={{ fill: 'var(--text-main)', opacity: menu.activeIndex === i ? 1 : 0.6 }}>{item.label}</text>
+                                        <text className="pie-item-desc" y="20" style={{ fill: 'var(--text-main)', opacity: 0.4 }}>{item.desc}</text>
                                     </g>
                                 </g>
                             );

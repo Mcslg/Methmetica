@@ -5,6 +5,10 @@
   display: none !important;
 }
 
+[data-theme='light'] {
+  color-scheme: light;
+}
+
 :root {
   --font-main: 'Outfit', 'Noto Sans TC', system-ui, -apple-system, sans-serif;
   
@@ -23,6 +27,7 @@
   --accent-bright: #4ade80;
   --edge-data: #3d5a80;
   --edge-trigger: #b8860b;
+  --accent-light: rgba(74, 222, 128, 0.08);
   --node-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
   --node-hover-shadow: 0 8px 32px rgba(74, 222, 128, 0.15);
   --scroll-thumb: rgba(255, 255, 255, 0.1);
@@ -45,9 +50,26 @@
   --accent-bright: #0E2F0B;
   --edge-data: #0E2F0B;
   --edge-trigger: #0E2F0B;
+  --accent-light: rgba(14, 47, 11, 0.04);
   --node-shadow: 0 4px 20px rgba(14, 47, 11, 0.08);
   --node-hover-shadow: 0 8px 30px rgba(14, 47, 11, 0.12);
   --scroll-thumb: rgba(14, 47, 11, 0.2);
+  
+  /* MathLive Light Theme Overrides */
+  --mathfield-background: transparent;
+  --mathfield-foreground: #0E2F0B;
+  --mathfield-caret-color: #0E2F0B;
+  --mathfield-selection-background: rgba(14, 47, 11, 0.15);
+  --keyboard-background: #fdfbf7;
+  --keyboard-button-background: #ffffff;
+  --keyboard-button-text-color: #0E2F0B;
+  --keyboard-button-background-active: #0E2F0B;
+  --keyboard-button-text-color-active: #ffffff;
+  --keyboard-toolbar-background: #fcfaf2;
+  --keyboard-foreground: #0E2F0B;
+  --keyboard-accent-color: #0E2F0B;
+  --keyboard-button-background-variant: #eeeeee;
+  --keyboard-button-text-color-variant: #0E2F0B;
 }
 
 :root {
@@ -63,10 +85,6 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-[data-theme='light'] {
-  color-scheme: light;
 }
 
 body {
@@ -127,6 +145,13 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+}
+
+.node-header > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .node-content {
@@ -288,8 +313,7 @@ math-field::part(virtual-keyboard-toggle) {
 
 .react-flow__handle:hover {
   z-index: 101 !important;
-  transform: scale(1.2);
-  filter: brightness(1.2);
+  filter: brightness(1.1);
 }
 
 /* Base Handle Shapes */
@@ -465,14 +489,14 @@ math-field::part(virtual-keyboard-toggle) {
 /* Handle Panel Menu (New) */
 .handle-panel {
   position: absolute;
-  background: rgba(15, 15, 20, 0.95);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  background: var(--bg-node);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-node);
+  border-radius: 12px;
   padding: 8px 0;
   z-index: 99999 !important;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--node-shadow);
   min-width: 150px;
   pointer-events: all;
 }
@@ -489,7 +513,7 @@ math-field::part(virtual-keyboard-toggle) {
 .handle-panel-title {
   font-size: 0.6rem;
   font-weight: 700;
-  color: #888;
+  color: var(--text-sub);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -497,7 +521,7 @@ math-field::part(virtual-keyboard-toggle) {
 .handle-panel-close {
   cursor: pointer;
   font-size: 14px;
-  color: #555;
+  color: var(--text-sub);
   transition: color 0.2s;
 }
 
@@ -515,14 +539,14 @@ math-field::part(virtual-keyboard-toggle) {
 }
 
 .handle-panel-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--accent-light);
 }
 
 .handle-panel-icon {
   width: 12px;
   height: 12px;
   border: 1px solid var(--handle-color);
-  background: #000;
+  background: var(--bg-node);
   border-radius: 2px;
   display: flex;
   align-items: center;
@@ -535,15 +559,14 @@ math-field::part(virtual-keyboard-toggle) {
   flex-direction: column;
 }
 
-.handle-panel-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: #eee;
+.handle-panel-item-name {
+  font-size: 0.75rem;
+  color: var(--text-main);
 }
 
-.handle-panel-desc {
-  font-size: 9px;
-  color: #777;
+.handle-panel-item-desc {
+  font-size: 0.6rem;
+  color: var(--text-sub);
 }
 
 /* Moving Handle Indicator */
@@ -575,17 +598,44 @@ math-field::part(virtual-keyboard-toggle) {
 /* Pane Context Menu */
 .pane-context-menu {
   position: absolute;
-  background: #1a1a1a;
-  border: 1px solid #333;
-  border-radius: 4px;
-  padding: 5px 0;
-  z-index: 1000;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  background: var(--bg-node);
+  border: 1px solid var(--border-node);
+  border-radius: 10px;
+  padding: 8px 0;
+  z-index: 2000;
+  box-shadow: var(--node-shadow);
+  backdrop-filter: blur(20px);
+  min-width: 160px;
+}
+
+.menu-header {
+  padding: 6px 15px;
+  font-size: 10px;
+  color: var(--text-sub);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-bottom: 1px solid var(--border-header);
+  margin-bottom: 4px;
+}
+
+.menu-item {
+  padding: 10px 15px;
+  font-size: 0.78rem;
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.menu-item:hover {
+  background: var(--accent);
+  color: #fff;
+  padding-left: 20px;
 }
 
 /* Markdown Rendering Styles */
 .markdown-body {
-  color: #eee;
+  color: var(--text-main);
   text-align: left !important;
 }
 
@@ -594,8 +644,8 @@ math-field::part(virtual-keyboard-toggle) {
 .markdown-body h3 {
   margin-top: 1rem;
   margin-bottom: 0.5rem;
-  color: #fff;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-main);
+  border-bottom: 1px solid var(--border-header);
   padding-bottom: 0.2rem;
   text-align: left !important;
 }
@@ -736,8 +786,8 @@ math-field::part(virtual-keyboard-toggle) {
 }
 
 .pie-segment {
-  fill: rgba(20, 20, 25, 0.9);
-  stroke: rgba(255, 255, 255, 0.1);
+  fill: var(--bg-node);
+  stroke: var(--border-header);
   stroke-width: 1;
   cursor: pointer;
   pointer-events: all;
@@ -746,8 +796,8 @@ math-field::part(virtual-keyboard-toggle) {
 
 .pie-segment:hover,
 .pie-segment.active {
-  fill: rgba(60, 60, 80, 0.95);
-  stroke: var(--item-color, rgba(255, 255, 255, 0.3));
+  fill: var(--accent-light);
+  stroke: var(--accent);
   stroke-width: 3;
 }
 
@@ -765,14 +815,15 @@ math-field::part(virtual-keyboard-toggle) {
 
 .pie-item-label {
   font-size: 11px;
-  fill: #fff;
+  fill: var(--text-main);
   font-weight: 700;
   text-anchor: middle;
 }
 
 .pie-item-desc {
   font-size: 8px;
-  fill: #888;
+  fill: var(--text-main);
+  opacity: 0.6;
   text-anchor: middle;
 }
 
@@ -780,13 +831,13 @@ math-field::part(virtual-keyboard-toggle) {
   position: absolute;
   width: 50px;
   height: 50px;
-  background: #000;
-  border: 1px solid rgba(255,255,255,0.1);
+  background: var(--bg-node);
+  border: 1px solid var(--border-node);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--text-main);
   font-size: 20px;
   cursor: pointer;
   pointer-events: all;
@@ -797,59 +848,24 @@ math-field::part(virtual-keyboard-toggle) {
 
 .pie-menu-center-v2:hover {
   transform: scale(1.1);
-  background: #111;
-  color: #ff4757;
+  background: var(--accent);
+  color: #fff;
 }
 
 /* Pane Context Menu Restored */
-.pane-context-menu {
-  position: absolute;
-  background: rgba(20, 20, 25, 0.95);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  padding: 6px 0;
-  z-index: 1000;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  min-width: 160px;
-}
-
-.menu-header {
-  padding: 6px 15px;
-  font-size: 10px;
-  color: #666;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  margin-bottom: 4px;
-}
-
-.menu-item {
-  padding: 10px 15px;
-  font-size: 12px;
-  color: #ccc;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.menu-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
-  padding-left: 20px;
-}
+/* MOVED TO TOP SECTION FOR CONSOLIDATION */
 
 /* Command Palette / Add Node Menu Styles */
 .command-palette {
   position: absolute;
-  background: rgba(15, 15, 20, 0.95);
+  background: var(--bg-node);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--border-node);
   border-radius: 14px;
   width: 350px;
   overflow: hidden;
-  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.7);
+  box-shadow: var(--node-shadow);
   z-index: 2000;
   display: flex;
   flex-direction: column;
@@ -857,17 +873,17 @@ math-field::part(virtual-keyboard-toggle) {
 
 .command-search-container {
   padding: 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid var(--border-header);
+  background: var(--bg-header);
 }
 
 .command-input {
   width: 100%;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
   border-radius: 8px;
   padding: 10px 14px;
-  color: #fff;
+  color: var(--text-main);
   font-family: inherit;
   font-size: 14px;
   outline: none;
@@ -875,9 +891,8 @@ math-field::part(virtual-keyboard-toggle) {
 }
 
 .command-input:focus {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: #4facfe;
-  box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.2);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
 }
 
 .command-list {
@@ -893,12 +908,12 @@ math-field::part(virtual-keyboard-toggle) {
   width: 100%;
   font-size: 10px;
   font-weight: 800;
-  color: #888;
+  color: var(--text-sub);
   text-transform: uppercase;
   letter-spacing: 2px;
   padding: 12px 10px 6px;
   margin-top: 4px;
-  border-top: 1px solid rgba(255, 255, 255, 0.03);
+  border-top: 1px solid var(--border-header);
 }
 
 .command-category:first-of-type {
@@ -916,14 +931,14 @@ math-field::part(virtual-keyboard-toggle) {
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid transparent;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
   box-sizing: border-box;
 }
 
 .command-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: var(--accent);
+  border-color: var(--accent);
   transform: translateY(-1px);
 }
 
@@ -937,15 +952,15 @@ math-field::part(virtual-keyboard-toggle) {
 .command-icon {
   width: 28px;
   height: 28px;
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--bg-node);
+  border: 1px solid var(--border-node);
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 14px;
   flex-shrink: 0;
-  color: var(--theme-color, #fff);
+  color: var(--theme-color, var(--text-main));
 }
 
 .command-info {
@@ -958,7 +973,7 @@ math-field::part(virtual-keyboard-toggle) {
 .command-label {
   font-size: 12px;
   font-weight: 600;
-  color: #eee;
+  color: var(--text-main);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -966,7 +981,7 @@ math-field::part(virtual-keyboard-toggle) {
 
 .command-desc {
   font-size: 9px;
-  color: #666;
+  color: var(--text-sub);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -983,7 +998,7 @@ math-field::part(virtual-keyboard-toggle) {
   width: 100%;
   padding: 40px 10px;
   text-align: center;
-  color: #555;
+  color: var(--text-sub);
   font-size: 13px;
 }
 

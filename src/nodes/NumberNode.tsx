@@ -43,7 +43,7 @@ export function NumberNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
 
   return (
     <div className={`math-node number-node ${touchingClasses}`} style={{ width: '100%', height: '100%' }}>
-      <NodeResizer minWidth={100} minHeight={60} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: '#ff7eb3' }} />
+      <NodeResizer minWidth={100} minHeight={60} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
       <DynamicHandles
         nodeId={id}
         handles={data.handles}
@@ -53,7 +53,7 @@ export function NumberNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
           'trigger-out': '當傳入的數值更新時同步發出電流'
         }}
       />
-      <div className="node-header"><Icons.Number /> Data</div>
+      <div className="node-header"><span><Icons.Number /> Data</span></div>
       <div className="node-content math-input-container">
         {/* @ts-ignore */}
         <math-field

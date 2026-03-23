@@ -1,5 +1,5 @@
 import { NodeResizer, type NodeProps, type Node } from '@xyflow/react';
-import useStore, { type AppState, type NodeData } from '../store/useStore';
+import useStore, { type AppState, type AppNode, type NodeData } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
 
@@ -23,14 +23,12 @@ export function RangeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             className="math-node range-node"
             style={{
                 minWidth: '150px',
-                padding: '0',
-                border: '1px solid rgba(74, 222, 128, 0.25)',
             }}
         >
-            <NodeResizer isVisible={selected} minWidth={150} minHeight={40} />
+            <NodeResizer minWidth={150} minHeight={40} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
             
-            <div className="node-header" style={{ color: 'var(--accent-bright)' }}>
-                <span style={{ display: 'flex', alignItems: 'center' }}><Icons.Range /> Range</span>
+            <div className="node-header">
+                <span><Icons.Range /> Range</span>
             </div>
 
             <div style={{ padding: '8px 12px', display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -60,3 +58,21 @@ export function RangeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         </div>
     );
 }
+
+export const executeRangeNode = (node: AppNode, state: AppState): void => {
+    const inputs = (node.data.rangeDef || '0..10').split('..');
+    const start = parseInt(inputs[0] || '0');
+    const end = parseInt(inputs[1] || '10');
+    const range = [];
+    // Safety cap to prevent browser hang
+    const count = Math.min(Math.abs(end - start) + 1, 1000);
+    const step = start <= end ? 1 : -1;
+    for (let i = 0; i < count; i++) {
+        range.push(start + (i * step));
+    }
+    const res = JSON.stringify(range);
+
+    state.updateNodeData(node.id, { value: res });
+    node.data.handles?.filter(h => h.type === 'trigger-out').forEach(h => state.triggerNode(node.id, h.id));
+    state.evaluateGraph();
+};

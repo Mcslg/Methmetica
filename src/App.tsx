@@ -437,8 +437,8 @@ function Flow() {
                         <g transform="translate(-12, -35)" style={{ color: item.color }}>
                           {item.icon}
                         </g>
-                        <text className="pie-item-label" y="5" style={{ fill: isActive ? '#fff' : '#ccc' }}>{item.label}</text>
-                        <text className="pie-item-desc" y="20">{item.desc}</text>
+                        <text className="pie-item-label" y="5" style={{ fill: 'var(--text-main)', opacity: isActive ? 1 : 0.6 }}>{item.label}</text>
+                        <text className="pie-item-desc" y="20" style={{ fill: 'var(--text-main)', opacity: 0.4 }}>{item.desc}</text>
                       </g>
                     </g>
                   );
@@ -477,7 +477,7 @@ function Flow() {
             border: '1px solid var(--border-node)',
             padding: '8px 14px',
             borderRadius: '12px',
-            color: 'var(--text-sub)',
+            color: 'var(--text-main)',
             fontSize: '0.75rem',
             pointerEvents: 'none',
             zIndex: 9999,

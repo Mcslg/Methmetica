@@ -1,5 +1,5 @@
 import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
-import { type NodeData } from '../store/useStore';
+import { type AppState, type AppNode, type NodeData } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
 
@@ -18,13 +18,13 @@ export function GateNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                 boxShadow: isOpen ? '0 0 15px rgba(74, 222, 128, 0.1)' : 'none'
             }}
         >
-            <NodeResizer isVisible={selected} minWidth={100} minHeight={32} />
+            <NodeResizer minWidth={120} minHeight={110} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
             
             <div className="node-header" style={{ color: isOpen ? 'var(--accent-bright)' : 'var(--text-sub)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>
                     <Icons.Gate />
-                    <span>Gate</span>
-                </div>
+                    Gate
+                </span>
                 <div style={{ 
                     fontSize: '0.55rem', 
                     background: isOpen ? 'var(--accent)' : 'var(--bg-input)',
@@ -45,3 +45,11 @@ export function GateNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         </div>
     );
 }
+
+export const executeGateNode = (node: AppNode, state: AppState): void => {
+    const val = Number(node.data.value || 0);
+    if (val !== 0) {
+        // Fire all trigger-out handles
+        node.data.handles?.filter(h => h.type === 'trigger-out').forEach(h => state.triggerNode(node.id, h.id));
+    }
+};

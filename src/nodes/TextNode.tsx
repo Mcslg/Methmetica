@@ -213,13 +213,13 @@ const MathPill = TiptapNode.create({
 
             const html = useMemo(() => {
                 let textToRender = displayVal;
-                
+
                 // Simultaneous Equations / Vertical Stack Handling
                 // If it starts with { (raw or LaTeX), we treat it as a cases block
                 const trimmed = textToRender.trim();
                 const openers = ['{', '\\{', '\\left\\{', '\\left\\lbrace'];
                 const closers = ['}', '\\}', '\\right.', '\\right\\}', '\\right\\rbrace'];
-                
+
                 let isStacked = false;
                 let content = trimmed;
 
@@ -238,7 +238,7 @@ const MathPill = TiptapNode.create({
                             break;
                         }
                     }
-                    
+
                     // Split equations by comma and join with \\ for LaTeX cases
                     const equations = content.split(',').map((eq: string) => eq.trim()).filter(Boolean);
                     if (equations.length > 1) {
@@ -283,7 +283,7 @@ const MathPill = TiptapNode.create({
                     if (typeof currentPos !== 'number') return;
 
                     const rawVal = evaluatedVal || val;
-                    
+
                     // Alt+Click Split Logic: x=3, y=5 or ["x=3","y=5"]
                     if (e.altKey) {
                         let equations: string[] = [];
@@ -312,21 +312,21 @@ const MathPill = TiptapNode.create({
                             editor.chain().focus().command(({ tr }) => {
                                 // Delete current pill
                                 tr.delete(currentPos, currentPos + 1);
-                                
+
                                 let insertionPos = currentPos;
                                 equations.forEach((eqn, idx) => {
                                     // Match x=3 or x:3
                                     const match = eqn.match(/^([a-zA-Z\d\\_]+)[:=](.*)$/);
                                     let nodeToInsert;
                                     if (match) {
-                                        nodeToInsert = editor.schema.nodes.mathPill.create({ 
-                                            name: match[1].trim(), 
-                                            value: match[2].trim() 
+                                        nodeToInsert = editor.schema.nodes.mathPill.create({
+                                            name: match[1].trim(),
+                                            value: match[2].trim()
                                         });
                                     } else {
                                         nodeToInsert = editor.schema.nodes.mathPill.create({ value: eqn });
                                     }
-                                    
+
                                     tr.insert(insertionPos, nodeToInsert);
                                     insertionPos += 1; // Move past the newly inserted node
 
@@ -778,7 +778,7 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                     if (before === '$') {
                         // Delete the precious $ and open math mode
                         view.dispatch(state.tr.delete(selection.from - 1, selection.from));
-                        
+
                         // Calculate position near caret
                         try {
                             const coords = view.coordsAtPos(selection.from - 1);
@@ -1079,8 +1079,7 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                 <NodeResizer color="transparent" isVisible={selected} minWidth={150} minHeight={80} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
 
                 <div className="node-header">
-                    <Icons.Text />
-                    <span>Note</span>
+                    <span><Icons.Text /> Text</span>
                 </div>
 
                 {(selected || editor?.isFocused) && (

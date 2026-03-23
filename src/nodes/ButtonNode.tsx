@@ -45,9 +45,14 @@ export const ButtonNode = ({ id, data, selected }: any) => {
                 boxShadow: 'var(--node-shadow)'
             }}
         >
-            <NodeResizer minWidth={80} minHeight={40} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: '#ffcc00' }} />
+            <NodeResizer minWidth={80} minHeight={40} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
 
-            <div className="node-header" style={{ color: '#ffcc00' }}>
+            <div className="node-header">
+                <span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M13 10V2L4 14h7v8l9-12h-7z" />
+                    </svg>
+                </span>
                 <button 
                     onClick={handlePush}
                     className="nodrag"
