@@ -1,12 +1,18 @@
 import React, { useRef } from 'react';
 import useStore from '../store/useStore';
+import { NodeLibrary } from './NodeLibrary';
 import { Icons } from './Icons';
 import TitleLogo from '../assets/Title.svg';
 import TitleDarkLogo from '../assets/Title_dark.svg';
 
 export function Sidebar() {
-    const { nodes, edges, setGraph, theme, setTheme, isSidebarOpen, setSidebarOpen, isDeletingHover } = useStore();
+    const { nodes, edges, setGraph, theme, setTheme, isSidebarOpen, setSidebarOpen, isDeletingHover, isPaletteFloating, setPaletteFloating } = useStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const onDragStart = (event: React.DragEvent, nodeType: string) => {
+        event.dataTransfer.setData('application/reactflow', nodeType);
+        event.dataTransfer.effectAllowed = 'move';
+    };
 
     const handleSave = () => {
         const data = { nodes, edges };
@@ -57,8 +63,24 @@ export function Sidebar() {
                         alt="methmatica"
                         style={{ height: '64px', width: 'auto', marginTop: '6px' }}
                     />
-                    <p style={{ marginTop: '4px' }}>v0.6.1</p>
+                    <p style={{ marginTop: '4px' }}>v0.8.0</p>
                 </div>
+
+                {!isPaletteFloating && (
+                    <div className="sidebar-section">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                            <label style={{ marginBottom: 0 }}>Add Nodes <span>(Drag & Drop)</span></label>
+                            <button 
+                                className="icon-btn-small" 
+                                title="Float Toolkit"
+                                onClick={() => setPaletteFloating(true)}
+                            >
+                                <Icons.ExternalLink style={{ width: 14, height: 14 }} />
+                            </button>
+                        </div>
+                        <NodeLibrary onDragStart={onDragStart} layout="sidebar" />
+                    </div>
+                )}
 
                 <div className="sidebar-section">
                     <label>Project</label>
@@ -96,7 +118,7 @@ export function Sidebar() {
                     accept=".json"
                     onChange={handleLoad}
                 />
-                
+
                 {isDeletingHover && (
                     <div className="delete-overlay">
                         <Icons.Clear />
@@ -154,13 +176,100 @@ export function Sidebar() {
                     display: flex;
                     flex-direction: column;
                     gap: 6px;
+                    padding: 8px 0;
+                    border-top: 1px solid var(--border-header);
+                }
+                .sidebar-section:first-of-type {
+                    border-top: none;
+                }
+                .sidebar-section label span {
+                    font-size: 0.6rem;
+                    opacity: 0.5;
+                    font-weight: 400;
+                    margin-left: 4px;
                 }
                 .sidebar-section label {
-                    font-size: 0.75rem;
+                    font-size: 0.72rem;
                     color: var(--text-sub);
+                    margin-bottom: 6px;
+                    font-weight: 800;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                }
+                
+                .icon-btn-small {
+                    background: transparent;
+                    border: none;
+                    color: var(--text-sub);
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 4px;
+                    border-radius: 4px;
+                    transition: all 0.2s;
+                }
+                .icon-btn-small:hover {
+                    color: var(--accent);
+                    background: var(--bg-input);
+                }
+                
+                
+                .node-library-grid {
+                    display: grid;
+                    grid-template-columns: repeat(2, 1fr);
+                    gap: 8px;
                     margin-bottom: 4px;
+                }
+                
+                .library-item {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 6px;
+                    padding: 12px 6px;
+                    background: var(--bg-input);
+                    border: 1px solid var(--border-header);
+                    border-radius: 12px;
+                    cursor: grab;
+                    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+                    user-select: none;
+                }
+                
+                .library-item:hover {
+                    background: var(--bg-node);
+                    border-color: var(--accent);
+                    transform: translateY(-2px);
+                    box-shadow: var(--node-hover-shadow);
+                }
+                
+                .library-item:active {
+                    cursor: grabbing;
+                    transform: scale(0.95);
+                }
+                
+                .library-item svg {
+                    width: 20px;
+                    height: 20px;
+                    color: var(--text-main);
+                    opacity: 0.8;
+                }
+                
+                .library-item:hover svg {
+                    opacity: 1;
+                    color: var(--accent);
+                }
+                
+                .library-item span {
+                    font-size: 0.68rem;
                     font-weight: 600;
-                    letter-spacing: 0.01em;
+                    color: var(--text-sub);
+                    text-align: center;
+                }
+                
+                .library-item:hover span {
+                    color: var(--text-main);
                 }
                 .sidebar-btn {
                     display: flex;

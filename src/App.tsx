@@ -6,8 +6,9 @@ import '@xyflow/react/dist/style.css';
 import useStore from './store/useStore';
 import { nodeTypes, nodeLibrary, getNodeDefinition } from './nodes/registry';
 import { Sidebar } from './components/Sidebar';
+import { FloatingPalette } from './components/FloatingPalette';
 function Flow() {
-  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, removeNode, handleProximitySnap, checkProximity, addHandle, setAltPressed, theme, isSidebarOpen, setDeletingHover } = useStore();
+  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, removeNode, handleProximitySnap, addHandle, setAltPressed, theme, isSidebarOpen, setDeletingHover } = useStore();
   const { screenToFlowPosition } = useReactFlow();
   const [paneMenu, setPaneMenu] = useState<{ x: number, y: number, screenX: number, screenY: number } | null>(null);
   const [radialMenu, setRadialMenu] = useState<{ x: number, y: number, screenX: number, screenY: number } | null>(null);
@@ -154,6 +155,26 @@ function Flow() {
     });
   }, []);
 
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+
+      const type = event.dataTransfer.getData('application/reactflow');
+
+      if (typeof type === 'undefined' || !type) {
+        return;
+      }
+
+      handleAddNode(type, undefined, { x: event.clientX, y: event.clientY });
+    },
+    [screenToFlowPosition]
+  );
+
   const handleAddNode = (type: string, variant?: string, customPos?: { x: number, y: number }) => {
     const posSource = customPos || (radialMenu ? { x: radialMenu.screenX, y: radialMenu.screenY } : paneMenu ? { x: paneMenu.screenX, y: paneMenu.screenY } : null);
     if (!posSource) return;
@@ -228,10 +249,13 @@ function Flow() {
   return (
     <div style={{ width: '100vw', height: '100vh', background: 'var(--bg-page)' }}>
       <Sidebar />
+      <FloatingPalette />
         <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
         connectOnClick={false}
         onMouseMove={(e) => {
           if (idleTooltip) setIdleTooltip(null);
@@ -250,7 +274,6 @@ function Flow() {
         }}
         onNodesChange={(changes) => {
           onNodesChange(changes);
-          if (changes.some(c => c.type === 'position')) checkProximity();
         }}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
@@ -308,7 +331,7 @@ function Flow() {
           gap={18} 
           variant={BackgroundVariant.Dots}
         />
-        <Controls />
+        <Controls position="bottom-right" />
       </ReactFlow>
 
       {paneMenu && (

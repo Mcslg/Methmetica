@@ -4,17 +4,9 @@ import { type Edge } from '@xyflow/react';
 // @ts-ignore
 import nerdamer from 'nerdamer/all.min';
 
-interface MinimalEdge {
-    source: string;
-    target: string;
-    sourceHandle?: string | null;
-    targetHandle?: string | null;
-}
-
 export interface ExecutionContext {
     nodes: AppNode[];
     edges: Edge[];
-    implicitEdges: MinimalEdge[];
 }
 
 export class CalculationService {
@@ -94,7 +86,7 @@ export class CalculationService {
     }
 
     private static async executeFunction(node: AppNode, context: ExecutionContext): Promise<string> {
-        const { nodes, edges, implicitEdges } = context;
+        const { nodes, edges } = context;
         const formula = (node.data.useExternalFormula && node.data.formulaInput)
             ? node.data.formulaInput
             : node.data.formula;
@@ -104,7 +96,6 @@ export class CalculationService {
         const ce = getMathEngine();
         const solver = ce.parse(formula);
         const variables = solver.symbols; // Get list of symbols
-        const implicitInputs = implicitEdges.filter(e => e.target === node.id);
 
         const sequenceVars: Record<string, any[]> = {};
         const staticVars: Record<string, any> = {};
@@ -136,21 +127,6 @@ export class CalculationService {
                         val = sourceNode.data.outputs[edge.sourceHandle];
                     }
                 }
-                // Implicit connection
-                else if (handle.position === 'left') {
-                    const implicitEdge = implicitInputs.find(e => e.target === node.id);
-                    if (implicitEdge) {
-                        const sourceNode = nodes.find(n => n.id === implicitEdge.source);
-                        val = sourceNode?.data?.value;
-                    }
-                }
-            } else if (variables.length === 1) {
-                 // Fallback for single variable implicit
-                 const implicitEdge = implicitInputs.find(e => e.target === node.id);
-                 if (implicitEdge) {
-                     const sourceNode = nodes.find(n => n.id === implicitEdge.source);
-                     val = sourceNode?.data?.value;
-                 }
             }
 
             // Fallback to globally defined variables from text nodes

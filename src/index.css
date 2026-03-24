@@ -1014,3 +1014,166 @@ math-field::part(virtual-keyboard-toggle) {
 .idle-tooltip {
     animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* Node Library & Floating Palette Styles */
+.node-library-container {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.node-library-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+.library-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 12px 6px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-header);
+    border-radius: 12px;
+    cursor: grab;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    user-select: none;
+}
+.library-item:hover {
+    background: var(--bg-node);
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: var(--node-hover-shadow);
+}
+.library-item:active { cursor: grabbing; transform: scale(0.95); }
+.library-item svg {
+    width: 20px;
+    height: 20px;
+    color: var(--text-main);
+    opacity: 0.8;
+}
+.library-item:hover svg { opacity: 1; color: var(--accent); }
+.library-item span {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--text-sub);
+    text-align: center;
+}
+.library-item:hover span { color: var(--text-main); }
+
+.floating-palette-container {
+    position: fixed;
+    z-index: 10000;
+    width: 180px;
+    background: var(--bg-node);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-node);
+    border-radius: 16px;
+    box-shadow: var(--node-shadow);
+    overflow: hidden;
+    animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+@keyframes popIn {
+    from { transform: scale(0.9); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+.palette-header {
+    padding: 10px 14px;
+    background: var(--bg-input);
+    cursor: grab;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-header);
+}
+.palette-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.72rem;
+    font-weight: 800;
+    color: var(--text-main);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.palette-content {
+    padding: 12px;
+    max-height: 440px;
+    overflow-y: auto;
+}
+.palette-content::-webkit-scrollbar { width: 4px; }
+.palette-content::-webkit-scrollbar-thumb { 
+    background: var(--scroll-thumb); 
+    border-radius: 10px; 
+}
+.float .library-item {
+    padding: 8px 4px;
+}
+.dock-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-sub);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+.dock-btn:hover { color: var(--accent); transform: scale(1.1); }
+
+/* React Flow Controls Custom Styling */
+.react-flow__controls {
+  margin: 0 24px 24px 0 !important;
+  background: var(--bg-node) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-node) !important;
+  border-radius: 14px !important;
+  overflow: hidden !important;
+  box-shadow: var(--node-shadow) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0 !important;
+  padding: 2px !important; /* Small padding inside for a nicer look */
+}
+
+.react-flow__controls-button {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 10px !important; /* Rounded buttons inside the container */
+  width: 36px !important;
+  height: 36px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: var(--text-main) !important;
+  fill: var(--text-main) !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  margin: 1px 0 !important;
+}
+
+.react-flow__controls-button:hover {
+  background: var(--accent-light) !important;
+  transform: scale(1.05);
+}
+
+.react-flow__controls-button svg {
+  width: 16px !important;
+  height: 16px !important;
+  fill: currentColor !important;
+}
+
+[data-theme='light'] .react-flow__controls {
+  background: rgba(255, 255, 255, 0.8) !important;
+  border-color: rgba(14, 47, 11, 0.15) !important;
+}
+
+[data-theme='light'] .react-flow__controls-button {
+  color: #0E2F0B !important;
+}
+
+[data-theme='light'] .react-flow__controls-button:hover {
+  background: rgba(14, 47, 11, 0.08) !important;
+}

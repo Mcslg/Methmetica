@@ -54,8 +54,7 @@ export interface NodeDefinition {
 const mathExecute = (node: AppNode, state: AppState) => {
     return CalculationService.calculate(node, {
         nodes: state.nodes,
-        edges: state.edges,
-        implicitEdges: state.implicitEdges
+        edges: state.edges
     });
 };
 

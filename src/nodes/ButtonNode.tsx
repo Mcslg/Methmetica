@@ -4,18 +4,9 @@ import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
 
 export const ButtonNode = ({ id, data, selected }: any) => {
-    const implicitEdges = useStore(state => state.implicitEdges);
-
     const handlePush = () => {
         // Explicitly connected nodes
         useStore.getState().edges
-            .filter(e => e.source === id)
-            .forEach(e => {
-                useStore.getState().executeNode(e.target);
-            });
-
-        // Implicit triggers (snapped neighbors on the right/bottom)
-        implicitEdges
             .filter(e => e.source === id)
             .forEach(e => {
                 useStore.getState().executeNode(e.target);

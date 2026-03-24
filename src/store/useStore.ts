@@ -63,9 +63,7 @@ export type AppState = {
     addNode: (node: AppNode) => void;
     removeNode: (nodeId: string) => void;
     executeNode: (nodeId: string, force?: boolean) => void;
-    checkProximity: () => void;
     handleProximitySnap: (nodeId: string) => void;
-    implicitEdges: { source: string, target: string }[];
     evaluateGraph: () => void;
     setGraph: (nodes: AppNode[], edges: Edge[]) => void;
     isAltPressed: boolean;
@@ -76,6 +74,10 @@ export type AppState = {
     setSidebarOpen: (open: boolean) => void;
     isDeletingHover: boolean;
     setDeletingHover: (isHovering: boolean) => void;
+    isPaletteFloating: boolean;
+    setPaletteFloating: (floating: boolean) => void;
+    palettePosition: { x: number; y: number };
+    setPalettePosition: (pos: { x: number; y: number }) => void;
 };
 
 // Initial setup nodes
@@ -86,16 +88,19 @@ const useStore = create<AppState>()(
         (set, get) => ({
             nodes: initialNodes,
             edges: [],
-            implicitEdges: [],
             theme: 'dark',
             setTheme: (theme) => set({ theme }),
             isSidebarOpen: true,
             setSidebarOpen: (isSidebarOpen) => set({ isSidebarOpen }),
             isDeletingHover: false,
             setDeletingHover: (isDeletingHover) => set({ isDeletingHover }),
+            isPaletteFloating: false,
+            setPaletteFloating: (isPaletteFloating) => set({ isPaletteFloating }),
+            palettePosition: { x: 100, y: 100 },
+            setPalettePosition: (palettePosition) => set({ palettePosition }),
 
             setGraph: (nodes, edges) => {
-                set({ nodes, edges, implicitEdges: [] });
+                set({ nodes, edges });
             },
 
             isAltPressed: false,
@@ -106,12 +111,6 @@ const useStore = create<AppState>()(
         set({
             nodes: applyNodeChanges(changes, get().nodes),
         });
-        
-        // Only run proximity physics if position or size changed (ignores selection changes)
-        const needsProximity = changes.some(c => c.type === 'position' || c.type === 'dimensions');
-        if (needsProximity) {
-            get().checkProximity();
-        }
     },
 
     onEdgesChange: (changes: EdgeChange[]) => {
@@ -278,104 +277,58 @@ const useStore = create<AppState>()(
         }
     },
 
-    checkProximity: () => {
-        const { nodes, implicitEdges: prevEdges } = get();
-        const implicitEdges: { source: string, target: string }[] = [];
-        const touchingStates: Record<string, { left: boolean, right: boolean, top: boolean, bottom: boolean }> = {};
-
-        for (const n of nodes) {
-            touchingStates[n.id] = { left: false, right: false, top: false, bottom: false };
-        }
-
-        for (let i = 0; i < nodes.length; i++) {
-            const nodeA = nodes[i];
-            if (!nodeA.measured) continue;
-            const ax = nodeA.position.x;
-            const ay = nodeA.position.y;
-            const aw = nodeA.measured.width || 0;
-            const ah = nodeA.measured.height || 0;
-
-            for (let j = 0; j < nodes.length; j++) {
-                if (i === j) continue;
-                const nodeB = nodes[j];
-                if (!nodeB.measured) continue;
-                
-                const bx = nodeB.position.x;
-                const by = nodeB.position.y;
-
-                // Horizontal check (A is Left of B)
-                const distRightLeft = Math.abs((ax + aw) - bx);
-                const distYMatch = Math.abs(ay - by);
-                if (distRightLeft < 15 && distYMatch < 15) {
-                    implicitEdges.push({ source: nodeA.id, target: nodeB.id });
-                    touchingStates[nodeA.id].right = true;
-                    touchingStates[nodeB.id].left = true;
-                }
-
-                // Vertical check (A is Top of B)
-                const distBottomTop = Math.abs((ay + ah) - by);
-                const distXMatch = Math.abs(ax - bx);
-                if (distBottomTop < 15 && distXMatch < 15) {
-                    implicitEdges.push({ source: nodeA.id, target: nodeB.id });
-                    touchingStates[nodeA.id].bottom = true;
-                    touchingStates[nodeB.id].top = true;
-                }
-            }
-        }
-
-        let nodesChanged = false;
-        const newNodes = nodes.map(node => {
-            const c = node.data.touchingEdges || { left: false, right: false, top: false, bottom: false };
-            const n = touchingStates[node.id];
-            if (c.left !== n.left || c.right !== n.right || c.top !== n.top || c.bottom !== n.bottom) {
-                nodesChanged = true;
-                return { ...node, data: { ...node.data, touchingEdges: n } };
-            }
-            return node;
-        });
-
-        let edgesChanged = implicitEdges.length !== prevEdges.length;
-        if (!edgesChanged) {
-            for (let i = 0; i < implicitEdges.length; i++) {
-                if (implicitEdges[i].source !== prevEdges[i].source || implicitEdges[i].target !== prevEdges[i].target) {
-                    edgesChanged = true; break;
-                }
-            }
-        }
-
-        if (edgesChanged || nodesChanged) {
-            set({ implicitEdges, nodes: nodesChanged ? newNodes : nodes });
-        }
-    },
+    // checkProximity removed
 
     handleProximitySnap: (nodeId: string) => {
         const { nodes } = get();
         const aIndex = nodes.findIndex(n => n.id === nodeId);
         const a = nodes[aIndex];
-        if (!a || !a.measured) return;
+        if (!a) return;
 
         // --- Node Absorption Check ---
-        if (a.type === 'buttonNode' || a.type === 'gateNode') {
-            const aCenterX = a.position.x + (a.measured.width || 0) / 2;
-            const aCenterY = a.position.y + (a.measured.height || 0) / 2;
+        if (a.type === 'buttonNode' || a.type === 'gateNode' || a.type === 'sliderNode') {
+            const aWidth = a.measured?.width || a.width || 120;
+            const aHeight = a.measured?.height || a.height || 46;
+            const aCenterX = a.position.x + aWidth / 2;
+            const aCenterY = a.position.y + aHeight / 2;
 
             for (const b of nodes) {
-                if (b.id === nodeId || !b.measured) continue;
+                if (b.id === nodeId) continue;
                 
-                // Allowed absorber nodes
-                if (b.type === 'calculateNode' || b.type === 'solveNode' || b.type === 'calculusNode' || b.type === 'graphNode') {
-                    const bX = b.position.x;
-                    const bY = b.position.y;
-                    const bWidth = b.measured.width || 0;
+                const bWidth = b.measured?.width || b.width || 200;
+                const bHeight = b.measured?.height || b.height || 100;
+                const bX = b.position.x;
+                const bY = b.position.y;
 
-                    // Check top boundary collision: A center is within B width and horizontally near B's top edge (-30px to +40px)
-                    if (aCenterX >= bX && aCenterX <= bX + bWidth &&
-                        aCenterY >= bY - 30 && aCenterY <= bY + 40) {
-                        
+                // Allowed absorber nodes
+                if (b.type === 'calculateNode' || b.type === 'solveNode' || b.type === 'calculusNode' || b.type === 'graphNode' || b.type === 'textNode') {
+                    // textNode can only absorb sliderNode
+                    if (b.type === 'textNode' && a.type !== 'sliderNode') continue;
+                    
+                    // Comprehensive 'Is Over' check: covers the entire node area + small buffer around top
+                    const isInsideB = aCenterX >= bX - 10 && aCenterX <= bX + bWidth + 10 &&
+                                    aCenterY >= bY - 30 && aCenterY <= bY + bHeight + 10;
+
+                    if (isInsideB) {
                         const currentSlots = b.data.slots || {};
-                        const newSlots = { ...currentSlots, [a.type]: a };
+                        // When absorbing a slider, we pack its essential data
+                        let aData = a;
+                        if (a.type === 'sliderNode') {
+                            aData = {
+                                ...a,
+                                data: {
+                                    ...a.data,
+                                    min: a.data.min ?? 0,
+                                    max: a.data.max ?? 10,
+                                    step: a.data.step ?? 0.1,
+                                    value: String(a.data.value ?? 5)
+                                }
+                            } as AppNode;
+                        }
+                        const newSlots = { ...currentSlots, [a.type]: aData };
                         
-                        // Increase height of absorber node (+40px)
+                        // Increase height of absorber node (+40px for sliders/buttons, +55px for gates if needed)
+                        const heightInc = (a.type === 'gateNode') ? 55 : 40;
                         set({
                             nodes: get().nodes.map(n => {
                                 if (n.id === b.id) {
@@ -384,7 +337,7 @@ const useStore = create<AppState>()(
                                     return {
                                         ...n,
                                         width: curWidth,
-                                        height: curHeight + 40,
+                                        height: curHeight + heightInc,
                                         data: { ...n.data, slots: newSlots }
                                     };
                                 }
@@ -400,93 +353,25 @@ const useStore = create<AppState>()(
             }
         }
         // --- End Absorption ---
-
-        const aWidth = a.measured.width || 0;
-        const aHeight = a.measured.height || 0;
-        let aLeft = a.position.x;
-        let aTop = a.position.y;
-        const SNAP_DIST = 45;
-        let snaped = false;
-
-        for (const b of nodes) {
-            if (b.id === nodeId || !b.measured) continue;
-
-            const bLeft = b.position.x;
-            const bTop = b.position.y;
-            const bWidth = b.measured.width || 0;
-            const bHeight = b.measured.height || 0;
-
-            // 1. Horizontal Snapping (Left-Right)
-            if (Math.abs(aTop - bTop) < SNAP_DIST) {
-                // A Right to B Left
-                if (Math.abs((aLeft + aWidth) - bLeft) < SNAP_DIST) {
-                    aLeft = bLeft - aWidth;
-                    aTop = bTop;
-                    snaped = true;
-                    break;
-                }
-                // A Left to B Right
-                if (Math.abs(aLeft - (bLeft + bWidth)) < SNAP_DIST) {
-                    aLeft = bLeft + bWidth;
-                    aTop = bTop;
-                    snaped = true;
-                    break;
-                }
-            }
-
-            // 2. Vertical Snapping (Top-Bottom)
-            if (Math.abs(aLeft - bLeft) < SNAP_DIST) {
-                // A Bottom to B Top
-                if (Math.abs((aTop + aHeight) - bTop) < SNAP_DIST) {
-                    aTop = bTop - aHeight;
-                    aLeft = bLeft;
-                    snaped = true;
-                    break;
-                }
-                // A Top to B Bottom
-                if (Math.abs(aTop - (bTop + bHeight)) < SNAP_DIST) {
-                    aTop = bTop + bHeight;
-                    aLeft = bLeft;
-                    snaped = true;
-                    break;
-                }
-            }
-        }
-
-        if (snaped) {
-            set({
-                nodes: get().nodes.map((n) =>
-                    n.id === nodeId ? { ...n, position: { x: aLeft, y: aTop } } : n
-                )
-            });
-        }
-        get().checkProximity();
     },
 
     evaluateGraph: () => {
         const { nodes, edges } = get();
-        const implicitInputsRaw = get().implicitEdges;
         let nextNodes = [...nodes];
 
         // 1. Build rapid-access maps for incoming edges
         const targetToExplicit = new Map<string, typeof edges>();
-        const targetToImplicit = new Map<string, typeof implicitInputsRaw>();
         edges.forEach(e => {
             if (!targetToExplicit.has(e.target)) targetToExplicit.set(e.target, []);
             targetToExplicit.get(e.target)!.push(e);
-        });
-        implicitInputsRaw.forEach(e => {
-            if (!targetToImplicit.has(e.target)) targetToImplicit.set(e.target, []);
-            targetToImplicit.get(e.target)!.push(e);
         });
 
         for (let i = 0; i < 5; i++) {
             const tempNodes = nextNodes.map(node => {
                 // Rapidly look up dependencies using Maps instead of filtering entire arrays
                 const explicitEdges = targetToExplicit.get(node.id) || [];
-                const implicitInputs = targetToImplicit.get(node.id) || [];
 
-                if (explicitEdges.length > 0 || implicitInputs.length > 0) {
+                if (explicitEdges.length > 0) {
                     const values = [
                         ...explicitEdges.map(e => {
                             const source = nextNodes.find(n => n.id === e.source);
@@ -495,17 +380,7 @@ const useStore = create<AppState>()(
                                 return source.data.outputs[e.sourceHandle];
                             }
                             return source.data.value;
-                        }),
-                        ...implicitInputs
-                            .filter(e => {
-                                // For textNodes, don't allow appendNodes to trigger reactive replacement
-                                if (node.type === 'textNode') {
-                                    const source = nextNodes.find(n => n.id === e.source);
-                                    return source?.type !== 'appendNode';
-                                }
-                                return true;
-                            })
-                            .map(e => nextNodes.find(n => n.id === e.source)?.data?.value)
+                        })
                     ];
                     const valIn = values.find(v => v !== undefined);
 
@@ -551,27 +426,6 @@ const useStore = create<AppState>()(
                                 if (source) {
                                     formulaVal = (edge.sourceHandle && source.data.outputs?.[edge.sourceHandle]) ?? source.data.value;
                                 }
-                            }
-                        }
-
-                        // Magnetic snapping (implicit edges) also feeds formula for graphNode
-                        if (node.type === 'graphNode' && formulaVal === undefined) {
-                            const implicitSources = implicitInputs
-                                .map(e => nextNodes.find(n => n.id === e.source))
-                                .filter(Boolean);
-                            if (implicitSources.length > 0) {
-                                const parts: string[] = [];
-                                implicitSources.forEach(src => {
-                                    if (!src) return;
-                                    if (src.type === 'textNode' && src.data.outputs) {
-                                        // TextNode: collect all math pill values from outputs
-                                        const pillVals = Object.values(src.data.outputs).filter(v => v && v !== '');
-                                        parts.push(...(pillVals as string[]));
-                                    } else if (src.data.value) {
-                                        parts.push(src.data.value);
-                                    }
-                                });
-                                if (parts.length > 0) formulaVal = parts.join(',');
                             }
                         }
 

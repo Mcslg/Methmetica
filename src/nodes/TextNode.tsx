@@ -19,6 +19,7 @@ const LINE_Y_THRESHOLD = 12; // px
 
 export const TextNodeContext = React.createContext<{
     nodeId: string;
+    slots?: Record<string, any>;
     isHandleActive: (id: string) => boolean;
     toggleHandle: (id: string) => void;
     editMath: (val: string, pos?: { x: number, y: number }) => void;
@@ -144,6 +145,14 @@ const MathPill = TiptapNode.create({
                         }
                         return true;
                     });
+
+                    // Inject slider variable if absorbed
+                    if (ctx.slots?.sliderNode) {
+                        try {
+                            const sliderVal = ctx.slots.sliderNode.data.value || 0;
+                            localVars['slider'] = ce.parse(String(sliderVal)).evaluate();
+                        } catch (e) {}
+                    }
 
                     ce.pushScope();
                     Object.entries(localVars).forEach(([k, v]) => ce.assign(k, v));
@@ -864,12 +873,13 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
 
     const contextValue = useMemo(() => ({ 
         nodeId: id, 
+        slots: data.slots,
         isHandleActive, 
         toggleHandle, 
         editMath, 
         renameTrigger, 
         triggerSync 
-    }), [id, isHandleActive, toggleHandle, editMath, renameTrigger, triggerSync]);
+    }), [id, data.slots, isHandleActive, toggleHandle, editMath, renameTrigger, triggerSync]);
 
     return (
         <TextNodeContext.Provider value={contextValue}>
@@ -1030,6 +1040,47 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                         }}
                     />
                 </div>
+
+                {/* Absorbed Slider */}
+                {data.slots?.sliderNode && (
+                    <div className="absorbed-slider-container nodrag" style={{
+                        padding: '8px 12px',
+                        background: 'rgba(0,0,0,0.03)',
+                        borderTop: '1px solid var(--border-header)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px'
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem', color: 'var(--text-sub)', fontWeight: 800 }}>
+                            <span style={{ opacity: 0.6 }}>VARIABLE: slider</span>
+                            <span style={{ color: 'var(--accent-bright)' }}>{Number(data.slots.sliderNode.data.value).toFixed(2)}</span>
+                        </div>
+                        <input 
+                            type="range"
+                            min={data.slots.sliderNode.data.min ?? 0}
+                            max={data.slots.sliderNode.data.max ?? 10}
+                            step={data.slots.sliderNode.data.step ?? 0.1}
+                            value={data.slots.sliderNode.data.value ?? 5}
+                            onChange={(e) => {
+                                const nextVal = e.target.value;
+                                if (!data.slots?.sliderNode) return;
+                                const nextSlots = {
+                                    ...data.slots,
+                                    sliderNode: {
+                                        ...data.slots.sliderNode,
+                                        data: { ...data.slots.sliderNode.data, value: nextVal }
+                                    }
+                                };
+                                updateNodeData(id, { slots: nextSlots });
+                            }}
+                            onMouseDown={e => e.stopPropagation()}
+                            style={{ 
+                                width: '100%', height: '4px', cursor: 'pointer', appearance: 'none', 
+                                background: 'var(--border-header)', borderRadius: '2px', outline: 'none' 
+                            }}
+                        />
+                    </div>
+                )}
 
                 <DynamicHandles nodeId={id} handles={data.handles} allowedTypes={['input']} touchingEdges={data.touchingEdges} />
 

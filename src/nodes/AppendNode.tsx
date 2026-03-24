@@ -6,18 +6,17 @@ import { Icons } from '../components/Icons';
 
 export const AppendNode = ({ id, data, selected }: NodeProps<Node<NodeData>>) => {
     const nodes = useStore(state => state.nodes);
-    const implicitEdges = useStore(state => state.implicitEdges);
     const updateNodeData = useStore(state => state.updateNodeData);
 
     const isInsert = data.variant === 'insert';
 
     // Find the neighbor TextNode we are attached to (output target)
     const getTargetTextNode = () => {
-        const neighborIds = implicitEdges
+        const explicitTargets = useStore.getState().edges
             .filter(e => e.source === id)
             .map(e => e.target);
             
-        return nodes.find(n => neighborIds.includes(n.id) && n.type === 'textNode');
+        return nodes.find(n => explicitTargets.includes(n.id) && n.type === 'textNode');
     };
 
     const target = getTargetTextNode();
@@ -88,27 +87,23 @@ export const AppendNode = ({ id, data, selected }: NodeProps<Node<NodeData>>) =>
 };
 
 export const executeAppendNode = (node: AppNode, state: AppState): void => {
-    const { nodes, edges, implicitEdges, updateNodeData } = state;
+    const { nodes, edges, updateNodeData } = state;
     const explicitEdges = edges.filter(e => e.target === node.id);
-    const implicitInputsToAppend = implicitEdges.filter(e => e.target === node.id);
 
-    const values = [
-        ...explicitEdges.map(e => {
-            const source = nodes.find(n => n.id === e.source);
-            return (e.sourceHandle && source?.data.outputs?.[e.sourceHandle]) ?? source?.data.value;
-        }),
-        ...implicitInputsToAppend.map(e => nodes.find(n => n.id === e.source)?.data?.value)
-    ].filter(v => v !== undefined);
+    const values = explicitEdges.map(e => {
+        const source = nodes.find(n => n.id === e.source);
+        return (e.sourceHandle && source?.data.outputs?.[e.sourceHandle]) ?? source?.data.value;
+    }).filter(v => v !== undefined);
 
     const val = values[0];
     if (val !== undefined && val !== '') {
-        // Find all implicit neighbors
-        const neighbors = implicitEdges
-            .filter(e => e.source === node.id || e.target === node.id)
-            .map(e => e.source === node.id ? e.target : e.source);
+        // Find explicit target neighbors
+        const explicitTargets = edges
+            .filter(e => e.source === node.id)
+            .map(e => e.target);
 
         // Specifically find the textNode among neighbors
-        const targetNode = nodes.find(n => neighbors.includes(n.id) && n.type === 'textNode');
+        const targetNode = nodes.find(n => explicitTargets.includes(n.id) && n.type === 'textNode');
 
         if (targetNode?.type === 'textNode') {
             const oldText = targetNode.data.text || '';
@@ -131,13 +126,6 @@ export const executeAppendNode = (node: AppNode, state: AppState): void => {
                 if (indexEdge) {
                     const source = nodes.find(n => n.id === indexEdge.source);
                     lineIndex = Number((indexEdge.sourceHandle && source?.data.outputs?.[indexEdge.sourceHandle]) ?? source?.data.value ?? 0);
-                } else {
-                    // Try implicit index if any
-                    const implicitIndex = implicitEdges.find(e => e.target === node.id);
-                    if (implicitIndex) {
-                        const source = nodes.find(n => n.id === implicitIndex.source);
-                        lineIndex = Number(source?.data.value || 0);
-                    }
                 }
 
                 // Clean up lines: if all empty, reset

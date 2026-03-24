@@ -5,10 +5,8 @@ import { Icons } from '../components/Icons';
 
 export function ForEachNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const nodes = useStore((state: AppState) => state.nodes);
-    const implicitEdges = useStore((state: AppState) => state.implicitEdges);
-
     const targetNode = nodes.find(n => 
-        implicitEdges.some(e => e.source === id && e.target === n.id)
+        useStore.getState().edges.some(e => e.source === id && e.target === n.id)
     );
     const isAttached = !!targetNode;
 
@@ -74,10 +72,9 @@ export const executeForEachNode = (node: AppNode, state: AppState): void => {
 
     if (seq.length === 0) return;
 
-    // Find neighbor (prioritize magnetic/implicit connection on right or bottom)
-    const implicitNeighbor = state.implicitEdges.find(e => e.source === node.id)?.target;
+    // Find explicit neighbor
     const explicitNeighbor = state.edges.find(e => e.source === node.id)?.target;
-    const neighborId = implicitNeighbor || explicitNeighbor;
+    const neighborId = explicitNeighbor;
     
     if (!neighborId) {
         state.updateNodeData(node.id, { status: 'Error: No Target' });
