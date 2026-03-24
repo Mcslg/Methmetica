@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { type Edge } from '@xyflow/react';
 import { getNodeDefinition } from '../nodes/registry';
+import { canMerge, MergeRules, type ProxyableType, proxyableTypes } from '../config/mergeRegistry';
 import {
     type Connection,
     type EdgeChange,
@@ -44,8 +45,11 @@ export type NodeData = {
     min?: number; // For SliderNode
     max?: number; // For SliderNode
     step?: number; // For SliderNode
-    slots?: Record<string, AppNode>; // Absorbed nodes like gate or button
+    nodeName?: string; // Custom name for variables (e.g., 'radius', 'x')
+    slots?: Record<string, AppNode | string>; // Absorbed nodes (either whole node or ID string for Proxy)
     gateValue?: string; // Value representing gate pass/block state
+    label?: string; // Custom title for the node header
+    parentId?: string; // ID of the container node that absorbed this node (for Option B Proxy)
 };
 
 export type AppNode = Node<NodeData>;
@@ -68,6 +72,8 @@ export type AppState = {
     setGraph: (nodes: AppNode[], edges: Edge[]) => void;
     isAltPressed: boolean;
     setAltPressed: (pressed: boolean) => void;
+    isCtrlPressed: boolean;
+    setCtrlPressed: (pressed: boolean) => void;
     theme: 'light' | 'dark';
     setTheme: (theme: 'light' | 'dark') => void;
     isSidebarOpen: boolean;
@@ -78,6 +84,8 @@ export type AppState = {
     setPaletteFloating: (floating: boolean) => void;
     palettePosition: { x: number; y: number };
     setPalettePosition: (pos: { x: number; y: number }) => void;
+    setNodeHidden: (nodeId: string, hidden: boolean) => void;
+    handleEject: (containerId: string, slotKey: string, flowPos: { x: number, y: number }) => void;
 };
 
 // Initial setup nodes
@@ -99,12 +107,68 @@ const useStore = create<AppState>()(
             palettePosition: { x: 100, y: 100 },
             setPalettePosition: (palettePosition) => set({ palettePosition }),
 
+            setNodeHidden: (nodeId, hidden) => {
+                set({
+                    nodes: get().nodes.map(n => n.id === nodeId ? { ...n, hidden } : n)
+                });
+            },
+
+            handleEject: (containerId, slotKey, flowPos) => {
+                const state = get();
+                const containerNode = state.nodes.find(n => n.id === containerId);
+                if (!containerNode || !containerNode.data.slots) return;
+
+                const proxyId = containerNode.data.slots[slotKey];
+                if (typeof proxyId !== 'string') return;
+
+                const sid = proxyId;
+
+                // Phase 1: Unhide and reposition immediately
+                const nodesAfterUnhide = state.nodes.map(n => {
+                    if (n.id === sid) {
+                        return { 
+                            ...n, 
+                            position: flowPos, 
+                            hidden: false, 
+                            selected: true
+                        };
+                    }
+                    if (n.id === containerId) {
+                        const newSlots = { ...n.data.slots };
+                        delete newSlots[slotKey];
+                        let newHeight = n.height;
+                        if (n.type === 'calculateNode' || n.type === 'solveNode') {
+                            const curHeight = n.height || n.measured?.height || 100;
+                            const decr = (slotKey === 'gateNode') ? 55 : 45;
+                            newHeight = Math.max(80, curHeight - decr);
+                        }
+                        return { ...n, height: newHeight, data: { ...n.data, slots: newSlots } };
+                    }
+                    return n;
+                });
+
+                const hOutId = `h-out-${slotKey}`;
+                const hInId = `h-in-${slotKey}`;
+                const edgesAfterReroute = state.edges.map(e => {
+                    if (e.source === containerId && e.sourceHandle === hOutId) return { ...e, source: sid, sourceHandle: 'h-out' };
+                    if (e.target === containerId && e.targetHandle === hInId) return { ...e, target: sid, targetHandle: 'h-in' };
+                    if (e.target === containerId && e.targetHandle === 'h-gate-in' && slotKey === 'gateNode') return { ...e, target: sid, targetHandle: 'h-gate-in' };
+                    return e;
+                });
+
+                set({ nodes: nodesAfterUnhide, edges: edgesAfterReroute });
+                get().evaluateGraph();
+            },
+
             setGraph: (nodes, edges) => {
                 set({ nodes, edges });
             },
 
             isAltPressed: false,
             setAltPressed: (pressed) => set({ isAltPressed: pressed }),
+
+            isCtrlPressed: false,
+            setCtrlPressed: (pressed) => set({ isCtrlPressed: pressed }),
 
 
     onNodesChange: (changes: NodeChange<AppNode>[]) => {
@@ -281,78 +345,57 @@ const useStore = create<AppState>()(
 
     handleProximitySnap: (nodeId: string) => {
         const { nodes } = get();
-        const aIndex = nodes.findIndex(n => n.id === nodeId);
-        const a = nodes[aIndex];
+        const a = nodes.find(n => n.id === nodeId);
         if (!a) return;
 
-        // --- Node Absorption Check ---
-        if (a.type === 'buttonNode' || a.type === 'gateNode' || a.type === 'sliderNode') {
-            const aWidth = a.measured?.width || a.width || 120;
-            const aHeight = a.measured?.height || a.height || 46;
-            const aCenterX = a.position.x + aWidth / 2;
-            const aCenterY = a.position.y + aHeight / 2;
+        // Only check proxyable nodes
+        if (!proxyableTypes.includes(a.type as ProxyableType)) return;
 
-            for (const b of nodes) {
-                if (b.id === nodeId) continue;
-                
-                const bWidth = b.measured?.width || b.width || 200;
-                const bHeight = b.measured?.height || b.height || 100;
-                const bX = b.position.x;
-                const bY = b.position.y;
+        const aWidth = a.measured?.width || a.width || 120;
+        const aHeight = a.measured?.height || a.height || 46;
+        const aCenterX = a.position.x + aWidth / 2;
+        const aCenterY = a.position.y + aHeight / 2;
 
-                // Allowed absorber nodes
-                if (b.type === 'calculateNode' || b.type === 'solveNode' || b.type === 'calculusNode' || b.type === 'graphNode' || b.type === 'textNode') {
-                    // textNode can only absorb sliderNode
-                    if (b.type === 'textNode' && a.type !== 'sliderNode') continue;
-                    
-                    // Comprehensive 'Is Over' check: covers the entire node area + small buffer around top
-                    const isInsideB = aCenterX >= bX - 10 && aCenterX <= bX + bWidth + 10 &&
-                                    aCenterY >= bY - 30 && aCenterY <= bY + bHeight + 10;
+        for (const b of nodes) {
+            if (b.id === nodeId || !b.type) continue;
+            if (!canMerge(a.type || '', b.type)) continue;
 
-                    if (isInsideB) {
-                        const currentSlots = b.data.slots || {};
-                        // When absorbing a slider, we pack its essential data
-                        let aData = a;
-                        if (a.type === 'sliderNode') {
-                            aData = {
-                                ...a,
-                                data: {
-                                    ...a.data,
-                                    min: a.data.min ?? 0,
-                                    max: a.data.max ?? 10,
-                                    step: a.data.step ?? 0.1,
-                                    value: String(a.data.value ?? 5)
-                                }
-                            } as AppNode;
-                        }
-                        const newSlots = { ...currentSlots, [a.type]: aData };
-                        
-                        // Increase height of absorber node (+40px for sliders/buttons, +55px for gates if needed)
-                        const heightInc = (a.type === 'gateNode') ? 55 : 40;
-                        set({
-                            nodes: get().nodes.map(n => {
-                                if (n.id === b.id) {
-                                    const curHeight = n.height ?? n.measured?.height ?? 100;
-                                    const curWidth = n.width ?? n.measured?.width ?? 160;
-                                    return {
-                                        ...n,
-                                        width: curWidth,
-                                        height: curHeight + heightInc,
-                                        data: { ...n.data, slots: newSlots }
-                                    };
-                                }
-                                return n;
-                            })
-                        });
-                        
-                        // Remove node a
-                        setTimeout(() => get().removeNode(a.id), 0);
-                        return; // Stop snapping
+            const bWidth = b.measured?.width || b.width || 200;
+            const bHeight = b.measured?.height || b.height || 100;
+            const isInsideB = aCenterX >= b.position.x - 10 && aCenterX <= b.position.x + bWidth + 10 &&
+                              aCenterY >= b.position.y - 30 && aCenterY <= b.position.y + bHeight + 10;
+
+            if (!isInsideB) continue;
+
+            const rule = MergeRules[a.type as ProxyableType];
+            const slotKey = rule.getSlotKey(a.id, a.data.nodeName);
+            const currentSlots = b.data.slots || {};
+
+            // Prevent duplicate absorption
+            if (currentSlots[slotKey]) return;
+
+            const newSlots = { ...currentSlots, [slotKey]: a.id };
+            const curHeight = b.height || b.measured?.height || 100;
+            const nextHeight = (b.type === 'textNode') ? curHeight : curHeight + rule.heightIncrement;
+
+            set({
+                nodes: get().nodes.map(n => {
+                    if (n.id === b.id) return { ...n, height: nextHeight, data: { ...n.data, slots: newSlots } };
+                    if (n.id === a.id) return { ...n, hidden: true, data: { ...n.data, parentId: b.id } };
+                    return n;
+                }),
+                edges: get().edges.map(e => {
+                    if (e.source === a.id) return { ...e, source: b.id, sourceHandle: `h-out-${slotKey}` };
+                    if (e.target === a.id) {
+                        const tHandle = (a.type === 'gateNode') ? 'h-gate-in' : `h-in-${slotKey}`;
+                        return { ...e, target: b.id, targetHandle: tHandle };
                     }
-                }
-            }
+                    return e;
+                })
+            });
+            get().evaluateGraph();
+            return;
         }
-        // --- End Absorption ---
     },
 
     evaluateGraph: () => {

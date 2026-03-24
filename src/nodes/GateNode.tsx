@@ -1,16 +1,17 @@
-import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
-import { type NodeData } from '../store/useStore';
+import { NodeResizer } from '@xyflow/react';
+import useStore, { type AppState } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
 
-export function GateNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
+export function GateNode({ id, data, selected, className }: any) {
+    const updateNodeData = useStore((state: AppState) => state.updateNodeData);
     // We check if the gate is "open" based on the data.value (which is updated by evaluateGraph)
     const val = Number(data.value || 0);
     const isOpen = val !== 0;
 
     return (
         <div 
-            className={`math-node gate-node ${isOpen ? 'open' : 'closed'}`}
+            className={`math-node gate-node ${isOpen ? 'open' : 'closed'} ${className || ''}`}
             style={{
                 minWidth: '120px',
                 padding: '0',
@@ -21,10 +22,39 @@ export function GateNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             <NodeResizer minWidth={120} minHeight={110} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
             
             <div className="node-header" style={{ color: isOpen ? 'var(--accent-bright)' : 'var(--text-sub)' }}>
-                <span>
+                <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1, gap: '4px' }}>
                     <Icons.Gate />
-                    Gate
-                </span>
+                    <input
+                        title="Rename node"
+                        className="nodrag"
+                        style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'inherit',
+                            fontSize: 'inherit',
+                            fontWeight: 'inherit',
+                            width: '100%',
+                            padding: '0',
+                            margin: '0',
+                            outline: 'none',
+                            cursor: 'text'
+                        }}
+                        value={data.label || 'Gate'}
+                        onChange={(e) => updateNodeData(id, { label: e.target.value })}
+                        onFocus={(e) => {
+                            if (e.target.value === 'Gate') {
+                                updateNodeData(id, { label: '' });
+                            }
+                        }}
+                        onBlur={(e) => {
+                            if (e.target.value === '') {
+                                updateNodeData(id, { label: 'Gate' });
+                            }
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                    />
+                </div>
                 <div style={{ 
                     fontSize: '0.55rem', 
                     background: isOpen ? 'var(--accent)' : 'var(--bg-input)',

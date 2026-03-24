@@ -1,10 +1,11 @@
 import { useEffect, useRef } from 'react';
-import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
+import { type NodeProps, type Node, NodeResizer, useReactFlow } from '@xyflow/react';
 import useStore, { type NodeData, type AppState, type CustomHandle } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 import { getMathEngine } from '../utils/MathEngine';
-import { Icons } from '../components/Icons';
+import {Icons} from '../components/Icons';
 import 'mathlive';
+import { CommentArea } from '../components/CommentArea';
 
 
 
@@ -111,6 +112,30 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
         return () => mf.removeEventListener('input', handleInput);
     }, [id, data.formula, useExternalFormula, updateNodeData]);
 
+    const screenToFlowPosition = useReactFlow().screenToFlowPosition;
+    const globalHandleEject = useStore((state: AppState) => state.handleEject);
+
+    const buttonSid = typeof data.slots?.buttonNode === 'string' ? data.slots.buttonNode : null;
+    const gateSid = typeof data.slots?.gateNode === 'string' ? data.slots.gateNode : null;
+
+    const realButtonNode = useStore(state => buttonSid ? state.nodes.find(n => n.id === buttonSid) : null);
+    const realGateNode = useStore(state => gateSid ? state.nodes.find(n => n.id === gateSid) : null);
+
+    const handleManualRun = () => {
+        if (realButtonNode) {
+            useStore.getState().edges
+                .filter(e => e.source === realButtonNode.id)
+                .forEach(e => useStore.getState().executeNode(e.target));
+        } else {
+            executeNode(id);
+        }
+    };
+
+    const handleGenericEject = (slotKey: string, clientPos: { x: number, y: number }) => {
+        const flowPos = screenToFlowPosition({ x: clientPos.x, y: clientPos.y });
+        globalHandleEject(id, slotKey, flowPos);
+    };
+
     const isLocked = !!data.slots?.buttonNode;
 
     // Re-execute when external formula input changes, UNLESS locked
@@ -121,43 +146,6 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
             }
         }
     }, [data.formulaInput, useExternalFormula, id, executeNode, isLocked]);
-
-    const handleEject = (type: string) => {
-        const slotNode = data.slots?.[type];
-        if (!slotNode) return;
-        
-        // Restore to canvas slightly higher
-        useStore.getState().addNode({
-            ...slotNode,
-            id: `${type}-${Date.now()}`,
-            position: { x: slotNode.position.x, y: slotNode.position.y - 80 },
-            selected: false
-        });
-        
-        const newSlots = { ...data.slots };
-        delete newSlots[type];
-        
-        // Update both data and dimensions (shrink -40px)
-        const store = useStore.getState();
-        const parentNode = store.nodes.find(n => n.id === id);
-        if (parentNode) {
-            const curWidth = parentNode.width ?? parentNode.measured?.width ?? 160;
-            const curHeight = parentNode.height ?? parentNode.measured?.height ?? 100;
-            
-            useStore.setState({
-                nodes: store.nodes.map(n => n.id === id ? {
-                    ...n,
-                    width: curWidth,
-                    height: Math.max(60, curHeight - 40),
-                    data: { ...n.data, slots: newSlots }
-                } : n)
-            });
-        }
-    };
-
-    const handleManualRun = () => {
-        executeNode(id);
-    };
 
 
     const augmentedHandles = [...(data.handles || [])];
@@ -195,7 +183,39 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
             />
             <div className="node-header" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ display: 'flex', alignItems: 'center' }}><Icons.Calculate /> Calculate</span>
+                    <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1, gap: '4px' }}>
+                        <Icons.Calculate />
+                        <input
+                            title="Rename node"
+                            className="nodrag"
+                            style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'inherit',
+                                fontSize: 'inherit',
+                                fontWeight: 'inherit',
+                                width: '100%',
+                                padding: '0',
+                                margin: '0',
+                                outline: 'none',
+                                cursor: 'text'
+                            }}
+                            value={data.label || 'Calculate'}
+                            onChange={(e) => updateNodeData(id, { label: e.target.value })}
+                            onFocus={(e) => {
+                                if (e.target.value === 'Calculate') {
+                                    updateNodeData(id, { label: '' });
+                                }
+                            }}
+                            onBlur={(e) => {
+                                if (e.target.value === '') {
+                                    updateNodeData(id, { label: 'Calculate' });
+                                }
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => e.stopPropagation()}
+                        />
+                    </div>
                     <div style={{ display: 'flex', gap: '4px' }}>
                         <button
                             onClick={() => updateNodeData(id, { useExternalFormula: !useExternalFormula })}
@@ -226,32 +246,78 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
                                 <button
                                     className="nodrag"
                                     onClick={handleManualRun}
+                                    onPointerDown={(e) => {
+                                        e.stopPropagation(); // Always block parent drag
+                                        if (useStore.getState().isCtrlPressed) {
+                                            const startX = e.clientX;
+                                            const startY = e.clientY;
+                                            const onUp = (ue: PointerEvent) => {
+                                                window.removeEventListener('pointerup', onUp);
+                                                const dx = ue.clientX - startX;
+                                                const dy = ue.clientY - startY;
+                                                if (Math.sqrt(dx * dx + dy * dy) > 5) {
+                                                    handleGenericEject('buttonNode', { x: ue.clientX, y: ue.clientY });
+                                                }
+                                            };
+                                            window.addEventListener('pointerup', onUp, { once: true });
+                                        }
+                                    }}
                                     style={{ background: '#ffcc00', border: 'none', color: '#000', fontSize: '0.6rem', fontWeight: 800, padding: '2px 6px', borderRadius: '2px', cursor: 'pointer' }}
+                                    title="Click to run | Ctrl+Drag to eject"
                                 >
                                     <Icons.Trigger width={10} height={10} style={{ marginRight: 4 }} /> RUN
                                 </button>
-                                <button className="nodrag eject-btn" onClick={() => handleEject('buttonNode')} title="Eject Button">⏏️</button>
                             </div>
                         )}
                         {data.slots.gateNode && (
-                            <div style={{ 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                background: Number(data.gateValue || 0) !== 0 ? 'rgba(74, 222, 128, 0.15)' : 'rgba(239, 68, 68, 0.1)', 
-                                border: `1px solid ${Number(data.gateValue || 0) !== 0 ? 'rgba(74, 222, 128, 0.4)' : 'rgba(239, 68, 68, 0.3)'}`, 
-                                borderRadius: '4px', 
-                                padding: '2px 4px',
-                                transition: 'all 0.2s'
-                            }}>
-                                <span style={{ fontSize: '0.6em', color: Number(data.gateValue || 0) !== 0 ? '#4ade80' : '#ef4444', fontWeight: 'bold' }}>
-                                    GATE {Number(data.gateValue || 0) !== 0 ? '✓' : '✗'}
+                            <div 
+                                style={{ 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    background: (realGateNode ? Number(realGateNode.data.value) : 0) !== 0 ? 'rgba(74, 222, 128, 0.15)' : 'rgba(239, 68, 68, 0.1)', 
+                                    border: `1px solid ${(realGateNode ? Number(realGateNode.data.value) : 0) !== 0 ? 'rgba(74, 222, 128, 0.4)' : 'rgba(239, 68, 68, 0.3)'}`, 
+                                    borderRadius: '4px', 
+                                    padding: '2px 4px',
+                                    transition: 'all 0.2s',
+                                    cursor: 'pointer',
+                                    userSelect: 'none'
+                                }}
+                                className="nodrag"
+                                onClick={() => {
+                                    if (realGateNode) {
+                                        const isOpen = Number(realGateNode.data.value) !== 0;
+                                        updateNodeData(realGateNode.id, { value: isOpen ? '0' : '1' });
+                                    }
+                                }}
+                                onPointerDown={(e) => {
+                                    e.stopPropagation(); // Always block parent drag
+                                    if (useStore.getState().isCtrlPressed) {
+                                        const startX = e.clientX;
+                                        const startY = e.clientY;
+                                        const onUp = (ue: PointerEvent) => {
+                                            window.removeEventListener('pointerup', onUp);
+                                            const dx = ue.clientX - startX;
+                                            const dy = ue.clientY - startY;
+                                            if (Math.sqrt(dx * dx + dy * dy) > 5) {
+                                                handleGenericEject('gateNode', { x: ue.clientX, y: ue.clientY });
+                                            }
+                                        };
+                                        window.addEventListener('pointerup', onUp, { once: true });
+                                    }
+                                }}
+                                title="Click to toggle | Ctrl+Drag to eject"
+                            >
+                                <span style={{ fontSize: '0.6em', color: (realGateNode ? Number(realGateNode.data.value) : 0) !== 0 ? '#4ade80' : '#ef4444', fontWeight: 'bold' }}>
+                                    GATE {(realGateNode ? Number(realGateNode.data.value) : 0) !== 0 ? '✓' : '✗'}
                                 </span>
-                                <button className="nodrag eject-btn" onClick={() => handleEject('gateNode')} title="Eject Gate">⏏️</button>
                             </div>
                         )}
                     </div>
                 )}
             </div>
+            {data.slots?.comment && (
+                <CommentArea containerId={id} commentSid={data.slots.comment as string} />
+            )}
 
             <div className="node-content custom-scrollbar" style={{ flexGrow: 1, padding: '4px 8px', overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', gap: '4px' }}>
 

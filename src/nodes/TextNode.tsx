@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useCallback, useMemo, useState } from 'react';
-import { type NodeProps, type Node, NodeResizer, useUpdateNodeInternals, Handle, Position } from '@xyflow/react';
+import { type NodeProps, type Node, NodeResizer, useUpdateNodeInternals, Handle, Position, useReactFlow } from '@xyflow/react';
 import { createPortal } from 'react-dom';
 import { EditorContent, useEditor, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -11,7 +11,7 @@ import 'katex/dist/katex.min.css';
 // @ts-ignore
 import nerdamer from 'nerdamer/all.min';
 import { getMathEngine } from '../utils/MathEngine';
-import useStore, { type AppState, type NodeData, type CustomHandle, type HandleType } from '../store/useStore';
+import useStore, { type AppState, type AppNode, type NodeData, type CustomHandle, type HandleType } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
 
@@ -25,6 +25,7 @@ export const TextNodeContext = React.createContext<{
     editMath: (val: string, pos?: { x: number, y: number }) => void;
     renameTrigger: (oldLabel: string, newLabel: string) => void;
     triggerSync: () => void;
+    handleEject: (name: string, pos?: { x: number, y: number }) => void;
 }>({
     nodeId: '',
     isHandleActive: () => false,
@@ -32,6 +33,275 @@ export const TextNodeContext = React.createContext<{
     editMath: () => { },
     renameTrigger: () => { },
     triggerSync: () => { },
+    handleEject: () => { },
+});
+
+/**
+ * SliderPill Extension
+ * Matches [x:slider] and renders a mini-slider tied to a named slot
+ */
+const SliderPill = TiptapNode.create({
+    name: 'sliderPill',
+    group: 'inline',
+    inline: true,
+    atom: true,
+
+    addAttributes() {
+        return {
+            name: {
+                default: 'x',
+                parseHTML: element => element.getAttribute('data-name'),
+                renderHTML: attributes => ({ 'data-name': attributes.name })
+            },
+        };
+    },
+
+    parseHTML() {
+        return [
+            { tag: 'span[data-type="slider-pill"]' },
+            { 
+              tag: 'slider-pill-md',
+              getAttrs: dom => ({ name: (dom as HTMLElement).getAttribute('name') })
+            }
+        ];
+    },
+
+    renderHTML({ HTMLAttributes }) {
+        return ['span', mergeAttributes(HTMLAttributes, { 'data-type': 'slider-pill' })];
+    },
+
+    addNodeView() {
+        return ReactNodeViewRenderer(({ node }: NodeViewProps) => {
+            const name = node.attrs.name || 'x';
+            const ctx = React.useContext(TextNodeContext);
+            const sliderSource = ctx.slots?.[name];
+            
+            const sliderId = typeof sliderSource === 'string' ? sliderSource : null;
+            const legacySliderNode = typeof sliderSource === 'object' ? sliderSource : null;
+
+            // Subscribe to the real node if we have an ID
+            const realSliderNode = useStore(state => 
+                sliderId ? state.nodes.find(n => n.id === sliderId) : null
+            );
+
+            const activeNode = realSliderNode || legacySliderNode;
+            const updateNodeData = useStore(state => state.updateNodeData);
+
+            if (!activeNode) return (
+                <NodeViewWrapper as="span" style={{ 
+                    display: 'inline-flex', alignItems: 'center', background: 'rgba(255,0,0,0.1)', 
+                    color: '#ff4d4d', padding: '1px 6px', borderRadius: '4px', border: '1px dashed #ff4d4d', 
+                    fontSize: '0.65rem', verticalAlign: 'middle', cursor: 'help'
+                }} title={`Slider '${name}' not found. Drop a Slider node here.`}>
+                    ⚠ {name}
+                </NodeViewWrapper>
+            );
+
+            const val = Number(activeNode.data.value);
+
+            return (
+                <NodeViewWrapper 
+                    as="span" 
+                    className="slider-pill-wrapper nodrag has-handle data-pill-render" 
+                    data-name={name}
+                    data-value={val.toString()}
+                    data-handle-id={`h-out-${name}`}
+                    style={{ 
+                        display: 'inline-flex', alignItems: 'center', gap: '4px', verticalAlign: 'middle',
+                        background: 'var(--bg-card)', border: '1px solid var(--border-node)', 
+                        borderRadius: '6px', padding: '1px 6px', margin: '0 2px', userSelect: 'none'
+                    }}
+                >
+                    <span style={{ fontSize: '0.65rem', color: 'var(--accent-bright)', fontWeight: 800 }}>{name}</span>
+                    <input 
+                        type="range"
+                        min={activeNode.data.min ?? 0}
+                        max={activeNode.data.max ?? 10}
+                        step={activeNode.data.step ?? 0.1}
+                        value={val}
+                        onChange={(e) => {
+                            const nextVal = e.target.value;
+                            if (realSliderNode) {
+                                updateNodeData(realSliderNode.id, { value: nextVal });
+                            } else {
+                                // Fallback for legacy data
+                                const nextSlots = {
+                                    ...ctx.slots,
+                                    [name]: {
+                                        ...(activeNode as AppNode),
+                                        data: { ...(activeNode as AppNode).data, value: nextVal }
+                                    }
+                                };
+                                updateNodeData(ctx.nodeId, { slots: nextSlots });
+                            }
+                        }}
+                        onMouseDown={e => e.stopPropagation()}
+                        style={{ 
+                            width: '50px', height: '3px', appearance: 'none', background: 'var(--border-header)',
+                            borderRadius: '2px', outline: 'none', cursor: 'pointer'
+                        }}
+                    />
+                    <span style={{ fontSize: '0.65rem', color: 'var(--text-sub)', minWidth: '18px', textAlign: 'right', cursor: 'pointer' }}
+                          title="Ctrl+Drag to eject"
+                          draggable 
+                          onDragStart={(e) => {
+                              const isCtrlPressed = useStore.getState().isCtrlPressed;
+                              if (isCtrlPressed) {
+                                  e.dataTransfer.setData('application/reactflow-eject', JSON.stringify({ name, nodeId: ctx.nodeId, sliderId: realSliderNode?.id }));
+                                  e.dataTransfer.effectAllowed = 'move';
+                              } else {
+                                  e.preventDefault();
+                              }
+                          }}
+                          onDragEnd={(e) => {
+                              if (e.clientX !== 0 && e.clientY !== 0) {
+                                  ctx.handleEject(name, { x: e.clientX, y: e.clientY });
+                              }
+                          }}
+                    >
+                        {val.toFixed(1)}
+                    </span>
+                </NodeViewWrapper>
+            );
+        });
+    },
+
+    addInputRules() {
+        return [
+            {
+                find: /\[([a-zA-Z\d\s]+):slider\]\s$/,
+                handler: ({ state, range, match }: { state: any, range: any, match: any }) => {
+                    const { tr } = state;
+                    const name = match[1];
+                    tr.replaceWith(range.from, range.to, this.type.create({ name }));
+                },
+            } as any,
+        ];
+    },
+});
+
+/**
+ * ButtonPill Extension
+ * Inline trigger proxy
+ */
+const ButtonPill = TiptapNode.create({
+    name: 'buttonPill',
+    group: 'inline',
+    inline: true,
+    atom: true,
+    addAttributes() { return { name: { default: 'buttonNode' } }; },
+    parseHTML() { return [{ tag: 'span[data-type="button-pill"]' }, { tag: 'button-pill-md' }]; },
+    renderHTML({ HTMLAttributes }) { return ['span', mergeAttributes(HTMLAttributes, { 'data-type': 'button-pill' })]; },
+    addNodeView() {
+        return ReactNodeViewRenderer(({ node }: NodeViewProps) => {
+            const name = node.attrs.name || 'buttonNode';
+            const ctx = React.useContext(TextNodeContext);
+            const source = ctx.slots?.[name];
+            const sid = typeof source === 'string' ? source : null;
+            const realNode = useStore(state => sid ? state.nodes.find(n => n.id === sid) : null);
+            
+            if (!realNode) return <NodeViewWrapper as="span" style={{ opacity: 0.5 }}>[trigger]</NodeViewWrapper>;
+
+            return (
+                <NodeViewWrapper as="span" className="trigger-pill-wrapper has-handle" 
+                    data-name={name} data-handle-id={`h-out-${name}`}
+                    style={{ display: 'inline-flex', verticalAlign: 'middle', margin: '0 4px' }}>
+                    <button 
+                        onMouseDown={e => e.stopPropagation()}
+                        onClick={() => {
+                            useStore.getState().edges.filter(e => e.source === realNode.id).forEach(e => {
+                                useStore.getState().executeNode(e.target);
+                            });
+                        }}
+                        draggable
+                        onDragStart={(e) => {
+                            if (useStore.getState().isCtrlPressed) {
+                                e.dataTransfer.setData('application/reactflow-eject', JSON.stringify({ name, nodeId: ctx.nodeId, sliderId: realNode.id }));
+                            } else e.preventDefault();
+                        }}
+                        onDragEnd={(e) => { if (e.clientX !== 0) ctx.handleEject(name, { x: e.clientX, y: e.clientY }); }}
+                        style={{ 
+                            background: '#ffcc00', border: 'none', borderRadius: '12px', color: '#000', 
+                            fontSize: '0.6rem', fontWeight: 800, padding: '2px 8px', cursor: 'pointer' 
+                        }}
+                    >
+                        TRIGGER
+                    </button>
+                </NodeViewWrapper>
+            );
+        });
+    },
+    addInputRules() {
+        return [{
+            find: /\[trigger\]\s$/,
+            handler: ({ state, range }: any) => {
+                state.tr.replaceWith(range.from, range.to, this.type.create({ name: 'buttonNode' }));
+            }
+        } as any];
+    }
+});
+
+/**
+ * GatePill Extension
+ * Inline gate toggle proxy
+ */
+const GatePill = TiptapNode.create({
+    name: 'gatePill',
+    group: 'inline',
+    inline: true,
+    atom: true,
+    addAttributes() { return { name: { default: 'gateNode' } }; },
+    parseHTML() { return [{ tag: 'span[data-type="gate-pill"]' }, { tag: 'gate-pill-md' }]; },
+    renderHTML({ HTMLAttributes }) { return ['span', mergeAttributes(HTMLAttributes, { 'data-type': 'gate-pill' })]; },
+    addNodeView() {
+        return ReactNodeViewRenderer(({ node }: NodeViewProps) => {
+            const name = node.attrs.name || 'gateNode';
+            const ctx = React.useContext(TextNodeContext);
+            const source = ctx.slots?.[name];
+            const sid = typeof source === 'string' ? source : null;
+            const realNode = useStore(state => sid ? state.nodes.find(n => n.id === sid) : null);
+            
+            if (!realNode) return <NodeViewWrapper as="span" style={{ opacity: 0.5 }}>[gate]</NodeViewWrapper>;
+
+            const isOpen = realNode.data.value === '1';
+
+            return (
+                <NodeViewWrapper as="span" className="gate-pill-wrapper has-handle" 
+                    data-name={name} data-handle-id={`h-out-${name}`}
+                    style={{ display: 'inline-flex', verticalAlign: 'middle', margin: '0 4px' }}>
+                    <div 
+                        onMouseDown={e => e.stopPropagation()}
+                        onClick={() => {
+                            useStore.getState().updateNodeData(realNode.id, { value: isOpen ? '0' : '1' });
+                        }}
+                        draggable
+                        onDragStart={(e) => {
+                            if (useStore.getState().isCtrlPressed) {
+                                e.dataTransfer.setData('application/reactflow-eject', JSON.stringify({ name, nodeId: ctx.nodeId, sliderId: realNode.id }));
+                            } else e.preventDefault();
+                        }}
+                        onDragEnd={(e) => { if (e.clientX !== 0) ctx.handleEject(name, { x: e.clientX, y: e.clientY }); }}
+                        style={{ 
+                            background: isOpen ? '#43e97b' : '#ff4757', border: 'none', borderRadius: '4px', color: '#000', 
+                            fontSize: '0.6rem', fontWeight: 800, padding: '2px 6px', cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', gap: '4px'
+                        }}
+                    >
+                        <span style={{ fontSize: '0.8rem' }}>{isOpen ? '⧁' : '⧀'}</span>
+                        {isOpen ? 'OPEN' : 'CLOSE'}
+                    </div>
+                </NodeViewWrapper>
+            );
+        });
+    },
+    addInputRules() {
+        return [{
+            find: /\[gate\]\s$/,
+            handler: ({ state, range }: any) => {
+                state.tr.replaceWith(range.from, range.to, this.type.create({ name: 'gateNode' }));
+            }
+        } as any];
+    }
 });
 
 // ── CUSTOM TIPTAP EXTENSIONS ──────────────────────────────────────────────
@@ -81,7 +351,7 @@ const MathPill = TiptapNode.create({
     },
 
     renderHTML({ HTMLAttributes }) {
-        return ['span', mergeAttributes(HTMLAttributes, { 'data-type': 'math-pill' }), 0];
+        return ['span', mergeAttributes(HTMLAttributes, { 'data-type': 'math-pill' })];
     },
 
     addNodeView() {
@@ -89,7 +359,7 @@ const MathPill = TiptapNode.create({
             const val = node.attrs.value || '';
             const name = node.attrs.name || '';
             const ctx = React.useContext(TextNodeContext);
-            const isAltPressed = useStore(state => state.isAltPressed);
+            const isCtrlPressed = useStore(state => state.isCtrlPressed);
             const edges = useStore(state => state.edges);
             
             // Generate a stable ID based on name or value (sanitized)
@@ -133,7 +403,7 @@ const MathPill = TiptapNode.create({
             }, [ctx, val]);
 
             const evaluatedVal = useMemo(() => {
-                if (!isAltPressed) return null;
+                if (!isCtrlPressed) return null;
                 try {
                     const ce = getMathEngine();
                     const localVars: Record<string, any> = {};
@@ -146,12 +416,18 @@ const MathPill = TiptapNode.create({
                         return true;
                     });
 
-                    // Inject slider variable if absorbed
-                    if (ctx.slots?.sliderNode) {
-                        try {
-                            const sliderVal = ctx.slots.sliderNode.data.value || 0;
-                            localVars['slider'] = ce.parse(String(sliderVal)).evaluate();
-                        } catch (e) {}
+                    // Inject slider variables from slots
+                    if (ctx.slots) {
+                        for (const slotKey in ctx.slots) {
+                            const absorbedNode: any = ctx.slots[slotKey];
+                            if (absorbedNode.type === 'sliderNode') {
+                                try {
+                                    const sliderVal = absorbedNode.data.value || 0;
+                                    const varName = absorbedNode.data.nodeName || slotKey;
+                                    localVars[varName] = ce.parse(String(sliderVal)).evaluate();
+                                } catch (e) {}
+                            }
+                        }
                     }
 
                     ce.pushScope();
@@ -207,9 +483,9 @@ const MathPill = TiptapNode.create({
                     console.error('Eval error:', e);
                     return null;
                 }
-            }, [val, isAltPressed, editor]);
+            }, [val, isCtrlPressed, editor]);
 
-            const displayVal = useMemo(() => (isAltPressed && evaluatedVal !== null) ? evaluatedVal : val, [isAltPressed, evaluatedVal, val]);
+            const displayVal = useMemo(() => (isCtrlPressed && evaluatedVal !== null) ? evaluatedVal : val, [isCtrlPressed, evaluatedVal, val]);
 
             const sequenceData = useMemo(() => {
                 let s = String(displayVal).trim();
@@ -299,10 +575,10 @@ const MathPill = TiptapNode.create({
                 ctx.editMath(val, { x: e.clientX, y: e.clientY });
             };
 
-            // Alt+Click: split pill into multiple pills
+            // Ctrl/Cmd+Click: split pill into multiple pills
             const handleMouseDown = async (e: React.MouseEvent) => {
                 if (e.button !== 0) return;
-                if (!(e.shiftKey || e.altKey || e.metaKey)) return;
+                if (!(e.shiftKey || e.ctrlKey || e.metaKey)) return;
 
                 e.preventDefault();
                 e.stopPropagation();
@@ -377,7 +653,7 @@ const MathPill = TiptapNode.create({
             return (
                 <NodeViewWrapper
                     as="span"
-                    className={`data-pill-render ${effectiveShowHandle ? 'has-handle' : ''} ${isAltPressed ? 'alt-preview' : ''}`}
+                    className={`data-pill-render ${effectiveShowHandle ? 'has-handle' : ''} ${isCtrlPressed ? 'ctrl-preview' : ''}`}
                     data-value={val}
                     data-name={name}
                     data-handle-id={stableHandleId}
@@ -394,21 +670,21 @@ const MathPill = TiptapNode.create({
                         position: 'relative',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        background: isAltPressed ? 'rgba(67, 233, 123, 0.1)' : 'rgba(79, 172, 254, 0.05)',
-                        color: isAltPressed ? '#43e97b' : '#4facfe',
+                        background: isCtrlPressed ? 'rgba(67, 233, 123, 0.1)' : 'rgba(79, 172, 254, 0.05)',
+                        color: isCtrlPressed ? '#43e97b' : '#4facfe',
                         padding: '4px 10px',
                         borderRadius: '6px',
                         fontSize: '0.9em',
                         cursor: 'pointer',
-                        border: localShowHandle ? (isAltPressed ? '1px solid #43e97b' : '1px solid #4facfe') : (isAltPressed ? '1px solid rgba(67, 233, 123, 0.4)' : '1px solid rgba(79, 172, 254, 0.3)'),
+                        border: localShowHandle ? (isCtrlPressed ? '1px solid #43e97b' : '1px solid #4facfe') : (isCtrlPressed ? '1px solid rgba(67, 233, 123, 0.4)' : '1px solid rgba(79, 172, 254, 0.3)'),
                         margin: name ? '10px 4px 4px 4px' : '0 4px',
                         userSelect: 'text',
                         minHeight: '1.4em',
                         transition: 'all 0.2s ease',
                         verticalAlign: 'middle',
                         top: '-1px',
-                        boxShadow: localShowHandle ? (isAltPressed ? '0 0 10px rgba(67, 233, 123, 0.3)' : '0 0 10px rgba(79, 172, 254, 0.3)') : 'none',
-                        zIndex: isAltPressed ? 10 : 1
+                        boxShadow: localShowHandle ? (isCtrlPressed ? '0 0 10px rgba(67, 233, 123, 0.3)' : '0 0 10px rgba(79, 172, 254, 0.3)') : 'none',
+                        zIndex: isCtrlPressed ? 10 : 1
                     }}
                 >
                     {name && (
@@ -417,14 +693,14 @@ const MathPill = TiptapNode.create({
                             top: '-8px',
                             left: '8px',
                             fontSize: '0.6rem',
-                            color: isAltPressed ? '#43e97b' : 'rgba(255,255,255,0.5)',
+                            color: isCtrlPressed ? '#43e97b' : 'rgba(255,255,255,0.5)',
                             background: '#15151a',
                             padding: '0 4px',
                             lineHeight: 1,
                             fontWeight: 700,
                             letterSpacing: '0.05em',
                             pointerEvents: 'none',
-                            opacity: isAltPressed ? 0.8 : 1
+                            opacity: isCtrlPressed ? 0.8 : 1
                         }}>
                             {name}
                         </span>
@@ -485,11 +761,11 @@ const MathPill = TiptapNode.create({
                             onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
                             style={{
                                 marginLeft: '8px',
-                                background: isAltPressed ? 'rgba(67, 233, 123, 0.15)' : 'rgba(255,255,255,0.08)',
+                                background: isCtrlPressed ? 'rgba(67, 233, 123, 0.15)' : 'rgba(255,255,255,0.08)',
                                 borderRadius: '4px',
                                 padding: '1px 5px',
                                 fontSize: '0.6rem',
-                                color: isAltPressed ? '#43e97b' : 'rgba(255,255,255,0.4)',
+                                color: isCtrlPressed ? '#43e97b' : 'rgba(255,255,255,0.4)',
                                 cursor: 'pointer',
                                 transition: 'all 0.2s',
                                 border: '1px solid rgba(255,255,255,0.05)',
@@ -497,13 +773,13 @@ const MathPill = TiptapNode.create({
                                 userSelect: 'none'
                             }}
                             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
-                            onMouseLeave={(e) => e.currentTarget.style.background = isAltPressed ? 'rgba(67, 233, 123, 0.15)' : 'rgba(255,255,255,0.08)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = isCtrlPressed ? 'rgba(67, 233, 123, 0.15)' : 'rgba(255,255,255,0.08)'}
                         >
                             {isExpanded ? 'Collapse' : `${sequenceData.length} items`}
                         </span>
                     )}
 
-                    {isHovered && !isAltPressed && coords.width > 0 && createPortal(
+                    {isHovered && !isCtrlPressed && coords.width > 0 && createPortal(
                         <div className="nodrag" style={{
                             position: 'fixed',
                             top: coords.top - 10,
@@ -526,7 +802,7 @@ const MathPill = TiptapNode.create({
                             alignItems: 'center',
                             gap: '8px'
                         }}>
-                            <span style={{ color: '#4facfe' }}>🖱️ Drag</span>: Connect | <span style={{ color: '#43e97b' }}>⌥+🖱️</span>: Compute | <span style={{ color: '#ffcc33' }}>Right-click</span>: Edit
+                            <span style={{ color: '#4facfe' }}>🖱️ Drag</span>: Connect | <span style={{ color: '#43e97b' }}>Ctrl+🖱️</span>: Compute | <span style={{ color: '#ffcc33' }}>Right-click</span>: Edit
                         </div>,
                         document.body
                     )}
@@ -561,6 +837,7 @@ const MathPill = TiptapNode.create({
 export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
     const updateNodeInternals = useUpdateNodeInternals();
+    const { screenToFlowPosition } = useReactFlow();
     const containerRef = useRef<HTMLDivElement>(null);
     const contentRef = useRef<HTMLDivElement>(null);
 
@@ -591,7 +868,10 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     // ── TIPTAP EDITOR SETUP ──────────────────────────────────────────────
     const parseMarkdownToCustomNodes = (md: string) => {
         return md
-            .replace(/\$\$(.*?)\$\$/g, '<math-pill-md value="$1"></math-pill-md>');
+            .replace(/\$\$(.*?)\$\$/g, '<math-pill-md value="$1"></math-pill-md>')
+            .replace(/\[(.*?):slider\]/g, '<slider-pill-md name="$1"></slider-pill-md>')
+            .replace(/\[trigger\]/g, '<button-pill-md name="buttonNode"></button-pill-md>')
+            .replace(/\[gate\]/g, '<gate-pill-md name="gateNode"></gate-pill-md>');
     };
 
 
@@ -607,6 +887,9 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                 linkify: false,
             }),
             MathPill,
+            SliderPill,
+            ButtonPill,
+            GatePill,
         ],
         content: (() => {
             const t = data.text || '';
@@ -723,6 +1006,67 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         return () => clearTimeout(timer);
     }, [activeHandles]);
 
+    // --- [NEW] Auto-Insert logic for absorbed sliders ---
+    useEffect(() => {
+        if (!editor || !data.slots || editor.isFocused) return;
+        
+        const content = editor.getText() + editor.getHTML(); 
+        const state = useStore.getState();
+        
+        Object.entries(data.slots).forEach(([name, nodeSource]) => {
+            let type: string | null = null;
+            
+            if (typeof nodeSource === 'string') {
+                const realNode = state.nodes.find(n => n.id === nodeSource);
+                type = realNode?.type || null;
+            } else if (typeof nodeSource === 'object') {
+                type = (nodeSource as any).type || null;
+            }
+
+            if (!type) return;
+
+            if (type === 'sliderNode' && !content.includes(`name="${name}"`)) {
+                setTimeout(() => { if (editor && !editor.isDestroyed) editor.commands.insertContent(`<p><slider-pill-md name="${name}"></slider-pill-md></p>`); }, 0);
+            } else if (type === 'buttonNode' && !content.includes('button-pill-md')) {
+                setTimeout(() => { if (editor && !editor.isDestroyed) editor.commands.insertContent(`<p><button-pill-md name="${name}"></button-pill-md></p>`); }, 0);
+            } else if (type === 'gateNode' && !content.includes('gate-pill-md')) {
+                setTimeout(() => { if (editor && !editor.isDestroyed) editor.commands.insertContent(`<p><gate-pill-md name="${name}"></gate-pill-md></p>`); }, 0);
+            }
+        });
+    }, [data.slots, editor]);
+
+    // --- Eject Logic: Called when inline slider drag completes ---
+    const globalHandleEject = useStore((state: AppState) => state.handleEject);
+
+    const handleEject = useCallback((name: string, pos?: { x: number, y: number }) => {
+        if (!pos || !editor) return;
+        const startTime = performance.now();
+        const flowPos = screenToFlowPosition({ x: pos.x, y: pos.y });
+
+        // Phase 1: Atomic Global Eject (Unhide, repos, animate, reroute)
+        globalHandleEject(id, name, flowPos);
+
+        // Phase 2: Tiptap cleanup
+        setTimeout(() => {
+            if (editor && !editor.isDestroyed) {
+                editor.commands.command(({ tr, state }) => {
+                    let deleted = false;
+                    state.doc.descendants((node, pos) => {
+                        if (node.attrs.name === name) {
+                            tr.delete(pos, pos + node.nodeSize);
+                            deleted = true;
+                            return false;
+                        }
+                    });
+                    return deleted;
+                });
+            }
+            const totalTime = performance.now() - startTime;
+            console.log(`🚀 [Eject Generic] Total: ${totalTime.toFixed(2)}ms (via globalHandleEject)`);
+        }, 16); 
+    }, [id, editor, globalHandleEject, screenToFlowPosition]);
+
+
 
     // ── HANDLE SYNC LOGIC ──────────────────────────────────────────────────
     const syncHandlesFromDOM = useCallback(() => {
@@ -763,8 +1107,11 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                 const staggerOffset = (subIdx - (totalInGroup - 1) / 2) * STAGGER_GAP;
                 const offset = Math.max(0, Math.min(100, ((group.centerY + staggerOffset - containerRect.top) / containerRect.height) * 100));
 
-                newHandles.push({ id: hId, type: hType, position: 'right', offset, label: (isDataPill && name) ? name : undefined });
-                if (isDataPill) {
+                if (!newHandles.some(h => h.id === hId)) {
+                    newHandles.push({ id: hId, type: hType, position: 'right', offset, label: (isDataPill && name) ? name : undefined });
+                }
+                
+                if (isDataPill && !newOutputs[hId]) {
                     let outVal = el.getAttribute('data-value') || '';
                     if (outVal.trim() === '\\top') outVal = '1';
                     if (outVal.trim() === '\\bot') outVal = '0';
@@ -775,13 +1122,21 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         });
 
         const manualHandles = (data.handles || []).filter((h: CustomHandle) => !h.id.startsWith('h-auto-'));
-        const combinedHandles = [...manualHandles, ...newHandles];
+        
+        // Final Merge with strict ID uniqueness
+        const finalHandles = [...manualHandles];
+        newHandles.forEach(nh => {
+            if (!finalHandles.some(h => h.id === nh.id)) {
+                finalHandles.push(nh);
+            }
+        });
+
         const roundOff = (h: CustomHandle) => ({ ...h, offset: Math.round(h.offset * 10) / 10 });
         const currentHandleSummary = JSON.stringify((data.handles || []).map(roundOff));
-        const newHandleSummary = JSON.stringify(combinedHandles.map(roundOff));
+        const newHandleSummary = JSON.stringify(finalHandles.map(roundOff));
 
         if (currentHandleSummary !== newHandleSummary || JSON.stringify(newOutputs) !== JSON.stringify(data.outputs || {})) {
-            updateNodeData(id, { handles: combinedHandles, outputs: newOutputs });
+            updateNodeData(id, { handles: finalHandles, outputs: newOutputs });
         }
         updateNodeInternals(id);
     }, [data.handles, id, updateNodeData, updateNodeInternals]);
@@ -878,8 +1233,9 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         toggleHandle, 
         editMath, 
         renameTrigger, 
-        triggerSync 
-    }), [id, data.slots, isHandleActive, toggleHandle, editMath, renameTrigger, triggerSync]);
+        triggerSync,
+        handleEject
+    }), [id, data.slots, isHandleActive, toggleHandle, editMath, renameTrigger, triggerSync, handleEject]);
 
     return (
         <TextNodeContext.Provider value={contextValue}>
@@ -888,8 +1244,9 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                 ref={containerRef}
                 className={`math-node text-node ${selected ? 'selected' : ''}`}
                 onClick={(e) => {
-                    // Ignore clicks that are inside the toolbar or popup
-                    if ((e.target as Element).closest('.text-toolbar') || (e.target as Element).closest('.math-popup')) {
+                    // Ignore clicks that are inside the toolbar, popup, or the node header
+                    const target = e.target as Element;
+                    if (target.closest('.text-toolbar') || target.closest('.math-popup') || target.closest('.node-header')) {
                         return;
                     }
                     if (editor && !editor.isFocused && !mathInputOpen) {
@@ -906,7 +1263,39 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                 <NodeResizer color="transparent" isVisible={selected} minWidth={150} minHeight={80} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
 
                 <div className="node-header">
-                    <span><Icons.Text /> Text</span>
+                    <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1, gap: '4px' }}>
+                        <Icons.Text />
+                        <input
+                            title="Rename node"
+                            className="nodrag"
+                            style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'inherit',
+                                fontSize: 'inherit',
+                                fontWeight: 'inherit',
+                                width: '100%',
+                                padding: '0',
+                                margin: '0',
+                                outline: 'none',
+                                cursor: 'text'
+                            }}
+                            value={data.label || 'Text'}
+                            onChange={(e) => updateNodeData(id, { label: e.target.value })}
+                            onFocus={(e) => {
+                                if (e.target.value === 'Text') {
+                                    updateNodeData(id, { label: '' });
+                                }
+                            }}
+                            onBlur={(e) => {
+                                if (e.target.value === '') {
+                                    updateNodeData(id, { label: 'Text' });
+                                }
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => e.stopPropagation()}
+                        />
+                    </div>
                 </div>
 
                 {(selected || editor?.isFocused) && (
@@ -1041,46 +1430,22 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                     />
                 </div>
 
-                {/* Absorbed Slider */}
-                {data.slots?.sliderNode && (
-                    <div className="absorbed-slider-container nodrag" style={{
-                        padding: '8px 12px',
-                        background: 'rgba(0,0,0,0.03)',
-                        borderTop: '1px solid var(--border-header)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '4px'
-                    }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem', color: 'var(--text-sub)', fontWeight: 800 }}>
-                            <span style={{ opacity: 0.6 }}>VARIABLE: slider</span>
-                            <span style={{ color: 'var(--accent-bright)' }}>{Number(data.slots.sliderNode.data.value).toFixed(2)}</span>
-                        </div>
-                        <input 
-                            type="range"
-                            min={data.slots.sliderNode.data.min ?? 0}
-                            max={data.slots.sliderNode.data.max ?? 10}
-                            step={data.slots.sliderNode.data.step ?? 0.1}
-                            value={data.slots.sliderNode.data.value ?? 5}
-                            onChange={(e) => {
-                                const nextVal = e.target.value;
-                                if (!data.slots?.sliderNode) return;
-                                const nextSlots = {
-                                    ...data.slots,
-                                    sliderNode: {
-                                        ...data.slots.sliderNode,
-                                        data: { ...data.slots.sliderNode.data, value: nextVal }
-                                    }
-                                };
-                                updateNodeData(id, { slots: nextSlots });
-                            }}
-                            onMouseDown={e => e.stopPropagation()}
-                            style={{ 
-                                width: '100%', height: '4px', cursor: 'pointer', appearance: 'none', 
-                                background: 'var(--border-header)', borderRadius: '2px', outline: 'none' 
-                            }}
-                        />
-                    </div>
-                )}
+                {/* Absorbed Sliders logic is now automated into the editor content via useEffect */}
+
+            <style>{`
+                .tiny-dashboard-slider::-webkit-slider-thumb {
+                    -webkit-appearance: none;
+                    width: 10px;
+                    height: 10px;
+                    background: var(--accent-bright);
+                    border-radius: 50%;
+                    cursor: pointer;
+                }
+                .inline-insert-btn:hover {
+                    background: var(--accent-bright) !important;
+                    color: #fff !important;
+                }
+            `}</style>
 
                 <DynamicHandles nodeId={id} handles={data.handles} allowedTypes={['input']} touchingEdges={data.touchingEdges} />
 
@@ -1095,7 +1460,7 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                 .has-handle {
                     box-shadow: 0 0 0 1px rgba(79, 172, 254, 0.5) !important;
                 }
-                .alt-preview {
+                .ctrl-preview {
                     animation: pulse-green 2s infinite;
                 }
                 @keyframes pulse-green {

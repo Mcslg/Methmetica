@@ -8,6 +8,8 @@ import TitleDarkLogo from '../assets/Title_dark.svg';
 export function Sidebar() {
     const { nodes, edges, setGraph, theme, setTheme, isSidebarOpen, setSidebarOpen, isDeletingHover, isPaletteFloating, setPaletteFloating } = useStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [holdProgress, setHoldProgress] = React.useState(0);
+    const holdTimerRef = useRef<any>(null);
 
     const onDragStart = (event: React.DragEvent, nodeType: string) => {
         event.dataTransfer.setData('application/reactflow', nodeType);
@@ -48,10 +50,23 @@ export function Sidebar() {
         e.target.value = '';
     };
 
-    const handleClear = () => {
-        if (confirm('Are you sure you want to clear the entire workspace?')) {
-            setGraph([], []);
-        }
+    const startHold = () => {
+        setHoldProgress(0);
+        holdTimerRef.current = setInterval(() => {
+            setHoldProgress(prev => {
+                if (prev >= 100) {
+                    clearInterval(holdTimerRef.current);
+                    setGraph([], []);
+                    return 0;
+                }
+                return prev + 2; // ~1000ms to complete
+            });
+        }, 20);
+    };
+
+    const stopHold = () => {
+        if (holdTimerRef.current) clearInterval(holdTimerRef.current);
+        setHoldProgress(0);
     };
 
     return (
@@ -70,8 +85,8 @@ export function Sidebar() {
                     <div className="sidebar-section">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                             <label style={{ marginBottom: 0 }}>Add Nodes <span>(Drag & Drop)</span></label>
-                            <button 
-                                className="icon-btn-small" 
+                            <button
+                                className="icon-btn-small"
                                 title="Float Toolkit"
                                 onClick={() => setPaletteFloating(true)}
                             >
@@ -90,8 +105,17 @@ export function Sidebar() {
                     <button className="sidebar-btn" onClick={() => fileInputRef.current?.click()}>
                         <Icons.Load /> Load / Import
                     </button>
-                    <button className="sidebar-btn danger" onClick={handleClear}>
-                        <Icons.Clear /> Clear All
+                    <button
+                        className="sidebar-btn danger hold-btn"
+                        onMouseDown={startHold}
+                        onMouseUp={stopHold}
+                        onMouseLeave={stopHold}
+                        onTouchStart={startHold}
+                        onTouchEnd={stopHold}
+                    >
+                        <div className="hold-progress" style={{ width: `${holdProgress}%` }} />
+                        <Icons.Clear />
+                        <span>{holdProgress > 0 ? 'Hold to Clear' : 'Clear All'}</span>
                     </button>
                 </div>
 
@@ -296,6 +320,30 @@ export function Sidebar() {
                     background: rgba(248, 113, 113, 0.15);
                     border-color: rgba(248, 113, 113, 0.4);
                     color: #f87171;
+                }
+                .sidebar-btn.danger.hold-btn {
+                    position: relative;
+                    overflow: hidden;
+                    transition: transform 0.1s;
+                }
+                .sidebar-btn.danger.hold-btn:active {
+                    transform: scale(0.96);
+                }
+                .hold-progress {
+                    position: absolute;
+                    left: 0;
+                    top: 0;
+                    bottom: 0;
+                    background: rgba(239, 68, 68, 0.6);
+                    pointer-events: none;
+                    transition: width 0.05s linear;
+                    z-index: 1;
+                }
+                .sidebar-btn.danger.hold-btn span, 
+                .sidebar-btn.danger.hold-btn svg {
+                    position: relative;
+                    z-index: 2;
+                    pointer-events: none;
                 }
                 .stat-row {
                     display: flex;

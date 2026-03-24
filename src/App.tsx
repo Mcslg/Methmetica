@@ -8,7 +8,7 @@ import { nodeTypes, nodeLibrary, getNodeDefinition } from './nodes/registry';
 import { Sidebar } from './components/Sidebar';
 import { FloatingPalette } from './components/FloatingPalette';
 function Flow() {
-  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, removeNode, handleProximitySnap, addHandle, setAltPressed, theme, isSidebarOpen, setDeletingHover } = useStore();
+  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, removeNode, handleProximitySnap, addHandle, setAltPressed, setCtrlPressed, theme, isSidebarOpen, setDeletingHover } = useStore();
   const { screenToFlowPosition } = useReactFlow();
   const [paneMenu, setPaneMenu] = useState<{ x: number, y: number, screenX: number, screenY: number } | null>(null);
   const [radialMenu, setRadialMenu] = useState<{ x: number, y: number, screenX: number, screenY: number } | null>(null);
@@ -21,11 +21,12 @@ function Flow() {
   const [idleTooltip, setIdleTooltip] = useState<{ x: number, y: number } | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const idleTimerRef = useRef<any>(null);
-
+ 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Shift') setIsShiftPressed(e.type === 'keydown');
       if (e.key === 'Alt') setAltPressed(e.type === 'keydown');
+      if (e.key === 'Control' || e.key === 'Meta') setCtrlPressed(e.type === 'keydown');
     };
     window.addEventListener('keydown', handleKey);
     window.addEventListener('keyup', handleKey);
@@ -33,7 +34,7 @@ function Flow() {
       window.removeEventListener('keydown', handleKey);
       window.removeEventListener('keyup', handleKey);
     };
-  }, [setAltPressed]);
+  }, [setAltPressed, setCtrlPressed]);
 
   useEffect(() => {
     document.body.setAttribute('data-theme', theme);
@@ -165,6 +166,24 @@ function Flow() {
       event.preventDefault();
 
       const type = event.dataTransfer.getData('application/reactflow');
+      const ejectDataStr = event.dataTransfer.getData('application/reactflow-eject');
+
+      if (ejectDataStr) {
+        try {
+          const { sliderData } = JSON.parse(ejectDataStr);
+          const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+          
+          addNode({
+            ...sliderData,
+            id: `slider-ejected-${Date.now()}`,
+            position,
+            selected: true,
+          } as any);
+          return;
+        } catch (e) {
+          console.error('Failed to parse eject data', e);
+        }
+      }
 
       if (typeof type === 'undefined' || !type) {
         return;
@@ -172,7 +191,7 @@ function Flow() {
 
       handleAddNode(type, undefined, { x: event.clientX, y: event.clientY });
     },
-    [screenToFlowPosition]
+    [screenToFlowPosition, addNode, nodes]
   );
 
   const handleAddNode = (type: string, variant?: string, customPos?: { x: number, y: number }) => {

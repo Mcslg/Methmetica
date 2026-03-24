@@ -28,7 +28,39 @@ export function RangeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             <NodeResizer minWidth={150} minHeight={40} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
             
             <div className="node-header">
-                <span><Icons.Range /> Range</span>
+                <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1, gap: '4px' }}>
+                    <Icons.Range />
+                    <input
+                        title="Rename node"
+                        className="nodrag"
+                        style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'inherit',
+                            fontSize: 'inherit',
+                            fontWeight: 'inherit',
+                            width: '100%',
+                            padding: '0',
+                            margin: '0',
+                            outline: 'none',
+                            cursor: 'text'
+                        }}
+                        value={data.label || 'Range'}
+                        onChange={(e) => updateNodeData(id, { label: e.target.value })}
+                        onFocus={(e) => {
+                            if (e.target.value === 'Range') {
+                                updateNodeData(id, { label: '' });
+                            }
+                        }}
+                        onBlur={(e) => {
+                            if (e.target.value === '') {
+                                updateNodeData(id, { label: 'Range' });
+                            }
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                    />
+                </div>
             </div>
 
             <div style={{ padding: '8px 12px', display: 'flex', gap: '8px', alignItems: 'center' }}>

@@ -4,6 +4,7 @@ import useStore, { type NodeData, type AppState } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
 import 'mathlive';
+import { CommentArea } from '../components/CommentArea';
 
 export function SolveNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);

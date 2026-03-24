@@ -5,6 +5,7 @@ import { DynamicHandles } from './DynamicHandles';
 import { getMathEngine } from '../utils/MathEngine';
 import { Icons } from '../components/Icons';
 import 'mathlive';
+import { CommentArea } from '../components/CommentArea';
 
 
 
@@ -464,10 +465,40 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             <div className="nowheel" style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', overflow: 'hidden', borderRadius: 'inherit' }}>
                 <div className="node-header" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span>
+                        <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1, gap: '4px' }}>
                             <Icons.Graph />
-                            Graph {isReceivingExternal && <span style={{ fontSize: '0.55rem', color: 'var(--accent-bright)', marginLeft: 4 }}>● EXT</span>}
-                        </span>
+                            <input
+                                title="Rename node"
+                                className="nodrag"
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: 'inherit',
+                                    fontSize: 'inherit',
+                                    fontWeight: 'inherit',
+                                    width: '100%',
+                                    padding: '0',
+                                    margin: '0',
+                                    outline: 'none',
+                                    cursor: 'text'
+                                }}
+                                value={data.label || 'Graph'}
+                                onChange={(e) => updateNodeData(id, { label: e.target.value })}
+                                onFocus={(e) => {
+                                    if (e.target.value === 'Graph') {
+                                        updateNodeData(id, { label: '' });
+                                    }
+                                }}
+                                onBlur={(e) => {
+                                    if (e.target.value === '') {
+                                        updateNodeData(id, { label: 'Graph' });
+                                    }
+                                }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => e.stopPropagation()}
+                            />
+                            {isReceivingExternal && <span style={{ fontSize: '0.55rem', color: 'var(--accent-bright)', marginLeft: 4, whiteSpace: 'nowrap' }}>● EXT</span>}
+                        </div>
                     </div>
                     {/* Absorbed Slots Rendering */}
                     {data.slots && Object.keys(data.slots).length > 0 && (
@@ -509,6 +540,9 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                         </div>
                     )}
                 </div>
+                {data.slots?.comment && (
+                    <CommentArea containerId={id} commentSid={data.slots.comment as string} />
+                )}
 
                 {/* Formula input — only show manual editor when NOT receiving external */}
                 {!isReceivingExternal && (
