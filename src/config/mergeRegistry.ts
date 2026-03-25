@@ -48,8 +48,8 @@ export const MergeRules: Record<ProxyableType, MergeRule> = {
     },
     textNode: {
         acceptedBy: ['calculateNode', 'solveNode', 'graphNode', 'calculusNode', 'gateNode', 'rangeNode'],
-        getSlotKey: () => 'comment',
-        heightIncrement: 0, // Visual height handled by CommentArea
+        getSlotKey: (_id, name) => name || 'comment',
+        heightIncrement: 0, 
     },
 };
 

@@ -3,6 +3,7 @@ import { NodeResizer, useReactFlow } from '@xyflow/react';
 import useStore, { type AppState } from '../store/useStore';
 import { DynamicHandles } from '../nodes/DynamicHandles';
 import { CommentArea } from './CommentArea';
+import { ResultArea } from './ResultArea';
 import { Icons } from './Icons';
 
 interface NodeFrameProps {
@@ -81,18 +82,42 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
         : '';
 
     return (
-        <div className={`math-node op-node ${className} ${touchingClasses}`} 
-             style={{ 
-                 width: '100%', 
-                 height: '100%', 
-                 display: 'flex', 
-                 flexDirection: 'column',
-                 overflow: 'visible',
-                 boxSizing: 'border-box',
-                 ...style
-             }}>
-            <NodeResizer minWidth={minWidth} minHeight={minHeight} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
+        <div 
+            className={`math-node op-node ${className} ${touchingClasses}`}
+            style={{
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'visible',
+                boxSizing: 'border-box',
+                ...style
+            }}>
+            <NodeResizer 
+                minWidth={minWidth} 
+                minHeight={minHeight} 
+                isVisible={selected} 
+                lineStyle={{ border: 'none' }} 
+                handleStyle={{ 
+                    width: 28, 
+                    height: 28, 
+                    borderRadius: '50%', 
+                    background: 'transparent', 
+                    border: 'none',
+                    margin: -14,
+                    zIndex: 1000
+                }}
+                handleClassName="resize-handle-v2"
+            />
+
+            {data.slots?.comment && (
+                <CommentArea containerId={id} commentSid={data.slots.comment as string} />
+            )}
             
+            {data.slots?.resultText && (
+                <ResultArea containerId={id} targetSid={data.slots.resultText as string} />
+            )}
+
             <DynamicHandles
                 nodeId={id}
                 handles={augmentedHandles}
@@ -148,19 +173,21 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
 
                 {/* Absorbed Slots Rendering */}
                 {data.slots && Object.keys(data.slots).length > 0 && (
-                    <div style={{ 
-                        marginTop: '6px', 
-                        display: 'flex', 
+                    <div style={{
+                        marginTop: '6px',
+                        display: 'flex',
                         flexWrap: 'wrap',
-                        gap: '4px', 
-                        paddingTop: '6px', 
-                        borderTop: '1px solid rgba(255,255,255,0.1)' 
+                        gap: '4px',
+                        paddingTop: '6px',
+                        borderTop: '1px solid rgba(255,255,255,0.1)'
                     }}>
                         {/* Dynamic Slider Slots */}
                         {Object.entries(data.slots).map(([slotKey, sid]) => {
                             const proxyNode = useStore.getState().nodes.find(n => n.id === sid);
-                            if (proxyNode?.type !== 'sliderNode') return null;
-                            const handleSliderEject = (e: React.PointerEvent) => {
+                            if (!proxyNode) return null;
+
+                            // Shared Ejection logic
+                            const handleEject = (e: React.PointerEvent) => {
                                 e.stopPropagation();
                                 if (useStore.getState().isCtrlPressed) {
                                     const startX = e.clientX;
@@ -183,48 +210,50 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
                                 }
                             };
 
-                            if (!proxyNode) return null;
-
-                            return (
-                                <div 
-                                    key={slotKey} 
-                                    className="nodrag"
-                                    onPointerDown={(e) => {
-                                        e.stopPropagation(); 
-                                        handleSliderEject(e); 
-                                    }}
-                                    style={{ 
-                                        display: 'flex', 
-                                        alignItems: 'center', 
-                                        background: 'rgba(255, 255, 255, 0.05)', 
-                                        border: '1px solid rgba(255, 255, 255, 0.1)', 
-                                        borderRadius: '4px', 
-                                        padding: '2px 8px', 
-                                        gap: '6px',
-                                        cursor: useStore.getState().isCtrlPressed ? 'grab' : 'default'
-                                    }}
-                                >
-                                    <span style={{ fontSize: '0.6rem', fontWeight: 'bold', color: 'var(--text-main)', opacity: 0.8, userSelect: 'none' }}>{slotKey}</span>
-                                    <input 
-                                        type="range"
+                            // Render Slider
+                            if (proxyNode.type === 'sliderNode') {
+                                return (
+                                    <div
+                                        key={slotKey}
                                         className="nodrag"
-                                        min={proxyNode.data.min ?? 0}
-                                        max={proxyNode.data.max ?? 100}
-                                        step={proxyNode.data.step ?? 1}
-                                        value={proxyNode.data.value || 0}
-                                        onChange={(e) => {
-                                            const newVal = e.target.value;
-                                            updateNodeData(sid as string, { value: newVal });
-                                            if (!data.slots?.buttonNode) {
-                                                executeNode(id);
-                                            }
+                                        onPointerDown={handleEject}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            background: 'rgba(255, 255, 255, 0.05)',
+                                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                                            borderRadius: '4px',
+                                            padding: '2px 8px',
+                                            gap: '6px',
+                                            cursor: useStore.getState().isCtrlPressed ? 'grab' : 'default'
                                         }}
-                                        title={`Ctrl+Drag to eject ${slotKey} slider`}
-                                        style={{ width: '50px', height: '4px', accentColor: 'var(--accent)' }}
-                                    />
-                                    <span style={{ fontSize: '0.6rem', color: 'var(--text-sub)', minWidth: '16px', textAlign: 'right', userSelect: 'none' }}>{proxyNode.data.value || 0}</span>
-                                </div>
-                            );
+                                    >
+                                        <span style={{ fontSize: '0.6rem', fontWeight: 'bold', color: 'var(--text-main)', opacity: 0.8, userSelect: 'none' }}>{slotKey}</span>
+                                        <input
+                                            type="range"
+                                            className="nodrag"
+                                            min={proxyNode.data.min ?? 0}
+                                            max={proxyNode.data.max ?? 100}
+                                            step={proxyNode.data.step ?? 1}
+                                            value={proxyNode.data.value || 0}
+                                            onChange={(e) => {
+                                                const newVal = e.target.value;
+                                                updateNodeData(sid as string, { value: newVal });
+                                                if (!data.slots?.buttonNode) {
+                                                    executeNode(id);
+                                                }
+                                            }}
+                                            title={`Ctrl+Drag to eject ${slotKey} slider`}
+                                            style={{ width: '50px', height: '4px', accentColor: 'var(--accent)' }}
+                                        />
+                                        <span style={{ fontSize: '0.6rem', color: 'var(--text-sub)', minWidth: '16px', textAlign: 'right', userSelect: 'none' }}>{proxyNode.data.value || 0}</span>
+                                    </div>
+                                );
+                            }
+
+                             return null;
+
+                            return null;
                         })}
 
                         {data.slots.buttonNode && (
@@ -262,13 +291,13 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
                             </div>
                         )}
                         {data.slots.gateNode && (
-                            <div 
-                                style={{ 
-                                    display: 'flex', 
-                                    alignItems: 'center', 
-                                    background: (realGateNode ? Number(realGateNode.data.value) : 0) !== 0 ? 'rgba(74, 222, 128, 0.15)' : 'rgba(239, 68, 68, 0.1)', 
-                                    border: `1px solid ${(realGateNode ? Number(realGateNode.data.value) : 0) !== 0 ? 'rgba(74, 222, 128, 0.4)' : 'rgba(239, 68, 68, 0.3)'}`, 
-                                    borderRadius: '4px', 
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    background: (realGateNode ? Number(realGateNode.data.value) : 0) !== 0 ? 'rgba(74, 222, 128, 0.15)' : 'rgba(239, 68, 68, 0.1)',
+                                    border: `1px solid ${(realGateNode ? Number(realGateNode.data.value) : 0) !== 0 ? 'rgba(74, 222, 128, 0.4)' : 'rgba(239, 68, 68, 0.3)'}`,
+                                    borderRadius: '4px',
                                     padding: '2px 4px',
                                     transition: 'all 0.2s',
                                     cursor: 'pointer',
@@ -314,17 +343,14 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
                 )}
             </div>
 
-            {data.slots?.comment && (
-                <CommentArea containerId={id} commentSid={data.slots.comment as string} />
-            )}
 
-            <div className="node-content custom-scrollbar" style={{ 
-                flexGrow: 1, 
-                padding: '4px 8px', 
-                overflowY: 'auto', 
-                overflowX: 'hidden', 
-                display: 'flex', 
-                flexDirection: 'column', 
+            <div className="node-content custom-scrollbar" style={{
+                flexGrow: 1,
+                padding: '4px 8px',
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
                 gap: '4px',
                 ...contentStyle // Merge custom style
             }}>
@@ -342,6 +368,45 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
                 }
                 .eject-btn:hover {
                     opacity: 1;
+                }
+            `}</style>
+            <style>{`
+                .resize-handle-v2 {
+                    background: transparent !important;
+                    border: none !important;
+                }
+                .math-node.selected .resize-handle-v2::after {
+                    content: "";
+                    position: absolute;
+                    width: 6px;
+                    height: 6px;
+                    background: var(--accent);
+                    border-radius: 50%;
+                    box-shadow: 0 0 8px var(--accent);
+                    opacity: 0.6;
+                    pointer-events: none;
+                    transition: all 0.2s ease;
+                }
+                /* Top-left handle inward */
+                .react-flow__node-resizer__handle--top-left::after { left: 40%; top: 40%; }
+                /* Top-right handle inward */
+                .react-flow__node-resizer__handle--top-right::after { left: 60%; top: 40%; }
+                /* Bottom-left handle inward */
+                .react-flow__node-resizer__handle--bottom-left::after { left: 40%; top: 60%; }
+                /* Bottom-right handle inward */
+                .react-flow__node-resizer__handle--bottom-right::after { left: 60%; top: 60%; }
+
+                /* Hide side handles (top, bottom, left, right) */
+                .react-flow__node-resizer__handle--top,
+                .react-flow__node-resizer__handle--bottom,
+                .react-flow__node-resizer__handle--left,
+                .react-flow__node-resizer__handle--right {
+                    display: none !important;
+                }
+
+                .resize-handle-v2:hover::after {
+                    opacity: 1 !important;
+                    transform: scale(1.6);
                 }
             `}</style>
         </div>

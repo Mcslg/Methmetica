@@ -92,35 +92,6 @@ export function SolveNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                 {data.formula || ''}
             </math-field>
 
-            {data.value && (
-                <div style={{
-                    marginTop: 'auto',
-                    padding: '8px',
-                    background: 'rgba(255, 126, 95, 0.05)',
-                    border: '1px solid rgba(255, 126, 95, 0.2)',
-                    borderRadius: '6px',
-                    fontSize: '0.95rem',
-                    color: '#fff',
-                    textAlign: 'center',
-                    overflowX: 'auto',
-                    whiteSpace: 'nowrap',
-                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)'
-                }}>
-                     <div style={{ fontSize: '0.55rem', color: '#ff7e5f', textTransform: 'uppercase', marginBottom: '4px', fontWeight: 700 }}>Solutions</div>
-                    <span dangerouslySetInnerHTML={{ 
-                        __html: (() => {
-                            let val = data.value;
-                            if (val && val.startsWith('[') && val.endsWith(']')) {
-                                try {
-                                    const parsed = JSON.parse(val);
-                                    if (Array.isArray(parsed)) val = `[${parsed.join(', ')}]`;
-                                } catch {}
-                            }
-                            return window.katex?.renderToString(val, { throwOnError: false }) || val;
-                        })()
-                    }} />
-                </div>
-            )}
             <style>{`
                 .solve-node {
                     transition: box-shadow 0.2s, border-color 0.2s;

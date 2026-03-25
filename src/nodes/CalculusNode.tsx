@@ -1,6 +1,6 @@
 import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
 import { useEffect } from 'react';
-import useStore, { type AppState, type NodeData } from '../store/useStore';
+import useStore, { type AppState, type NodeData, type AppNode } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
 
@@ -12,12 +12,12 @@ export function CalculusNode({ id, data, selected }: NodeProps<Node<NodeData>>) 
 
     const handleEject = (type: string) => {
         const slotNode = data.slots?.[type];
-        if (!slotNode) return;
+        if (!slotNode || typeof slotNode === 'string') return;
         
         useStore.getState().addNode({
-            ...slotNode,
+            ...(slotNode as AppNode),
             id: `${type}-${Date.now()}`,
-            position: { x: slotNode.position.x, y: slotNode.position.y - 80 },
+            position: { x: (slotNode as AppNode).position.x, y: (slotNode as AppNode).position.y - 80 },
             selected: false
         });
         

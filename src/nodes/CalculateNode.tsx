@@ -11,7 +11,6 @@ import { NodeFrame } from '../components/NodeFrame';
 export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
     const executeNode = useStore((state: AppState) => state.executeNode);
-    const edges = useStore((state: AppState) => state.edges);
     const mfRef = useRef<any>(null);
 
     const useExternalFormula = !!data.useExternalFormula;
@@ -176,33 +175,6 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
                 </math-field>
             )}
 
-            {(!data.handles?.some(h => h.type === 'output') || !edges.some(e => e.source === id)) && data.value && (
-                <div style={{
-                    marginTop: '4px',
-                    padding: '6px',
-                    background: 'rgba(74, 222, 128, 0.08)',
-                    border: '1px solid rgba(74, 222, 128, 0.2)',
-                    borderRadius: '6px',
-                    fontSize: '1rem',
-                    color: 'var(--text-main)',
-                    textAlign: 'center',
-                    overflowX: 'auto',
-                    whiteSpace: 'nowrap'
-                }}>
-                    <span dangerouslySetInnerHTML={{ 
-                        __html: (() => {
-                            let val = data.value;
-                            if (val && val.startsWith('[') && val.endsWith(']')) {
-                                try {
-                                    const parsed = JSON.parse(val);
-                                    if (Array.isArray(parsed)) val = `[${parsed.join(', ')}]`;
-                                } catch {}
-                            }
-                            return window.katex?.renderToString(val, { throwOnError: false }) || val;
-                        })()
-                    }} />
-                </div>
-            )}
             <style>{`
                 .variant-toggle {
                     background: var(--bg-input);

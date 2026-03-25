@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { type Edge } from '@xyflow/react';
 import { getNodeDefinition } from '../nodes/registry';
-import { canMerge, MergeRules, type ProxyableType, proxyableTypes } from '../config/mergeRegistry';
+import { canMerge, MergeRules, type ProxyableType } from '../config/mergeRegistry';
 import {
     type Connection,
     type EdgeChange,
@@ -90,6 +90,10 @@ export type AppState = {
     // Ghost line during Command-Eject
     draggingEjectPos: { startX: number, startY: number, curX: number, curY: number } | null;
     setDraggingEjectPos: (pos: { startX: number, startY: number, curX: number, curY: number } | null) => void;
+
+    // [NEW] Merge Hint during drag
+    mergeHint: { targetId: string, slotKey: string, label: string } | null;
+    updateMergeHint: (draggedNodeId: string, mousePos: { x: number, y: number } | null) => void;
 };
 
 // Initial setup nodes
@@ -113,6 +117,50 @@ const useStore = create<AppState>()(
 
             draggingEjectPos: null,
             setDraggingEjectPos: (pos) => set({ draggingEjectPos: pos }),
+
+            mergeHint: null,
+            updateMergeHint: (draggedNodeId, mousePos) => {
+                if (!mousePos) {
+                    set({ mergeHint: null });
+                    return;
+                }
+                const { nodes } = get();
+                const a = nodes.find(n => n.id === draggedNodeId);
+                if (!a || a.type !== 'textNode') return;
+
+                let bestHint: AppState['mergeHint'] = null;
+
+                for (const b of nodes) {
+                    if (b.id === draggedNodeId || b.hidden || !b.type) continue;
+                    if (!canMerge(a.type, b.type)) continue;
+
+                    const bWidth = b.measured?.width || b.width || 200;
+                    const bHeight = b.measured?.height || b.height || 100;
+                    
+                    // Box check with padding
+                    const isOver = mousePos.x >= b.position.x - 20 && mousePos.x <= b.position.x + bWidth + 20 &&
+                                   mousePos.y >= b.position.y - 20 && mousePos.y <= b.position.y + bHeight + 20;
+
+                    if (isOver) {
+                        // Determine side
+                        const dxRight = Math.max(0, Math.abs(mousePos.x - (b.position.x + bWidth)));
+                        const dyTop = Math.max(0, Math.abs(mousePos.y - b.position.y));
+                        const slots = b.data.slots || {};
+
+                        if (dxRight < 50 && (b.type === 'calculateNode' || b.type === 'solveNode')) {
+                            if (!slots.resultText) {
+                                bestHint = { targetId: b.id, slotKey: 'resultText', label: '+ Result Display' };
+                            }
+                        } else if (dyTop < 50) {
+                            if (!slots.comment) {
+                                bestHint = { targetId: b.id, slotKey: 'comment', label: '+ Add Note' };
+                            }
+                        }
+                        break; 
+                    }
+                }
+                set({ mergeHint: bestHint });
+            },
 
             setNodeHidden: (nodeId, hidden) => {
                 set({
@@ -300,9 +348,43 @@ const useStore = create<AppState>()(
     },
 
     removeNode: (nodeId: string) => {
+        const { nodes, edges } = get();
+        
+        // 1. Identify direct children to be deleted along with the parent
+        const nodesToRemove = new Set<string>();
+        nodesToRemove.add(nodeId);
+        nodes.forEach(n => {
+            if (n.data?.parentId === nodeId) {
+                nodesToRemove.add(n.id);
+            }
+        });
+
+        // 2. Filter nodes and clean up slots in ANY remaining nodes (just in case)
+        const cleanedNodes = nodes
+            .filter(n => !nodesToRemove.has(n.id))
+            .map(n => {
+                if (n.data.slots) {
+                    const newSlots = { ...n.data.slots };
+                    let changed = false;
+                    Object.keys(newSlots).forEach(key => {
+                        if (nodesToRemove.has(newSlots[key] as string)) {
+                            delete newSlots[key];
+                            changed = true;
+                        }
+                    });
+                    if (changed) return { ...n, data: { ...n.data, slots: newSlots } };
+                }
+                return n;
+            });
+
+        // 3. Filter edges
+        const cleanedEdges = edges.filter(e => 
+            !nodesToRemove.has(e.source) && !nodesToRemove.has(e.target)
+        );
+
         set({
-            nodes: get().nodes.filter(n => n.id !== nodeId),
-            edges: get().edges.filter(e => e.source !== nodeId && e.target !== nodeId)
+            nodes: cleanedNodes,
+            edges: cleanedEdges
         });
         get().evaluateGraph();
     },
@@ -324,7 +406,14 @@ const useStore = create<AppState>()(
             const currentNodes = get().nodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, value: res } } : n);
             set({ nodes: currentNodes });
 
-            // implicit and explicit connections are handled by evaluateGraph
+            // [NEW] Sync results to merged resultText slot if present
+            if (node.data.slots?.resultText) {
+                const textNodeId = typeof node.data.slots.resultText === 'string' 
+                    ? node.data.slots.resultText 
+                    : (node.data.slots.resultText as any).id;
+                get().updateNodeData(textNodeId, { text: `RESULT: ${res}` });
+            }
+
             get().evaluateGraph();
         };
 
@@ -351,58 +440,54 @@ const useStore = create<AppState>()(
     // checkProximity removed
 
     handleProximitySnap: (nodeId: string) => {
-        const { nodes } = get();
+        const { nodes, mergeHint } = get();
         const a = nodes.find(n => n.id === nodeId);
-        if (!a) return;
+        if (!a) { console.warn("Snap fail: A not found"); return; }
 
-        // Only check proxyable nodes
-        if (!proxyableTypes.includes(a.type as ProxyableType)) return;
+        if (mergeHint && mergeHint.targetId) {
+            const b = nodes.find(n => n.id === mergeHint.targetId);
+            if (b) {
+                const rule = MergeRules[a.type as ProxyableType];
+                if (!rule) { console.warn("Snap fail: No rule for", a.type); return; }
 
-        const aWidth = a.measured?.width || a.width || 120;
-        const aHeight = a.measured?.height || a.height || 46;
-        const aCenterX = a.position.x + aWidth / 2;
-        const aCenterY = a.position.y + aHeight / 2;
+                const slotKey = mergeHint.slotKey;
+                const currentSlots = b.data.slots || {};
+                
+                if (!currentSlots[slotKey]) {
+                    console.log(`Merging ${a.id} into ${b.id} at ${slotKey}`);
+                    const newSlots = { ...currentSlots, [slotKey]: a.id };
+                    const curHeight = b.height || b.measured?.height || 100;
+                    const nextHeight = (b.type === 'textNode') ? curHeight : curHeight + rule.heightIncrement;
 
-        for (const b of nodes) {
-            if (b.id === nodeId || !b.type) continue;
-            if (!canMerge(a.type || '', b.type)) continue;
-
-            const bWidth = b.measured?.width || b.width || 200;
-            const bHeight = b.measured?.height || b.height || 100;
-            const isInsideB = aCenterX >= b.position.x - 10 && aCenterX <= b.position.x + bWidth + 10 &&
-                              aCenterY >= b.position.y - 30 && aCenterY <= b.position.y + bHeight + 10;
-
-            if (!isInsideB) continue;
-
-            const rule = MergeRules[a.type as ProxyableType];
-            const slotKey = rule.getSlotKey(a.id, a.data.nodeName);
-            const currentSlots = b.data.slots || {};
-
-            // Prevent duplicate absorption
-            if (currentSlots[slotKey]) return;
-
-            const newSlots = { ...currentSlots, [slotKey]: a.id };
-            const curHeight = b.height || b.measured?.height || 100;
-            const nextHeight = (b.type === 'textNode') ? curHeight : curHeight + rule.heightIncrement;
-
-            set({
-                nodes: get().nodes.map(n => {
-                    if (n.id === b.id) return { ...n, height: nextHeight, data: { ...n.data, slots: newSlots } };
-                    if (n.id === a.id) return { ...n, hidden: true, data: { ...n.data, parentId: b.id } };
-                    return n;
-                }),
-                edges: get().edges.map(e => {
-                    if (e.source === a.id) return { ...e, source: b.id, sourceHandle: `h-out-${slotKey}` };
-                    if (e.target === a.id) {
-                        const tHandle = (a.type === 'gateNode') ? 'h-gate-in' : `h-in-${slotKey}`;
-                        return { ...e, target: b.id, targetHandle: tHandle };
-                    }
-                    return e;
-                })
-            });
-            get().evaluateGraph();
-            return;
+                    set({
+                        nodes: get().nodes.map(n => {
+                            if (n.id === b.id) return { ...n, height: nextHeight, data: { ...n.data, slots: newSlots } };
+                            if (n.id === a.id) return { ...n, hidden: true, selected: false, data: { ...n.data, parentId: b.id } };
+                            return n;
+                        }),
+                        edges: get().edges.map(e => {
+                            if (e.source === a.id) return { ...e, source: b.id, sourceHandle: `h-out-${slotKey}` };
+                            if (e.target === a.id) {
+                                const tHandle = (a.type === 'gateNode') ? 'h-gate-in' : `h-in-${slotKey}`;
+                                return { ...e, target: b.id, targetHandle: tHandle };
+                            }
+                            return e;
+                        }),
+                        mergeHint: null 
+                    });
+                    get().evaluateGraph();
+                    return;
+                } else {
+                    console.warn(`Snap fail: Slot ${slotKey} occupied`);
+                }
+            } else {
+                console.warn("Snap fail: B not found");
+            }
+        } else {
+            console.log("Snap fail: No active hint");
         }
+        
+        set({ mergeHint: null });
     },
 
     evaluateGraph: () => {
