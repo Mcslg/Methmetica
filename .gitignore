@@ -16,10 +16,12 @@ dist-ssr
 .vscode/*
 !.vscode/extensions.json
 .idea
+# System noise
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+**/.DS_Store
+Thumbs.db
+
+# Project notes / Drafts
 note.txt
+Note_merge.txt
+.agent/scratch/

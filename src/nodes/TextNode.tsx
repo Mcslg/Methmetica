@@ -143,19 +143,26 @@ const SliderPill = TiptapNode.create({
                     />
                     <span style={{ fontSize: '0.65rem', color: 'var(--text-sub)', minWidth: '18px', textAlign: 'right', cursor: 'pointer' }}
                         title="Ctrl+Drag to eject"
-                        draggable
-                        onDragStart={(e) => {
-                            const isCtrlPressed = useStore.getState().isCtrlPressed;
-                            if (isCtrlPressed) {
-                                e.dataTransfer.setData('application/reactflow-eject', JSON.stringify({ name, nodeId: ctx.nodeId, sliderId: realSliderNode?.id }));
-                                e.dataTransfer.effectAllowed = 'move';
-                            } else {
-                                e.preventDefault();
-                            }
-                        }}
-                        onDragEnd={(e) => {
-                            if (e.clientX !== 0 && e.clientY !== 0) {
-                                ctx.handleEject(name, { x: e.clientX, y: e.clientY });
+                        onPointerDown={(e) => {
+                            if (useStore.getState().isCtrlPressed) {
+                                e.stopPropagation();
+                                const startX = e.clientX;
+                                const startY = e.clientY;
+                                const onMove = (me: PointerEvent) => {
+                                    useStore.getState().setDraggingEjectPos({ startX, startY, curX: me.clientX, curY: me.clientY });
+                                };
+                                const onUp = (ue: PointerEvent) => {
+                                    window.removeEventListener('pointermove', onMove);
+                                    window.removeEventListener('pointerup', onUp);
+                                    useStore.getState().setDraggingEjectPos(null);
+                                    const dx = ue.clientX - startX;
+                                    const dy = ue.clientY - startY;
+                                    if (Math.sqrt(dx * dx + dy * dy) > 5) {
+                                        ctx.handleEject(name, { x: ue.clientX, y: ue.clientY });
+                                    }
+                                };
+                                window.addEventListener('pointermove', onMove);
+                                window.addEventListener('pointerup', onUp, { once: true });
                             }
                         }}
                     >
@@ -213,13 +220,30 @@ const ButtonPill = TiptapNode.create({
                                 useStore.getState().executeNode(e.target);
                             });
                         }}
-                        draggable
-                        onDragStart={(e) => {
+                        onPointerDown={(e) => {
                             if (useStore.getState().isCtrlPressed) {
-                                e.dataTransfer.setData('application/reactflow-eject', JSON.stringify({ name, nodeId: ctx.nodeId, sliderId: realNode.id }));
-                            } else e.preventDefault();
+                                e.stopPropagation();
+                                const startX = e.clientX;
+                                const startY = e.clientY;
+                                const onMove = (me: PointerEvent) => {
+                                    useStore.getState().setDraggingEjectPos({ startX, startY, curX: me.clientX, curY: me.clientY });
+                                };
+                                const onUp = (ue: PointerEvent) => {
+                                    window.removeEventListener('pointermove', onMove);
+                                    window.removeEventListener('pointerup', onUp);
+                                    useStore.getState().setDraggingEjectPos(null);
+                                    const dx = ue.clientX - startX;
+                                    const dy = ue.clientY - startY;
+                                    if (Math.sqrt(dx * dx + dy * dy) > 5) {
+                                        ctx.handleEject(name, { x: ue.clientX, y: ue.clientY });
+                                    }
+                                };
+                                window.addEventListener('pointermove', onMove);
+                                window.addEventListener('pointerup', onUp, { once: true });
+                            } else {
+                                e.stopPropagation();
+                            }
                         }}
-                        onDragEnd={(e) => { if (e.clientX !== 0) ctx.handleEject(name, { x: e.clientX, y: e.clientY }); }}
                         style={{
                             background: '#ffcc00', border: 'none', borderRadius: '12px', color: '#000',
                             fontSize: '0.6rem', fontWeight: 800, padding: '2px 8px', cursor: 'pointer'
@@ -274,13 +298,30 @@ const GatePill = TiptapNode.create({
                         onClick={() => {
                             useStore.getState().updateNodeData(realNode.id, { value: isOpen ? '0' : '1' });
                         }}
-                        draggable
-                        onDragStart={(e) => {
+                        onPointerDown={(e) => {
                             if (useStore.getState().isCtrlPressed) {
-                                e.dataTransfer.setData('application/reactflow-eject', JSON.stringify({ name, nodeId: ctx.nodeId, sliderId: realNode.id }));
-                            } else e.preventDefault();
+                                e.stopPropagation();
+                                const startX = e.clientX;
+                                const startY = e.clientY;
+                                const onMove = (me: PointerEvent) => {
+                                    useStore.getState().setDraggingEjectPos({ startX, startY, curX: me.clientX, curY: me.clientY });
+                                };
+                                const onUp = (ue: PointerEvent) => {
+                                    window.removeEventListener('pointermove', onMove);
+                                    window.removeEventListener('pointerup', onUp);
+                                    useStore.getState().setDraggingEjectPos(null);
+                                    const dx = ue.clientX - startX;
+                                    const dy = ue.clientY - startY;
+                                    if (Math.sqrt(dx * dx + dy * dy) > 5) {
+                                        ctx.handleEject(name, { x: ue.clientX, y: ue.clientY });
+                                    }
+                                };
+                                window.addEventListener('pointermove', onMove);
+                                window.addEventListener('pointerup', onUp, { once: true });
+                            } else {
+                                e.stopPropagation();
+                            }
                         }}
-                        onDragEnd={(e) => { if (e.clientX !== 0) ctx.handleEject(name, { x: e.clientX, y: e.clientY }); }}
                         style={{
                             background: isOpen ? '#43e97b' : '#ff4757', border: 'none', borderRadius: '4px', color: '#000',
                             fontSize: '0.6rem', fontWeight: 800, padding: '2px 6px', cursor: 'pointer',
