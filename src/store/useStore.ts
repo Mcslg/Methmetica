@@ -86,6 +86,10 @@ export type AppState = {
     setPalettePosition: (pos: { x: number; y: number }) => void;
     setNodeHidden: (nodeId: string, hidden: boolean) => void;
     handleEject: (containerId: string, slotKey: string, flowPos: { x: number, y: number }) => void;
+    
+    // Ghost line during Command-Eject
+    draggingEjectPos: { startX: number, startY: number, curX: number, curY: number } | null;
+    setDraggingEjectPos: (pos: { startX: number, startY: number, curX: number, curY: number } | null) => void;
 };
 
 // Initial setup nodes
@@ -106,6 +110,9 @@ const useStore = create<AppState>()(
             setPaletteFloating: (isPaletteFloating) => set({ isPaletteFloating }),
             palettePosition: { x: 100, y: 100 },
             setPalettePosition: (palettePosition) => set({ palettePosition }),
+
+            draggingEjectPos: null,
+            setDraggingEjectPos: (pos) => set({ draggingEjectPos: pos }),
 
             setNodeHidden: (nodeId, hidden) => {
                 set({

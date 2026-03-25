@@ -8,7 +8,7 @@ import { nodeTypes, nodeLibrary, getNodeDefinition } from './nodes/registry';
 import { Sidebar } from './components/Sidebar';
 import { FloatingPalette } from './components/FloatingPalette';
 function Flow() {
-  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, removeNode, handleProximitySnap, addHandle, setAltPressed, setCtrlPressed, theme, isSidebarOpen, setDeletingHover } = useStore();
+  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, removeNode, handleProximitySnap, addHandle, setAltPressed, setCtrlPressed, theme, isSidebarOpen, setDeletingHover, draggingEjectPos } = useStore();
   const { screenToFlowPosition } = useReactFlow();
   const [paneMenu, setPaneMenu] = useState<{ x: number, y: number, screenX: number, screenY: number } | null>(null);
   const [radialMenu, setRadialMenu] = useState<{ x: number, y: number, screenX: number, screenY: number } | null>(null);
@@ -530,6 +530,64 @@ function Flow() {
         </div>,
         document.body
       )}
+
+      {draggingEjectPos && createPortal(
+        <svg 
+          style={{ 
+            position: 'fixed', 
+            inset: 0, 
+            pointerEvents: 'none', 
+            zIndex: 99999, 
+            width: '100vw', 
+            height: '100vh' 
+          }}
+        >
+          <defs>
+            <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
+            <linearGradient id="eject-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#4facfe" />
+              <stop offset="100%" stopColor="#00f2fe" />
+            </linearGradient>
+          </defs>
+          <path
+            d={`M ${draggingEjectPos.startX} ${draggingEjectPos.startY} L ${draggingEjectPos.curX} ${draggingEjectPos.curY}`}
+            stroke="url(#eject-grad)"
+            strokeWidth="3"
+            strokeDasharray="6, 8"
+            strokeLinecap="round"
+            filter="url(#glow)"
+            fill="none"
+            style={{ 
+              animation: 'eject-flow 0.5s linear infinite',
+              opacity: 0.8
+            }}
+          />
+          <circle 
+            cx={draggingEjectPos.startX} 
+            cy={draggingEjectPos.startY} 
+            r="4" 
+            fill="#4facfe" 
+          />
+          <circle 
+            cx={draggingEjectPos.curX} 
+            cy={draggingEjectPos.curY} 
+            r="6" 
+            fill="#00f2fe" 
+            filter="url(#glow)" 
+          />
+        </svg>,
+        document.body
+      )}
+
+      <style>{`
+        @keyframes eject-flow {
+          from { stroke-dashoffset: 28; }
+          to { stroke-dashoffset: 0; }
+        }
+      `}</style>
     </div>
   );
 }

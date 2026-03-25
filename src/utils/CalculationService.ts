@@ -112,7 +112,6 @@ export class CalculationService {
                 });
             }
         });
-
         variables.forEach((v: string) => {
             const handle = node.data.handles?.find((h: any) => h.label === v || h.id === `h-in-${v}`);
             let val: string | undefined;
@@ -125,6 +124,17 @@ export class CalculationService {
                     val = sourceNode?.data?.value;
                     if (edge.sourceHandle && sourceNode?.data.outputs?.[edge.sourceHandle] !== undefined) {
                         val = sourceNode.data.outputs[edge.sourceHandle];
+                    }
+                }
+            }
+
+            // [NEW] Check if variable is provided by an absorbed slot (e.g. a merged Slider)
+            if (!val || val.trim() === '') {
+                const slotSid = node.data.slots?.[v];
+                if (typeof slotSid === 'string') {
+                    const absorbedNode = nodes.find(n => n.id === slotSid);
+                    if (absorbedNode && absorbedNode.data.value !== undefined) {
+                        val = String(absorbedNode.data.value);
                     }
                 }
             }

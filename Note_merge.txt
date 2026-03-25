@@ -1,6 +1,20 @@
-gate > 任何節點上方
--產生gate接口
--需要gate接口輸入true才執行
+# 節點合併行為規範 (Node Merge Registry)
 
-trigger > 任何節點上方
--需要手動執行
+（插入節點） > （被插入節點）
+- (預期行為)
+
+sliderNode > calculateNode, solveNode, textNode
+- 於標題下方產生一個迷你滑桿 (Mini-Slider)，可直接拖動調節數值並連動至主節點的變數 slot。
+
+buttonNode > calculateNode, textNode
+- 產生一個 [RUN 🔒] 按鈕，點擊後會觸發該節點的 execute 邏輯（常用於手動觸發計算）。
+
+gateNode > calculateNode, textNode
+- 產生一個 [GATE ✓/✗] 狀態圖示與開關，可點擊切換邏輯狀態，用來鎖定或解鎖計算流程。
+
+textNode (註解) > calculateNode, solveNode, graphNode, calculusNode, gateNode, rangeNode
+- 產生一個「註解備忘錄區域 (Comment Area)」，自動解析 JSON 為純文字預覽。
+- 支援「雙擊直接編輯」內容，無需還原節點。
+
+---
+* 註：所有合併行為皆支援按住 Cmd/Ctrl + 拖動標題區域彈射 (Eject) 還原為獨立節點。

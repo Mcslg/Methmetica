@@ -1,46 +1,14 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
+import { type NodeProps, type Node } from '@xyflow/react';
 import useStore, { type NodeData, type AppState } from '../store/useStore';
-import { DynamicHandles } from './DynamicHandles';
 import { getMathEngine } from '../utils/MathEngine';
 import { Icons } from '../components/Icons';
 import 'mathlive';
-import { CommentArea } from '../components/CommentArea';
-
-
+import { NodeFrame } from '../components/NodeFrame';
 
 export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
-
-    const handleEject = (type: string) => {
-        const slotNode = data.slots?.[type];
-        if (!slotNode) return;
-        useStore.getState().addNode({
-            ...slotNode,
-            id: `${type}-${Date.now()}`,
-            position: { x: slotNode.position.x, y: slotNode.position.y - 80 },
-            selected: false
-        });
-        const newSlots = { ...data.slots };
-        delete newSlots[type];
-
-        // Update both data and dimensions (shrink -40px)
-        const store = useStore.getState();
-        const parentNode = store.nodes.find(n => n.id === id);
-        if (parentNode) {
-            const curWidth = parentNode.width ?? parentNode.measured?.width ?? 300;
-            const curHeight = parentNode.height ?? parentNode.measured?.height ?? 260;
-            
-            useStore.setState({
-                nodes: store.nodes.map(n => n.id === id ? {
-                    ...n,
-                    width: curWidth,
-                    height: Math.max(200, curHeight - 40),
-                    data: { ...n.data, slots: newSlots }
-                } : n)
-            });
-        }
-    };
+    const theme = useStore((state: AppState) => state.theme);
 
     // Refs
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -119,8 +87,8 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                         return (_x: number) => t1;
                     }
                 }
-            } catch (e) {}
-        } catch (e) {}
+            } catch (e) { }
+        } catch (e) { }
 
         // Tier 2: pure JS eval with full LaTeX → JS conversion
         try {
@@ -149,7 +117,7 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             if (typeof r1 === 'number' || typeof r2 === 'number') {
                 return fn as (x: number) => number;
             }
-        } catch (e) {}
+        } catch (e) { }
 
         console.warn('[Graph] Could not build evaluator for formula:', formula);
         return null;
@@ -164,7 +132,7 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         if (!ctx) return;
 
         const dpr = window.devicePixelRatio || 1;
-        const clientWidth  = canvas.clientWidth  || canvas.parentElement?.clientWidth  || 0;
+        const clientWidth = canvas.clientWidth || canvas.parentElement?.clientWidth || 0;
         const clientHeight = canvas.clientHeight || canvas.parentElement?.clientHeight || 0;
         if (clientWidth === 0 || clientHeight === 0) return;
 
@@ -177,9 +145,15 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         const cy = clientHeight / 2 - view.y;
         const scale = view.scale;
         const colors = ['#4facfe', '#f43f5e', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+        // Fetch theme colors dynamically
+        const isLight = theme === 'light';
+        const gridColor = isLight ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.08)';
+        const axisColor = isLight ? 'rgba(0, 0, 0, 0.35)' : 'rgba(255, 255, 255, 0.4)';
+        const tooltipColor = isLight ? 'rgba(0,0,0,0.8)' : '#fff';
+        const shadowColor = isLight ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.9)';
 
         // Grid
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.strokeStyle = gridColor;
         ctx.lineWidth = 1;
         ctx.beginPath();
         const leftUnits = Math.floor(-cx / scale);
@@ -195,16 +169,16 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         ctx.stroke();
 
         // Axes
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.strokeStyle = axisColor;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         if (cy >= 0 && cy <= clientHeight) { ctx.moveTo(0, cy); ctx.lineTo(clientWidth, cy); }
-        if (cx >= 0 && cx <= clientWidth)  { ctx.moveTo(cx, 0); ctx.lineTo(cx, clientHeight); }
+        if (cx >= 0 && cx <= clientWidth) { ctx.moveTo(cx, 0); ctx.lineTo(cx, clientHeight); }
         ctx.stroke();
 
         // Axis tick labels
         ctx.font = '9px var(--font-main), sans-serif';
-        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.fillStyle = axisColor;
         ctx.textAlign = 'center';
         for (let i = leftUnits; i <= rightUnits; i++) {
             if (i === 0) continue;
@@ -218,14 +192,6 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             ctx.fillText(String(-i), Math.max(cx - 4, 20), py + 3);
         }
 
-        if (!formulaToParse) {
-            // Draw placeholder
-            ctx.fillStyle = 'rgba(255,255,255,0.15)';
-            ctx.font = '12px var(--font-main), sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('Enter a formula above', clientWidth / 2, clientHeight / 2);
-            return;
-        }
 
         const formulas = formulaToParse.split(/[,;]/).map(s => s.trim()).filter(Boolean);
 
@@ -260,11 +226,11 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             if (px < 0 || px > clientWidth || py < 0 || py > clientHeight) return;
 
             const color = colors[p.colorIdx % colors.length];
-            ctx.fillStyle = color; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+            ctx.fillStyle = color; ctx.strokeStyle = isLight ? '#000' : '#fff'; ctx.lineWidth = 2;
             ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
 
-            ctx.font = 'bold 10px Outfit, sans-serif'; ctx.fillStyle = '#fff'; ctx.textAlign = 'left';
-            ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 4;
+            ctx.font = 'bold 10px Outfit, sans-serif'; ctx.fillStyle = tooltipColor; ctx.textAlign = 'left';
+            ctx.shadowColor = shadowColor; ctx.shadowBlur = 4;
             const labelText = (isShiftPressed && p.label)
                 ? p.label.replace(/\\sqrt\{([^}]*)\}/g, '√$1').replace(/\\pi/g, 'π').replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, '($1/$2)').replace(/[{}\\]/g, '')
                 : `(${p.x.toFixed(2)}, ${p.y.toFixed(2)})`;
@@ -272,7 +238,7 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             ctx.shadowBlur = 0;
         });
 
-    }, [view, formulaToParse, criticalPoints, isShiftPressed, evalFn]);
+    }, [view, formulaToParse, criticalPoints, isShiftPressed, evalFn, theme]);
 
     // 5. Find Critical Points (numerical scan + symbolic label via CortexJS)
     useEffect(() => {
@@ -299,7 +265,7 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                         if (solutions && solutions.length > 0) {
                             return solutions.map((s: any) => s.latex ?? s.toString());
                         }
-                    } catch (e) {}
+                    } catch (e) { }
                     return [];
                 });
 
@@ -335,7 +301,7 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                                         symbolicLabel = `(${clean}, 0)`;
                                         break;
                                     }
-                                } catch (e) {}
+                                } catch (e) { }
                             }
 
                             const pt = {
@@ -449,101 +415,16 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     }
 
     return (
-        <div
-            className={`math-node op-node graph-node ${touchingClasses}`}
-            style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'visible', boxSizing: 'border-box' }}
+        <NodeFrame
+            id={id}
+            data={data}
+            selected={selected}
+            icon={<Icons.Graph />}
+            defaultLabel="Graph"
+            className={`graph-node ${touchingClasses}`}
+            contentStyle={{ padding: 0 }} // Canvas needs full bleed
         >
-            <NodeResizer minWidth={250} minHeight={200} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
-            <DynamicHandles
-                nodeId={id}
-                handles={augmentedHandles}
-                locked={true}
-                allowedTypes={['input', 'output']}
-                touchingEdges={data.touchingEdges}
-            />
-
-            <div className="nowheel" style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', overflow: 'hidden', borderRadius: 'inherit' }}>
-                <div className="node-header" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1, gap: '4px' }}>
-                            <Icons.Graph />
-                            <input
-                                title="Rename node"
-                                className="nodrag"
-                                style={{
-                                    background: 'transparent',
-                                    border: 'none',
-                                    color: 'inherit',
-                                    fontSize: 'inherit',
-                                    fontWeight: 'inherit',
-                                    width: '100%',
-                                    padding: '0',
-                                    margin: '0',
-                                    outline: 'none',
-                                    cursor: 'text'
-                                }}
-                                value={data.label || 'Graph'}
-                                onChange={(e) => updateNodeData(id, { label: e.target.value })}
-                                onFocus={(e) => {
-                                    if (e.target.value === 'Graph') {
-                                        updateNodeData(id, { label: '' });
-                                    }
-                                }}
-                                onBlur={(e) => {
-                                    if (e.target.value === '') {
-                                        updateNodeData(id, { label: 'Graph' });
-                                    }
-                                }}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onKeyDown={(e) => e.stopPropagation()}
-                            />
-                            {isReceivingExternal && <span style={{ fontSize: '0.55rem', color: 'var(--accent-bright)', marginLeft: 4, whiteSpace: 'nowrap' }}>● EXT</span>}
-                        </div>
-                    </div>
-                    {/* Absorbed Slots Rendering */}
-                    {data.slots && Object.keys(data.slots).length > 0 && (
-                        <div style={{ 
-                            marginTop: '6px', 
-                            display: 'flex', 
-                            gap: '4px', 
-                            paddingTop: '6px', 
-                            borderTop: '1px solid rgba(255,255,255,0.1)' 
-                        }}>
-                            {data.slots.buttonNode && (
-                                <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(255, 204, 0, 0.1)', border: '1px solid rgba(255, 204, 0, 0.3)', borderRadius: '4px', padding: '2px 4px' }}>
-                                    <button
-                                        className="nodrag"
-                                        onClick={() => { /* Triggered graph draw could go here if manual lock was enabled */ }}
-                                        style={{ background: '#ffcc00', border: 'none', color: '#000', fontSize: '0.6rem', fontWeight: 800, padding: '2px 6px', borderRadius: '2px', cursor: 'pointer' }}
-                                    >
-                                        RUN 🔒
-                                    </button>
-                                    <button className="nodrag eject-btn" onClick={() => handleEject('buttonNode')} title="Eject Button">⏏️</button>
-                                </div>
-                            )}
-                            {data.slots.gateNode && (
-                                <div style={{ 
-                                    display: 'flex', 
-                                    alignItems: 'center', 
-                                    background: Number(data.gateValue || 0) !== 0 ? 'rgba(74, 222, 128, 0.15)' : 'rgba(239, 68, 68, 0.1)', 
-                                    border: `1px solid ${Number(data.gateValue || 0) !== 0 ? 'rgba(74, 222, 128, 0.4)' : 'rgba(239, 68, 68, 0.3)'}`, 
-                                    borderRadius: '4px', 
-                                    padding: '2px 4px',
-                                    transition: 'all 0.2s'
-                                }}>
-                                    <span style={{ fontSize: '0.6em', color: Number(data.gateValue || 0) !== 0 ? '#4ade80' : '#ef4444', fontWeight: 'bold' }}>
-                                        GATE {Number(data.gateValue || 0) !== 0 ? '✓' : '✗'}
-                                    </span>
-                                    <button className="nodrag eject-btn" onClick={() => handleEject('gateNode')} title="Eject Gate">⏏️</button>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
-                {data.slots?.comment && (
-                    <CommentArea containerId={id} commentSid={data.slots.comment as string} />
-                )}
-
+            <div className="nowheel" style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', overflow: 'hidden' }}>
                 {/* Formula input — only show manual editor when NOT receiving external */}
                 {!isReceivingExternal && (
                     <div style={{ padding: '6px 8px', background: 'var(--bg-input)', borderBottom: '1px solid var(--border-header)', zIndex: 2 }}>
@@ -592,19 +473,7 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             <style>{`
                 .graph-controls button { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
                 .graph-controls button:hover { background: rgba(255,255,255,0.2); }
-                .eject-btn {
-                    background: transparent;
-                    border: none;
-                    cursor: pointer;
-                    font-size: 0.7rem;
-                    margin-left: 4px;
-                    opacity: 0.6;
-                    transition: opacity 0.2s;
-                }
-                .eject-btn:hover {
-                    opacity: 1;
-                }
             `}</style>
-        </div>
+        </NodeFrame>
     );
 }

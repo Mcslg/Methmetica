@@ -59,9 +59,9 @@ const SliderPill = TiptapNode.create({
     parseHTML() {
         return [
             { tag: 'span[data-type="slider-pill"]' },
-            { 
-              tag: 'slider-pill-md',
-              getAttrs: dom => ({ name: (dom as HTMLElement).getAttribute('name') })
+            {
+                tag: 'slider-pill-md',
+                getAttrs: dom => ({ name: (dom as HTMLElement).getAttribute('name') })
             }
         ];
     },
@@ -75,12 +75,12 @@ const SliderPill = TiptapNode.create({
             const name = node.attrs.name || 'x';
             const ctx = React.useContext(TextNodeContext);
             const sliderSource = ctx.slots?.[name];
-            
+
             const sliderId = typeof sliderSource === 'string' ? sliderSource : null;
             const legacySliderNode = typeof sliderSource === 'object' ? sliderSource : null;
 
             // Subscribe to the real node if we have an ID
-            const realSliderNode = useStore(state => 
+            const realSliderNode = useStore(state =>
                 sliderId ? state.nodes.find(n => n.id === sliderId) : null
             );
 
@@ -88,9 +88,9 @@ const SliderPill = TiptapNode.create({
             const updateNodeData = useStore(state => state.updateNodeData);
 
             if (!activeNode) return (
-                <NodeViewWrapper as="span" style={{ 
-                    display: 'inline-flex', alignItems: 'center', background: 'rgba(255,0,0,0.1)', 
-                    color: '#ff4d4d', padding: '1px 6px', borderRadius: '4px', border: '1px dashed #ff4d4d', 
+                <NodeViewWrapper as="span" style={{
+                    display: 'inline-flex', alignItems: 'center', background: 'rgba(255,0,0,0.1)',
+                    color: '#ff4d4d', padding: '1px 6px', borderRadius: '4px', border: '1px dashed #ff4d4d',
                     fontSize: '0.65rem', verticalAlign: 'middle', cursor: 'help'
                 }} title={`Slider '${name}' not found. Drop a Slider node here.`}>
                     ⚠ {name}
@@ -100,20 +100,20 @@ const SliderPill = TiptapNode.create({
             const val = Number(activeNode.data.value);
 
             return (
-                <NodeViewWrapper 
-                    as="span" 
-                    className="slider-pill-wrapper nodrag has-handle data-pill-render" 
+                <NodeViewWrapper
+                    as="span"
+                    className="slider-pill-wrapper nodrag has-handle data-pill-render"
                     data-name={name}
                     data-value={val.toString()}
                     data-handle-id={`h-out-${name}`}
-                    style={{ 
+                    style={{
                         display: 'inline-flex', alignItems: 'center', gap: '4px', verticalAlign: 'middle',
-                        background: 'var(--bg-card)', border: '1px solid var(--border-node)', 
+                        background: 'var(--bg-card)', border: '1px solid var(--border-node)',
                         borderRadius: '6px', padding: '1px 6px', margin: '0 2px', userSelect: 'none'
                     }}
                 >
                     <span style={{ fontSize: '0.65rem', color: 'var(--accent-bright)', fontWeight: 800 }}>{name}</span>
-                    <input 
+                    <input
                         type="range"
                         min={activeNode.data.min ?? 0}
                         max={activeNode.data.max ?? 10}
@@ -136,28 +136,28 @@ const SliderPill = TiptapNode.create({
                             }
                         }}
                         onMouseDown={e => e.stopPropagation()}
-                        style={{ 
+                        style={{
                             width: '50px', height: '3px', appearance: 'none', background: 'var(--border-header)',
                             borderRadius: '2px', outline: 'none', cursor: 'pointer'
                         }}
                     />
                     <span style={{ fontSize: '0.65rem', color: 'var(--text-sub)', minWidth: '18px', textAlign: 'right', cursor: 'pointer' }}
-                          title="Ctrl+Drag to eject"
-                          draggable 
-                          onDragStart={(e) => {
-                              const isCtrlPressed = useStore.getState().isCtrlPressed;
-                              if (isCtrlPressed) {
-                                  e.dataTransfer.setData('application/reactflow-eject', JSON.stringify({ name, nodeId: ctx.nodeId, sliderId: realSliderNode?.id }));
-                                  e.dataTransfer.effectAllowed = 'move';
-                              } else {
-                                  e.preventDefault();
-                              }
-                          }}
-                          onDragEnd={(e) => {
-                              if (e.clientX !== 0 && e.clientY !== 0) {
-                                  ctx.handleEject(name, { x: e.clientX, y: e.clientY });
-                              }
-                          }}
+                        title="Ctrl+Drag to eject"
+                        draggable
+                        onDragStart={(e) => {
+                            const isCtrlPressed = useStore.getState().isCtrlPressed;
+                            if (isCtrlPressed) {
+                                e.dataTransfer.setData('application/reactflow-eject', JSON.stringify({ name, nodeId: ctx.nodeId, sliderId: realSliderNode?.id }));
+                                e.dataTransfer.effectAllowed = 'move';
+                            } else {
+                                e.preventDefault();
+                            }
+                        }}
+                        onDragEnd={(e) => {
+                            if (e.clientX !== 0 && e.clientY !== 0) {
+                                ctx.handleEject(name, { x: e.clientX, y: e.clientY });
+                            }
+                        }}
                     >
                         {val.toFixed(1)}
                     </span>
@@ -199,14 +199,14 @@ const ButtonPill = TiptapNode.create({
             const source = ctx.slots?.[name];
             const sid = typeof source === 'string' ? source : null;
             const realNode = useStore(state => sid ? state.nodes.find(n => n.id === sid) : null);
-            
+
             if (!realNode) return <NodeViewWrapper as="span" style={{ opacity: 0.5 }}>[trigger]</NodeViewWrapper>;
 
             return (
-                <NodeViewWrapper as="span" className="trigger-pill-wrapper has-handle" 
+                <NodeViewWrapper as="span" className="trigger-pill-wrapper has-handle"
                     data-name={name} data-handle-id={`h-out-${name}`}
                     style={{ display: 'inline-flex', verticalAlign: 'middle', margin: '0 4px' }}>
-                    <button 
+                    <button
                         onMouseDown={e => e.stopPropagation()}
                         onClick={() => {
                             useStore.getState().edges.filter(e => e.source === realNode.id).forEach(e => {
@@ -220,9 +220,9 @@ const ButtonPill = TiptapNode.create({
                             } else e.preventDefault();
                         }}
                         onDragEnd={(e) => { if (e.clientX !== 0) ctx.handleEject(name, { x: e.clientX, y: e.clientY }); }}
-                        style={{ 
-                            background: '#ffcc00', border: 'none', borderRadius: '12px', color: '#000', 
-                            fontSize: '0.6rem', fontWeight: 800, padding: '2px 8px', cursor: 'pointer' 
+                        style={{
+                            background: '#ffcc00', border: 'none', borderRadius: '12px', color: '#000',
+                            fontSize: '0.6rem', fontWeight: 800, padding: '2px 8px', cursor: 'pointer'
                         }}
                     >
                         TRIGGER
@@ -260,16 +260,16 @@ const GatePill = TiptapNode.create({
             const source = ctx.slots?.[name];
             const sid = typeof source === 'string' ? source : null;
             const realNode = useStore(state => sid ? state.nodes.find(n => n.id === sid) : null);
-            
+
             if (!realNode) return <NodeViewWrapper as="span" style={{ opacity: 0.5 }}>[gate]</NodeViewWrapper>;
 
             const isOpen = realNode.data.value === '1';
 
             return (
-                <NodeViewWrapper as="span" className="gate-pill-wrapper has-handle" 
+                <NodeViewWrapper as="span" className="gate-pill-wrapper has-handle"
                     data-name={name} data-handle-id={`h-out-${name}`}
                     style={{ display: 'inline-flex', verticalAlign: 'middle', margin: '0 4px' }}>
-                    <div 
+                    <div
                         onMouseDown={e => e.stopPropagation()}
                         onClick={() => {
                             useStore.getState().updateNodeData(realNode.id, { value: isOpen ? '0' : '1' });
@@ -281,8 +281,8 @@ const GatePill = TiptapNode.create({
                             } else e.preventDefault();
                         }}
                         onDragEnd={(e) => { if (e.clientX !== 0) ctx.handleEject(name, { x: e.clientX, y: e.clientY }); }}
-                        style={{ 
-                            background: isOpen ? '#43e97b' : '#ff4757', border: 'none', borderRadius: '4px', color: '#000', 
+                        style={{
+                            background: isOpen ? '#43e97b' : '#ff4757', border: 'none', borderRadius: '4px', color: '#000',
                             fontSize: '0.6rem', fontWeight: 800, padding: '2px 6px', cursor: 'pointer',
                             display: 'flex', alignItems: 'center', gap: '4px'
                         }}
@@ -361,12 +361,12 @@ const MathPill = TiptapNode.create({
             const ctx = React.useContext(TextNodeContext);
             const isCtrlPressed = useStore(state => state.isCtrlPressed);
             const edges = useStore(state => state.edges);
-            
+
             // Generate a stable ID based on name or value (sanitized)
             const safeVal = val.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
             const stableHandleId = name ? `h-auto-out-${name}` : `h-auto-out-math-${safeVal}`;
             const [localShowHandle, setLocalShowHandle] = useState(ctx.isHandleActive(`math-${val}`));
-            
+
             const isConnected = edges.some(e => e.source === ctx.nodeId && e.sourceHandle === stableHandleId);
             const effectiveShowHandle = localShowHandle || isConnected;
 
@@ -425,7 +425,7 @@ const MathPill = TiptapNode.create({
                                     const sliderVal = absorbedNode.data.value || 0;
                                     const varName = absorbedNode.data.nodeName || slotKey;
                                     localVars[varName] = ce.parse(String(sliderVal)).evaluate();
-                                } catch (e) {}
+                                } catch (e) { }
                             }
                         }
                     }
@@ -980,7 +980,7 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         }, 100);
     }, [editor]);
 
-    const renameTrigger = useCallback((_oldLabel: string, _newLabel: string) => {}, []);
+    const renameTrigger = useCallback((_oldLabel: string, _newLabel: string) => { }, []);
 
     // Sync external changes
     useEffect(() => {
@@ -1009,13 +1009,13 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     // --- [NEW] Auto-Insert logic for absorbed sliders ---
     useEffect(() => {
         if (!editor || !data.slots || editor.isFocused) return;
-        
-        const content = editor.getText() + editor.getHTML(); 
+
+        const content = editor.getText() + editor.getHTML();
         const state = useStore.getState();
-        
+
         Object.entries(data.slots).forEach(([name, nodeSource]) => {
             let type: string | null = null;
-            
+
             if (typeof nodeSource === 'string') {
                 const realNode = state.nodes.find(n => n.id === nodeSource);
                 type = realNode?.type || null;
@@ -1063,7 +1063,7 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             }
             const totalTime = performance.now() - startTime;
             console.log(`🚀 [Eject Generic] Total: ${totalTime.toFixed(2)}ms (via globalHandleEject)`);
-        }, 16); 
+        }, 16);
     }, [id, editor, globalHandleEject, screenToFlowPosition]);
 
 
@@ -1110,7 +1110,7 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                 if (!newHandles.some(h => h.id === hId)) {
                     newHandles.push({ id: hId, type: hType, position: 'right', offset, label: (isDataPill && name) ? name : undefined });
                 }
-                
+
                 if (isDataPill && !newOutputs[hId]) {
                     let outVal = el.getAttribute('data-value') || '';
                     if (outVal.trim() === '\\top') outVal = '1';
@@ -1122,7 +1122,7 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         });
 
         const manualHandles = (data.handles || []).filter((h: CustomHandle) => !h.id.startsWith('h-auto-'));
-        
+
         // Final Merge with strict ID uniqueness
         const finalHandles = [...manualHandles];
         newHandles.forEach(nh => {
@@ -1226,13 +1226,13 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         if (cmd === 'bulletList') editor.chain().toggleBulletList().run();
     };
 
-    const contextValue = useMemo(() => ({ 
-        nodeId: id, 
+    const contextValue = useMemo(() => ({
+        nodeId: id,
         slots: data.slots,
-        isHandleActive, 
-        toggleHandle, 
-        editMath, 
-        renameTrigger, 
+        isHandleActive,
+        toggleHandle,
+        editMath,
+        renameTrigger,
         triggerSync,
         handleEject
     }), [id, data.slots, isHandleActive, toggleHandle, editMath, renameTrigger, triggerSync, handleEject]);
@@ -1274,7 +1274,7 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                                 color: 'inherit',
                                 fontSize: 'inherit',
                                 fontWeight: 'inherit',
-                                width: '100%',
+                                width: '50%',
                                 padding: '0',
                                 margin: '0',
                                 outline: 'none',
@@ -1432,7 +1432,7 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
 
                 {/* Absorbed Sliders logic is now automated into the editor content via useEffect */}
 
-            <style>{`
+                <style>{`
                 .tiny-dashboard-slider::-webkit-slider-thumb {
                     -webkit-appearance: none;
                     width: 10px;
