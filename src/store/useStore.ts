@@ -584,143 +584,197 @@ const useStore = create<AppState>()(
         incrementEvalGraph();
         const { nodes, edges } = get();
 
-        // 1. Build rapid-access maps for incoming edges
+        // 1. Build adjacency list and in-degrees (Kahn's Algorithm)
+        const adj = new Map<string, string[]>();
+        const inDegree = new Map<string, number>();
         const targetToExplicit = new Map<string, typeof edges>();
+
+        nodes.forEach(n => {
+            adj.set(n.id, []);
+            inDegree.set(n.id, 0);
+        });
+
         edges.forEach(e => {
+            if (adj.has(e.source) && inDegree.has(e.target)) {
+                adj.get(e.source)!.push(e.target);
+                inDegree.set(e.target, inDegree.get(e.target)! + 1);
+            }
             if (!targetToExplicit.has(e.target)) targetToExplicit.set(e.target, []);
             targetToExplicit.get(e.target)!.push(e);
         });
 
-        let nextNodes = nodes; // [PERF] Do not spread initially to retain reference if unchanged
-
-        for (let i = 0; i < 5; i++) {
-            let hasChanged = false;
-            const tempNodes = nextNodes.map(node => {
-                const explicitEdges = targetToExplicit.get(node.id) || [];
-                let valIn: string | undefined = undefined;
-                let gateValFromEdge: string | undefined = undefined;
-
-                if (explicitEdges.length > 0) {
-                    const values = explicitEdges.map(e => {
-                        const source = nextNodes.find(n => n.id === e.source);
-                        if (!source) return undefined;
-                        if (e.sourceHandle && source.data.outputs?.[e.sourceHandle] !== undefined) {
-                            return source.data.outputs[e.sourceHandle];
-                        }
-                        return source.data.value;
-                    });
-                    valIn = values.find(v => v !== undefined);
-
-                    const gateEdge = explicitEdges.find(e => e.targetHandle === 'h-gate-in');
-                    if (gateEdge) {
-                        const source = nextNodes.find(n => n.id === gateEdge.source);
-                        if (source) {
-                            gateValFromEdge = (gateEdge.sourceHandle && source.data.outputs?.[gateEdge.sourceHandle]) ?? source.data.value;
-                        }
-                    }
+        // 2. Add implicit virtual edges for formulaSidebar parsing
+        nodes.forEach(n => {
+            if (n.data.slots?.formulaSidebar) {
+                const sid = typeof n.data.slots.formulaSidebar === 'string' ? n.data.slots.formulaSidebar : (n.data.slots.formulaSidebar as any).id;
+                if (adj.has(sid) && inDegree.has(n.id)) {
+                    adj.get(sid)!.push(n.id);
+                    inDegree.set(n.id, inDegree.get(n.id)! + 1);
                 }
-
-                // Create a data patch to avoid multiple shallow copies
-                let updatedData = { ...node.data };
-                let isUpdated = false;
-
-                // 1. Process Gate Value
-                if (gateValFromEdge !== undefined && gateValFromEdge !== node.data.gateValue) {
-                    updatedData.gateValue = gateValFromEdge;
-                    isUpdated = true;
-                } else if (gateValFromEdge === undefined && node.data.gateValue !== undefined && node.data.slots?.gateNode) {
-                    updatedData.gateValue = undefined;
-                    isUpdated = true;
-                }
-
-                // 2. Process Formula Input (calculateNode & graphNode)
-                if (node.type === 'calculateNode' || node.type === 'graphNode') {
-                    const formulaEdges = edges.filter(e => e.target === node.id && e.targetHandle === 'h-fn-in');
-                    let formulaVal: string | undefined = undefined;
-                    
-                    if (node.data.slots?.formulaSidebar) {
-                        const sid = typeof node.data.slots.formulaSidebar === 'string' ? node.data.slots.formulaSidebar : (node.data.slots.formulaSidebar as any).id;
-                        const sidebarNode = nextNodes.find(n => n.id === sid);
-                        if (sidebarNode && sidebarNode.data.text) {
-                            const rawText = sidebarNode.data.text;
-                            if (rawText.includes('$$')) {
-                                const mathMatches = rawText.match(/\$\$(.*?)\$\$/g);
-                                if (mathMatches) {
-                                    formulaVal = mathMatches.map(m => m.slice(2, -2).trim()).filter(Boolean).join(',');
-                                }
-                            } else {
-                                formulaVal = rawText.trim().split('\n').filter(Boolean).join(',');
-                            }
-                        }
-                    }
-
-                    if (!formulaVal && formulaEdges.length > 0) {
-                        if (node.type === 'graphNode') {
-                            const formulaParts = formulaEdges.map(edge => {
-                                const source = nextNodes.find(n => n.id === edge.source);
-                                if (source) {
-                                    return (edge.sourceHandle && source.data.outputs?.[edge.sourceHandle]) ?? source.data.value;
-                                }
-                                return undefined;
-                            }).filter(v => v !== undefined);
-                            formulaVal = formulaParts.join(',');
-                        } else {
-                            const edge = formulaEdges[0];
-                            const source = nextNodes.find(n => n.id === edge.source);
-                            if (source) {
-                                formulaVal = (edge.sourceHandle && source.data.outputs?.[edge.sourceHandle]) ?? source.data.value;
-                            }
-                        }
-                    }
-
-                    if (formulaVal !== node.data.formulaInput) {
-                        updatedData.formulaInput = formulaVal;
-                        isUpdated = true;
-                    }
-                }
-
-                // 3. Process Generic Input (Decimal, Calculus, etc.)
-                if (node.type === 'decimalNode' || node.type === 'calculusNode' || node.type === 'gateNode') {
-                    if (valIn !== node.data.input && node.type !== 'gateNode') {
-                        updatedData.input = valIn;
-                        isUpdated = true;
-                    }
-                    if (valIn !== node.data.value && node.type === 'gateNode') {
-                        updatedData.value = valIn;
-                        isUpdated = true;
-                    }
-                }
-
-                // 4. Process Text Node Auto-Formatting
-                if (node.type === 'textNode' && valIn !== undefined) {
-                    let textToSet = String(valIn);
-                    const isNumeric = !isNaN(Number(textToSet)) && textToSet.trim() !== '';
-                    const isLaTeX = textToSet.includes('\\') || textToSet.includes('{');
-                    const isSequence = textToSet.trim().startsWith('[') && textToSet.trim().endsWith(']');
-                    
-                    if ((isNumeric || isLaTeX || isSequence) && !(textToSet.startsWith('$$') && textToSet.endsWith('$$'))) {
-                        textToSet = `$$${textToSet.trim()}$$`;
-                    }
-                    
-                    if (textToSet !== node.data.text) {
-                        updatedData.text = textToSet;
-                        isUpdated = true;
-                    }
-                }
-
-                if (isUpdated) hasChanged = true;
-                return isUpdated ? { ...node, data: updatedData } : node;
-            });
-
-            if (!hasChanged) {
-                break;
             }
-            nextNodes = tempNodes;
+        });
+
+        // 3. Initialize processing queue with 0-in-degree nodes
+        const queue: string[] = [];
+        inDegree.forEach((deg, id) => {
+            if (deg === 0) queue.push(id);
+        });
+
+        const nodeMap = new Map<string, typeof nodes[0]>();
+        nodes.forEach(n => nodeMap.set(n.id, n));
+        let hasChanged = false;
+        let processedCount = 0;
+
+        const processNode = (nodeId: string) => {
+            const node = nodeMap.get(nodeId);
+            if (!node) return;
+
+            const explicitEdges = targetToExplicit.get(node.id) || [];
+            let valIn: string | undefined = undefined;
+            let gateValFromEdge: string | undefined = undefined;
+
+            if (explicitEdges.length > 0) {
+                const values = explicitEdges.map(e => {
+                    const source = nodeMap.get(e.source);
+                    if (!source) return undefined;
+                    if (e.sourceHandle && source.data.outputs?.[e.sourceHandle] !== undefined) {
+                        return source.data.outputs[e.sourceHandle];
+                    }
+                    return source.data.value;
+                });
+                valIn = values.find(v => v !== undefined);
+
+                const gateEdge = explicitEdges.find(e => e.targetHandle === 'h-gate-in');
+                if (gateEdge) {
+                    const source = nodeMap.get(gateEdge.source);
+                    if (source) {
+                        gateValFromEdge = (gateEdge.sourceHandle && source.data.outputs?.[gateEdge.sourceHandle]) ?? source.data.value;
+                    }
+                }
+            }
+
+            let updatedData = { ...node.data };
+            let isUpdated = false;
+
+            // Process Gate Value
+            if (gateValFromEdge !== undefined && gateValFromEdge !== node.data.gateValue) {
+                updatedData.gateValue = gateValFromEdge;
+                isUpdated = true;
+            } else if (gateValFromEdge === undefined && node.data.gateValue !== undefined && node.data.slots?.gateNode) {
+                updatedData.gateValue = undefined;
+                isUpdated = true;
+            }
+
+            // Process Formula Input
+            if (node.type === 'calculateNode' || node.type === 'graphNode') {
+                const formulaEdges = edges.filter(e => e.target === node.id && e.targetHandle === 'h-fn-in');
+                let formulaVal: string | undefined = undefined;
+                
+                if (node.data.slots?.formulaSidebar) {
+                    const sid = typeof node.data.slots.formulaSidebar === 'string' ? node.data.slots.formulaSidebar : (node.data.slots.formulaSidebar as any).id;
+                    const sidebarNode = nodeMap.get(sid);
+                    if (sidebarNode && sidebarNode.data.text) {
+                        const rawText = sidebarNode.data.text;
+                        if (rawText.includes('$$')) {
+                            const mathMatches = rawText.match(/\$\$(.*?)\$\$/g);
+                            if (mathMatches) {
+                                formulaVal = mathMatches.map(m => m.slice(2, -2).trim()).filter(Boolean).join(',');
+                            }
+                        } else {
+                            formulaVal = rawText.trim().split('\n').filter(Boolean).join(',');
+                        }
+                    }
+                }
+
+                if (!formulaVal && formulaEdges.length > 0) {
+                    if (node.type === 'graphNode') {
+                        const formulaParts = formulaEdges.map(edge => {
+                            const source = nodeMap.get(edge.source);
+                            if (source) {
+                                return (edge.sourceHandle && source.data.outputs?.[edge.sourceHandle]) ?? source.data.value;
+                            }
+                            return undefined;
+                        }).filter(v => v !== undefined);
+                        formulaVal = formulaParts.join(',');
+                    } else {
+                        const edge = formulaEdges[0];
+                        const source = nodeMap.get(edge.source);
+                        if (source) {
+                            formulaVal = (edge.sourceHandle && source.data.outputs?.[edge.sourceHandle]) ?? source.data.value;
+                        }
+                    }
+                }
+
+                if (formulaVal !== node.data.formulaInput) {
+                    updatedData.formulaInput = formulaVal;
+                    isUpdated = true;
+                }
+            }
+
+            // Process Generic Input
+            if (node.type === 'decimalNode' || node.type === 'calculusNode' || node.type === 'gateNode') {
+                if (valIn !== node.data.input && node.type !== 'gateNode') {
+                    updatedData.input = valIn;
+                    isUpdated = true;
+                }
+                if (valIn !== node.data.value && node.type === 'gateNode') {
+                    updatedData.value = valIn;
+                    isUpdated = true;
+                }
+            }
+
+            // Process Text Node
+            if (node.type === 'textNode' && valIn !== undefined) {
+                let textToSet = String(valIn);
+                const isNumeric = !isNaN(Number(textToSet)) && textToSet.trim() !== '';
+                const isLaTeX = textToSet.includes('\\') || textToSet.includes('{');
+                const isSequence = textToSet.trim().startsWith('[') && textToSet.trim().endsWith(']');
+                
+                if ((isNumeric || isLaTeX || isSequence) && !(textToSet.startsWith('$$') && textToSet.endsWith('$$'))) {
+                    textToSet = `$$${textToSet.trim()}$$`;
+                }
+                
+                if (textToSet !== node.data.text) {
+                    updatedData.text = textToSet;
+                    isUpdated = true;
+                }
+            }
+
+            if (isUpdated) {
+                hasChanged = true;
+                nodeMap.set(node.id, { ...node, data: updatedData });
+            }
+        };
+
+        // 4. Resolve dependencies topologically
+        while (queue.length > 0) {
+            const currentId = queue.shift()!;
+            processedCount++;
+            processNode(currentId);
+
+            const neighbors = adj.get(currentId) || [];
+            for (const neighborId of neighbors) {
+                const newDeg = (inDegree.get(neighborId) || 1) - 1;
+                inDegree.set(neighborId, newDeg);
+                if (newDeg === 0) {
+                    queue.push(neighborId);
+                }
+            }
         }
 
-        if (nextNodes !== nodes) {
-            set({ nodes: nextNodes });
+        // 5. Handle cycles dynamically as best-effort fallback
+        if (processedCount < nodes.length) {
+            nodes.forEach(n => {
+                if ((inDegree.get(n.id) || 0) > 0) {
+                    processNode(n.id);
+                }
+            });
         }
+
+        if (hasChanged) {
+            set({ nodes: nodes.map(n => nodeMap.get(n.id) || n) });
+        }
+
     },
   }),
   {

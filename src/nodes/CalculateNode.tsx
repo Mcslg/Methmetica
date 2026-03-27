@@ -1,18 +1,15 @@
-import { useEffect, useRef, memo } from 'react';
+import { useEffect, memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
 import useStore, { type NodeData, type AppState, type CustomHandle } from '../store/useStore';
 import { getMathEngine } from '../utils/MathEngine';
 import { Icons } from '../components/Icons';
 import 'mathlive';
 import { NodeFrame } from '../components/NodeFrame';
-
-
+import { MathInput } from '../components/MathInput';
 
 export const CalculateNode = memo(function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
     const executeNode = useStore((state: AppState) => state.executeNode);
-    const mfRef = useRef<any>(null);
-    const isSettingValueRef = useRef(false);
 
     const useExternalFormula = !!data.useExternalFormula;
     // [PERF] Only subscribe to the specific formula string we need.
@@ -96,42 +93,6 @@ export const CalculateNode = memo(function CalculateNode({ id, data, selected }:
         syncHandles();
     }, [id, formulaToParse, useExternalFormula, updateNodeData, globalVarsString]);
 
-    const formulaInStoreRef = useRef(formulaInStore);
-
-    // Ref sync without triggering effect loops
-    useEffect(() => {
-        formulaInStoreRef.current = formulaInStore;
-    }, [formulaInStore]);
-
-    // [PERF] Setup event listener once
-    useEffect(() => {
-        const mf = mfRef.current;
-        if (!mf || useExternalFormula) return;
-
-        const handleInput = (e: any) => {
-            if (isSettingValueRef.current) return;
-            const nextVal = e.target.value;
-            if (nextVal !== formulaInStoreRef.current) {
-                updateNodeData(id, { formula: nextVal });
-            }
-        };
-
-        mf.addEventListener('input', handleInput);
-        return () => mf.removeEventListener('input', handleInput);
-    }, [id, useExternalFormula, updateNodeData]);
-
-    // [PERF] Manual sync from store to web component
-    useEffect(() => {
-        const mf = mfRef.current;
-        if (!mf || useExternalFormula) return;
-
-        if (mf.value !== formulaInStore) {
-            isSettingValueRef.current = true;
-            mf.value = formulaInStore;
-            isSettingValueRef.current = false;
-        }
-    }, [formulaInStore, useExternalFormula]);
-
     const isLocked = !!data.slots?.buttonNode;
 
     // Re-execute when external formula input changes, UNLESS locked
@@ -188,10 +149,13 @@ export const CalculateNode = memo(function CalculateNode({ id, data, selected }:
                     {data.formulaInput || 'Wait for input...'}
                 </div>
             ) : (
-                <math-field
-                    ref={mfRef}
-                    class="nodrag formula-input"
-                />
+                !data.slots?.formulaSidebar && (
+                    <MathInput
+                        value={formulaInStore}
+                        onChange={(val) => updateNodeData(id, { formula: val })}
+                        className="nodrag formula-input"
+                    />
+                )
             )}
 
             <style>{`

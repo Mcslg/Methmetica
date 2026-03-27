@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useReactFlow } from '@xyflow/react';
 import useStore, { type AppState } from '../store/useStore';
 import 'mathlive';
+import { MathInput } from './MathInput';
+
 
 interface FormulaSidebarAreaProps {
     containerId: string;
@@ -270,42 +272,6 @@ interface FormulaRowProps {
 }
 
 const FormulaRow: React.FC<FormulaRowProps> = ({ index, formula, isLight, color, onUpdate, onRemove }) => {
-    const mfRef = useRef<any>(null);
-    const isSettingValueRef = useRef(false);
-    const formulaRef = useRef(formula);
-
-    // Ref sync
-    useEffect(() => {
-        formulaRef.current = formula;
-    }, [formula]);
-
-    // Setup listener once
-    useEffect(() => {
-        const mf = mfRef.current;
-        if (!mf) return;
-        
-        const handleInput = (e: any) => {
-            if (isSettingValueRef.current) return;
-            const nextVal = e.target.value;
-            if (nextVal !== formulaRef.current) {
-                onUpdate(index, nextVal);
-            }
-        };
-        
-        mf.addEventListener('input', handleInput);
-        return () => mf.removeEventListener('input', handleInput);
-    }, [index, onUpdate]);
-
-    // Manual sync from store to web component
-    useEffect(() => {
-        const mf = mfRef.current;
-        if (!mf) return;
-        if (mf.value !== formula) {
-            isSettingValueRef.current = true;
-            mf.value = formula;
-            isSettingValueRef.current = false;
-        }
-    }, [formula]);
 
     return (
         <div style={{ 
@@ -325,9 +291,10 @@ const FormulaRow: React.FC<FormulaRowProps> = ({ index, formula, isLight, color,
                 flexShrink: 0 
             }} />
             
-            <math-field
-                ref={mfRef}
-                class="nodrag formula-input-flat"
+            <MathInput
+                value={formula}
+                onChange={(val) => onUpdate(index, val)}
+                className="nodrag formula-input-flat"
                 style={{ 
                     fontSize: '0.9rem', 
                     background: 'transparent',

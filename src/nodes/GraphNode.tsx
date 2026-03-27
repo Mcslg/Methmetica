@@ -8,6 +8,7 @@ import 'mathlive';
 import { NodeFrame } from '../components/NodeFrame';
 import { FormulaSidebarArea } from '../components/FormulaSidebarArea';
 import { countRender } from '../components/DebugOverlay';
+import { MathInput } from '../components/MathInput';
 
 export const GraphNode = memo(function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     countRender('GraphNode');
@@ -18,8 +19,6 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
     // Refs
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
-    const mfRef = useRef<any>(null);
-    const isSettingValueRef = useRef(false);
 
     // [PERF] Isolated store value to stop React from thrashing the web component
     const formulaInStore = useStore((state: AppState) => state.nodes.find(n => n.id === id)?.data.formula || '');
@@ -87,42 +86,6 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
             window.removeEventListener('keyup', handleKey);
         };
     }, []);
-
-    const formulaInStoreRef = useRef(formulaInStore);
-
-    // Ref sync without triggering effect loops
-    useEffect(() => {
-        formulaInStoreRef.current = formulaInStore;
-    }, [formulaInStore]);
-
-    // [PERF] Setup event listener once
-    useEffect(() => {
-        const mf = mfRef.current;
-        if (!mf || isReceivingExternal) return;
-
-        const handleInput = (e: any) => {
-            if (isSettingValueRef.current) return;
-            const nextVal = e.target.value;
-            if (nextVal !== formulaInStoreRef.current) {
-                updateNodeData(id, { formula: nextVal });
-            }
-        };
-
-        mf.addEventListener('input', handleInput);
-        return () => mf.removeEventListener('input', handleInput);
-    }, [id, isReceivingExternal, updateNodeData]);
-
-    // [PERF] Manual sync from store to web component
-    useEffect(() => {
-        const mf = mfRef.current;
-        if (!mf || isReceivingExternal) return;
-
-        if (mf.value !== formulaInStore) {
-            isSettingValueRef.current = true;
-            mf.value = formulaInStore;
-            isSettingValueRef.current = false;
-        }
-    }, [formulaInStore, isReceivingExternal]);
 
     const getMergedParams = useCallback(() => {
         const params: Record<string, number> = {};
@@ -607,7 +570,11 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
                 <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
                     {!isReceivingExternal && !data.slots?.formulaSidebar && (
                         <div style={{ padding: '6px 8px', background: 'var(--bg-input)', borderBottom: '1px solid var(--border-header)' }}>
-                            <math-field ref={mfRef} class="nodrag formula-input" />
+                            <MathInput
+                                value={formulaInStore}
+                                onChange={(val) => updateNodeData(id, { formula: val })}
+                                className="nodrag formula-input"
+                            />
                         </div>
                     )}
                     {isReceivingExternal && !data.slots?.formulaSidebar && (

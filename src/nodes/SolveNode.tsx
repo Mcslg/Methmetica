@@ -1,17 +1,15 @@
-import React, { useEffect, useRef, memo } from 'react';
+import { useEffect, memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
 import useStore, { type NodeData, type AppState } from '../store/useStore';
 import { Icons } from '../components/Icons';
 import 'mathlive';
 import { NodeFrame } from '../components/NodeFrame';
+import { MathInput } from '../components/MathInput';
 
 export const SolveNode = memo(function SolveNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
     const executeNode = useStore((state: AppState) => state.executeNode);
-    const mfRef = useRef<any>(null);
-    const isSettingValueRef = useRef(false);
 
-    // [PERF] Isolated store value to stop React from thrashing the web component
     const formulaInStore = useStore((state: AppState) => state.nodes.find(n => n.id === id)?.data.formula || '');
 
     const wrt = data.variable || 'x';
@@ -30,41 +28,6 @@ export const SolveNode = memo(function SolveNode({ id, data, selected }: NodePro
         }
     }, [id, data.handles, updateNodeData]);
 
-    const formulaInStoreRef = useRef(formulaInStore);
-
-    // Ref sync without triggering effect loops
-    useEffect(() => {
-        formulaInStoreRef.current = formulaInStore;
-    }, [formulaInStore]);
-
-    // [PERF] Setup event listener once
-    useEffect(() => {
-        const mf = mfRef.current;
-        if (!mf) return;
-
-        const handleInput = (e: any) => {
-            if (isSettingValueRef.current) return;
-            const nextVal = e.target.value;
-            if (nextVal !== formulaInStoreRef.current) {
-                updateNodeData(id, { formula: nextVal });
-            }
-        };
-
-        mf.addEventListener('input', handleInput);
-        return () => mf.removeEventListener('input', handleInput);
-    }, [id, updateNodeData]);
-
-    // [PERF] Manual sync from store to web component
-    useEffect(() => {
-        const mf = mfRef.current;
-        if (!mf) return;
-
-        if (mf.value !== formulaInStore) {
-            isSettingValueRef.current = true;
-            mf.value = formulaInStore;
-            isSettingValueRef.current = false;
-        }
-    }, [formulaInStore]);
 
     return (
         <NodeFrame
@@ -101,9 +64,10 @@ export const SolveNode = memo(function SolveNode({ id, data, selected }: NodePro
             }
         >
             <div style={{ fontSize: '0.6rem', color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Equation</div>
-            <math-field
-                ref={mfRef}
-                class="nodrag formula-input"
+            <MathInput
+                value={formulaInStore}
+                onChange={(val) => updateNodeData(id, { formula: val })}
+                className="nodrag formula-input"
             />
 
             <style>{`
