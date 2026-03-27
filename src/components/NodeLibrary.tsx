@@ -21,6 +21,10 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
                         className="library-item"
                         draggable
                         onDragStart={(e) => onDragStart(e, node.type)}
+                        onClick={() => {
+                            const event = new CustomEvent('add-node-at-center', { detail: { type: node.type } });
+                            window.dispatchEvent(event);
+                        }}
                         title={node.desc}
                     >
                         {node.icon}
@@ -31,7 +35,7 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
             
             {!isLibraryExpanded ? (
                 <button 
-                    className="sidebar-btn more-btn" 
+                    className={`sidebar-btn more-btn ${layout === 'float' ? 'float-more' : ''}`} 
                     onClick={() => setLibraryExpanded(true)}
                 >
                     Show More...
@@ -44,6 +48,10 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
                             className="library-item"
                             draggable
                             onDragStart={(e) => onDragStart(e, node.type)}
+                            onClick={() => {
+                                const event = new CustomEvent('add-node-at-center', { detail: { type: node.type } });
+                                window.dispatchEvent(event);
+                            }}
                             title={node.desc}
                         >
                             {node.icon}
@@ -59,6 +67,7 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
                     </button>
                 </div>
             )}
+
         </div>
     );
 };

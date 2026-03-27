@@ -257,6 +257,25 @@ math-field::part(virtual-keyboard-toggle) {
   border: 1px solid var(--border-input) !important;
   transition: border-color 0.2s;
   border-radius: 6px;
+  /* [PERF] These were previously inline styles on each <math-field>.
+     Moving to CSS prevents React from calling MathLive's style property setters
+     on every re-render, which triggered expensive internal reflows. */
+  font-size: 1rem;
+  width: 100%;
+  padding: 4px;
+  box-sizing: border-box;
+}
+
+/* SolveNode needs slightly more padding */
+.solve-node .formula-input {
+  padding: 6px;
+  color: var(--text-main);
+}
+
+/* GraphNode compact variant */
+.graph-node .formula-input {
+  padding: 2px;
+  border-radius: 4px;
 }
 
 .formula-input:focus-within {

@@ -63,10 +63,13 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
     const slotKeys = Object.keys(data.slots || {});
     const augmentedHandles = (data.handles || [])
         .filter((h: any) => {
-            // Hide input handles whose labels match a merged slot key (e.g. merged x slider)
+            // 1. Hide handles that match merged slots (generic)
             if (h.type === 'target' || h.type === 'input') {
                 if (h.label && slotKeys.includes(h.label)) return false;
             }
+            // 2. Hide f(x) input if formula sidebar is active
+            if (h.id === 'h-fn-in' && slotKeys.includes('formulaSidebar')) return false;
+            
             return true;
         });
 
@@ -210,8 +213,12 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
                                 }
                             };
 
-                            // Render Slider
+                            // Render Slider (only if NOT in a sidebar-capable node or if specifically allowed)
                             if (proxyNode.type === 'sliderNode') {
+                                // If this node has a formulaSidebar, we skip rendering sliders in the header 
+                                // because they will be rendered in the sidebar for a better UX.
+                                if (slotKeys.includes('formulaSidebar')) return null;
+
                                 return (
                                     <div
                                         key={slotKey}

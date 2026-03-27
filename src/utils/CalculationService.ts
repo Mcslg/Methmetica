@@ -1,5 +1,5 @@
 import { getMathEngine } from './MathEngine';
-import { type AppNode } from '../store/useStore';
+import useStore, { type AppNode } from '../store/useStore';
 import { type Edge } from '@xyflow/react';
 // @ts-ignore
 import nerdamer from 'nerdamer/all.min';
@@ -139,7 +139,15 @@ export class CalculationService {
                 }
             }
 
-            // Fallback to globally defined variables from text nodes
+            // [NEW] Global Variable Store Resolution
+            if (!val || val.trim() === '') {
+                const globalVarsStore = useStore.getState().globalVars;
+                if (v.startsWith('$') && globalVarsStore[v] !== undefined) {
+                    val = globalVarsStore[v];
+                }
+            }
+
+            // Fallback to globally defined variables from text nodes (old behavior)
             if ((!val || val.trim() === '') && globalVars[v] !== undefined) {
                 val = globalVars[v];
             }

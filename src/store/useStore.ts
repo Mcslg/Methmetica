@@ -15,6 +15,7 @@ import {
     applyNodeChanges,
     applyEdgeChanges,
 } from '@xyflow/react';
+import { incrementEvalGraph } from '../components/DebugOverlay';
 
 export type HandleType = 'input' | 'output' | 'gate-in';
 
@@ -92,8 +93,17 @@ export type AppState = {
     setDraggingEjectPos: (pos: { startX: number, startY: number, curX: number, curY: number } | null) => void;
 
     // [NEW] Merge Hint during drag
-    mergeHint: { targetId: string, slotKey: string, label: string } | null;
-    updateMergeHint: (draggedNodeId: string, mousePos: { x: number, y: number } | null) => void;
+    mergeHint: { targetId: string, slotKey: string, label: string, side: 'left' | 'right' | 'top' | 'bottom' } | null;
+    updateMergeHint: (draggedNodeId: string, mousePos: { x: number, y: number } | null, side?: 'left' | 'right' | 'top' | 'bottom') => void;
+
+    // [NEW] Node Resizing via Cmd+Scroll
+    hoveredNodeId: string | null;
+    setHoveredNodeId: (id: string | null) => void;
+    updateNodeDimensions: (nodeId: string, deltaW: number, deltaH: number) => void;
+
+    // [NEW] Global variables via $ prefix
+    globalVars: Record<string, string>;
+    setGlobalVar: (name: string, value: string) => void;
 };
 
 // Initial setup nodes
@@ -115,45 +125,118 @@ const useStore = create<AppState>()(
             palettePosition: { x: 100, y: 100 },
             setPalettePosition: (palettePosition) => set({ palettePosition }),
 
+            globalVars: {},
+            setGlobalVar: (name: string, value: string) => {
+                set((state) => ({
+                    globalVars: { ...state.globalVars, [name]: value }
+                }));
+                // Evaluate graph so calculation nodes re-run immediately with the new global var
+                get().evaluateGraph();
+            },
+
             draggingEjectPos: null,
             setDraggingEjectPos: (pos) => set({ draggingEjectPos: pos }),
 
+            hoveredNodeId: null,
+            setHoveredNodeId: (id) => set({ hoveredNodeId: id }),
+
+            updateNodeDimensions: (nodeId, deltaW, deltaH) => {
+                const start = performance.now();
+                const { nodes } = get();
+                set({
+                    nodes: nodes.map(n => {
+                        if (n.id === nodeId) {
+                            // Prioritize set width/height over measured ones to avoid "measured size" snap-back
+                            const curW = n.width ?? (n.style?.width as number) ?? n.measured?.width ?? 200;
+                            const curH = n.height ?? (n.style?.height as number) ?? n.measured?.height ?? 120;
+                            
+                            const nextW = Math.max(100, curW + deltaW);
+                            const nextH = Math.max(60, curH + deltaH);
+
+                            // Skip update if already same value (saves a re-render)
+                            if (n.width === nextW && n.height === nextH) return n;
+
+                            return {
+                                ...n,
+                                width: nextW,
+                                height: nextH,
+                                style: { ...n.style, width: nextW, height: nextH }
+                            };
+                        }
+                        return n;
+                    })
+                });
+                const end = performance.now();
+                if (end - start > 10) console.warn(`[Performance] updateNodeDimensions for ${nodeId} took ${Math.round(end - start)}ms`);
+            },
+
             mergeHint: null,
-            updateMergeHint: (draggedNodeId, mousePos) => {
+            updateMergeHint: (draggedNodeId, mousePos, forcedSide) => {
                 if (!mousePos) {
                     set({ mergeHint: null });
                     return;
                 }
                 const { nodes } = get();
                 const a = nodes.find(n => n.id === draggedNodeId);
-                if (!a || a.type !== 'textNode') return;
+                if (!a) return;
 
                 let bestHint: AppState['mergeHint'] = null;
 
                 for (const b of nodes) {
                     if (b.id === draggedNodeId || b.hidden || !b.type) continue;
-                    if (!canMerge(a.type, b.type)) continue;
+                    if (!canMerge(a.type as string, b.type as string)) continue;
 
                     const bWidth = b.measured?.width || b.width || 200;
                     const bHeight = b.measured?.height || b.height || 100;
                     
-                    // Box check with padding
-                    const isOver = mousePos.x >= b.position.x - 20 && mousePos.x <= b.position.x + bWidth + 20 &&
-                                   mousePos.y >= b.position.y - 20 && mousePos.y <= b.position.y + bHeight + 20;
+                    const isOver = mousePos.x >= b.position.x - 30 && mousePos.x <= b.position.x + bWidth + 30 &&
+                                   mousePos.y >= b.position.y - 30 && mousePos.y <= b.position.y + bHeight + 30;
 
                     if (isOver) {
-                        // Determine side
-                        const dxRight = Math.max(0, Math.abs(mousePos.x - (b.position.x + bWidth)));
+                        const dxLeft = Math.max(0, Math.abs(mousePos.x - b.position.x));
                         const dyTop = Math.max(0, Math.abs(mousePos.y - b.position.y));
                         const slots = b.data.slots || {};
 
-                        if (dxRight < 50 && (b.type === 'calculateNode' || b.type === 'solveNode')) {
-                            if (!slots.resultText) {
-                                bestHint = { targetId: b.id, slotKey: 'resultText', label: '+ Result Display' };
+                        // Detect side if not forced
+                        const side = forcedSide || (dyTop < 50 ? 'top' : dxLeft < 50 ? 'left' : 'right');
+
+                        // Rule for LEFT Merges (Inputs/Sidebar)
+                        if (side === 'left' && b.type === 'graphNode') {
+                            if (a.type === 'textNode') {
+                                if (!slots.formulaSidebar) {
+                                    bestHint = { targetId: b.id, slotKey: 'formulaSidebar', label: '+ Formula Sidebar', side: 'left' };
+                                }
+                            } else if (a.type === 'sliderNode') {
+                                const key = a.data.nodeName || 'a';
+                                if (!slots[key]) {
+                                    bestHint = { targetId: b.id, slotKey: key, label: `+ Parameter ${key}`, side: 'left' };
+                                }
                             }
-                        } else if (dyTop < 50) {
-                            if (!slots.comment) {
-                                bestHint = { targetId: b.id, slotKey: 'comment', label: '+ Add Note' };
+                        } 
+                        // [FIX] Rule for TextNode Merges (Sliders, Buttons, Gates)
+                        else if (b.type === 'textNode') {
+                            if (a.type === 'sliderNode' || a.type === 'buttonNode' || a.type === 'gateNode') {
+                                const key = a.data.nodeName || (a.type === 'sliderNode' ? 'x' : a.type === 'buttonNode' ? 'btn' : 'gate');
+                                if (!slots[key]) {
+                                    bestHint = { targetId: b.id, slotKey: key, label: `+ Embed ${a.type.replace('Node', '')} (${key})`, side: 'right' };
+                                }
+                            }
+                        }
+                        // Rule for RIGHT Merges (Results for nodes that aren't TextNodes)
+                        else if (side === 'right' && (b.type === 'calculateNode' || b.type === 'solveNode')) {
+                            if (a.type === 'textNode' && !slots.resultText) {
+                                bestHint = { targetId: b.id, slotKey: 'resultText', label: '+ Result Display', side: 'right' };
+                            } else if (a.type === 'sliderNode') {
+                                const key = a.data.nodeName || 'x';
+                                if (!slots[key]) {
+                                    bestHint = { targetId: b.id, slotKey: key, label: `+ Variable ${key}`, side: 'right' };
+                                }
+                            }
+                        } 
+                        // Rule for TOP Merges (Comments)
+                        else if (side === 'top') {
+                            if (a.type === 'textNode' && !slots.comment) {
+                                bestHint = { targetId: b.id, slotKey: 'comment', label: '+ Add Note', side: 'top' };
                             }
                         }
                         break; 
@@ -212,11 +295,16 @@ const useStore = create<AppState>()(
                 });
 
                 set({ nodes: nodesAfterUnhide, edges: edgesAfterReroute });
-                get().evaluateGraph();
+                // [PERF] Defer so React batches the unhide render before recalculating
+                requestAnimationFrame(() => get().evaluateGraph());
             },
 
             setGraph: (nodes, edges) => {
                 set({ nodes, edges });
+                // If it's a clear-all action (empty nodes and edges), we should clear globalVars too
+                if (nodes.length === 0 && edges.length === 0) {
+                    set({ globalVars: {} });
+                }
             },
 
             isAltPressed: false,
@@ -475,7 +563,9 @@ const useStore = create<AppState>()(
                         }),
                         mergeHint: null 
                     });
-                    get().evaluateGraph();
+                    // [PERF] Defer evaluateGraph so React can batch the structural render first.
+                    // Without this, merge triggers ~50 re-renders. With this, it's ~2.
+                    requestAnimationFrame(() => get().evaluateGraph());
                     return;
                 } else {
                     console.warn(`Snap fail: Slot ${slotKey} occupied`);
@@ -491,6 +581,7 @@ const useStore = create<AppState>()(
     },
 
     evaluateGraph: () => {
+        incrementEvalGraph();
         const { nodes, edges } = get();
         let nextNodes = [...nodes];
 
@@ -503,110 +594,119 @@ const useStore = create<AppState>()(
 
         for (let i = 0; i < 5; i++) {
             const tempNodes = nextNodes.map(node => {
-                // Rapidly look up dependencies using Maps instead of filtering entire arrays
                 const explicitEdges = targetToExplicit.get(node.id) || [];
+                let valIn: string | undefined = undefined;
+                let gateValFromEdge: string | undefined = undefined;
 
                 if (explicitEdges.length > 0) {
-                    const values = [
-                        ...explicitEdges.map(e => {
-                            const source = nextNodes.find(n => n.id === e.source);
-                            if (!source) return undefined;
-                            if (e.sourceHandle && source.data.outputs?.[e.sourceHandle] !== undefined) {
-                                return source.data.outputs[e.sourceHandle];
-                            }
-                            return source.data.value;
-                        })
-                    ];
-                    const valIn = values.find(v => v !== undefined);
+                    const values = explicitEdges.map(e => {
+                        const source = nextNodes.find(n => n.id === e.source);
+                        if (!source) return undefined;
+                        if (e.sourceHandle && source.data.outputs?.[e.sourceHandle] !== undefined) {
+                            return source.data.outputs[e.sourceHandle];
+                        }
+                        return source.data.value;
+                    });
+                    valIn = values.find(v => v !== undefined);
 
-                    // --- [NEW] Global Gate Input Mapping ---
                     const gateEdge = explicitEdges.find(e => e.targetHandle === 'h-gate-in');
-                    let gateValFromEdge: string | undefined = undefined;
                     if (gateEdge) {
                         const source = nextNodes.find(n => n.id === gateEdge.source);
                         if (source) {
                             gateValFromEdge = (gateEdge.sourceHandle && source.data.outputs?.[gateEdge.sourceHandle]) ?? source.data.value;
                         }
                     }
+                }
 
-                    if (gateValFromEdge !== undefined && gateValFromEdge !== node.data.gateValue) {
-                        return { ...node, data: { ...node.data, gateValue: gateValFromEdge } };
-                    }
-                    if (gateValFromEdge === undefined && node.data.gateValue !== undefined && node.data.slots?.gateNode) {
-                         // Clear gateValue if no longer connected but gate slot exists
-                         return { ...node, data: { ...node.data, gateValue: undefined } };
-                    }
-                    // --- END Gate Mapping ---
+                // Create a data patch to avoid multiple shallow copies
+                let updatedData = { ...node.data };
+                let isUpdated = false;
 
-                    // Case for calculateNode & graphNode external formula input
-                    if (node.type === 'calculateNode' || node.type === 'graphNode') {
-                        const formulaEdges = edges.filter(e => e.target === node.id && e.targetHandle === 'h-fn-in');
-                        let formulaVal: string | undefined = undefined;
-                        
-                        if (formulaEdges.length > 0) {
-                            if (node.type === 'graphNode') {
-                                // For graphNode, collect multiple formulas and join with commas
-                                const formulaParts = formulaEdges.map(edge => {
-                                    const source = nextNodes.find(n => n.id === edge.source);
-                                    if (source) {
-                                        return (edge.sourceHandle && source.data.outputs?.[edge.sourceHandle]) ?? source.data.value;
-                                    }
-                                    return undefined;
-                                }).filter(v => v !== undefined);
-                                formulaVal = formulaParts.join(',');
+                // 1. Process Gate Value
+                if (gateValFromEdge !== undefined && gateValFromEdge !== node.data.gateValue) {
+                    updatedData.gateValue = gateValFromEdge;
+                    isUpdated = true;
+                } else if (gateValFromEdge === undefined && node.data.gateValue !== undefined && node.data.slots?.gateNode) {
+                    updatedData.gateValue = undefined;
+                    isUpdated = true;
+                }
+
+                // 2. Process Formula Input (calculateNode & graphNode)
+                if (node.type === 'calculateNode' || node.type === 'graphNode') {
+                    const formulaEdges = edges.filter(e => e.target === node.id && e.targetHandle === 'h-fn-in');
+                    let formulaVal: string | undefined = undefined;
+                    
+                    if (node.data.slots?.formulaSidebar) {
+                        const sid = typeof node.data.slots.formulaSidebar === 'string' ? node.data.slots.formulaSidebar : (node.data.slots.formulaSidebar as any).id;
+                        const sidebarNode = nextNodes.find(n => n.id === sid);
+                        if (sidebarNode && sidebarNode.data.text) {
+                            const rawText = sidebarNode.data.text;
+                            if (rawText.includes('$$')) {
+                                const mathMatches = rawText.match(/\$\$(.*?)\$\$/g);
+                                if (mathMatches) {
+                                    formulaVal = mathMatches.map(m => m.slice(2, -2).trim()).filter(Boolean).join(',');
+                                }
                             } else {
-                                // For calculateNode, pick the first one
-                                const edge = formulaEdges[0];
+                                formulaVal = rawText.trim().split('\n').filter(Boolean).join(',');
+                            }
+                        }
+                    }
+
+                    if (!formulaVal && formulaEdges.length > 0) {
+                        if (node.type === 'graphNode') {
+                            const formulaParts = formulaEdges.map(edge => {
                                 const source = nextNodes.find(n => n.id === edge.source);
                                 if (source) {
-                                    formulaVal = (edge.sourceHandle && source.data.outputs?.[edge.sourceHandle]) ?? source.data.value;
+                                    return (edge.sourceHandle && source.data.outputs?.[edge.sourceHandle]) ?? source.data.value;
                                 }
+                                return undefined;
+                            }).filter(v => v !== undefined);
+                            formulaVal = formulaParts.join(',');
+                        } else {
+                            const edge = formulaEdges[0];
+                            const source = nextNodes.find(n => n.id === edge.source);
+                            if (source) {
+                                formulaVal = (edge.sourceHandle && source.data.outputs?.[edge.sourceHandle]) ?? source.data.value;
                             }
                         }
-
-                        let updated = false;
-                        const dataPatch: Partial<NodeData> = {};
-
-                        if (formulaVal !== undefined && formulaVal !== node.data.formulaInput) {
-                            dataPatch.formulaInput = formulaVal;
-                            updated = true;
-                        }
-                        // Clear formulaInput when nothing provides a formula anymore
-                        if (formulaVal === undefined && node.data.formulaInput !== undefined) {
-                            dataPatch.formulaInput = undefined;
-                            updated = true;
-                        }
-
-                        return updated ? { ...node, data: { ...node.data, ...dataPatch } } : node;
                     }
 
-                    if (node.type === 'decimalNode' || node.type === 'calculusNode' || node.type === 'gateNode') {
-                        if (valIn !== node.data.input && node.type !== 'gateNode') {
-                            return { ...node, data: { ...node.data, input: valIn as string | undefined } };
-                        }
-                        if (valIn !== node.data.value && node.type === 'gateNode') {
-                            return { ...node, data: { ...node.data, value: valIn as string | undefined } };
-                        }
-                    } else if (node.type === 'textNode') {
-                        if (valIn !== undefined) {
-                            let textToSet = String(valIn);
-                            const isNumeric = !isNaN(Number(textToSet)) && textToSet.trim() !== '';
-                            const isLaTeX = textToSet.includes('\\') || textToSet.includes('{');
-                            const isSequence = textToSet.trim().startsWith('[') && textToSet.trim().endsWith(']');
-                            
-                            if ((isNumeric || isLaTeX || isSequence) && !(textToSet.startsWith('$$') && textToSet.endsWith('$$'))) {
-                                textToSet = `$$${textToSet.trim()}$$`;
-                            }
-
-
-                            
-                            if (textToSet !== node.data.text) {
-                                return { ...node, data: { ...node.data, text: textToSet } };
-                            }
-                        }
+                    if (formulaVal !== node.data.formulaInput) {
+                        updatedData.formulaInput = formulaVal;
+                        isUpdated = true;
                     }
                 }
-                return node;
+
+                // 3. Process Generic Input (Decimal, Calculus, etc.)
+                if (node.type === 'decimalNode' || node.type === 'calculusNode' || node.type === 'gateNode') {
+                    if (valIn !== node.data.input && node.type !== 'gateNode') {
+                        updatedData.input = valIn;
+                        isUpdated = true;
+                    }
+                    if (valIn !== node.data.value && node.type === 'gateNode') {
+                        updatedData.value = valIn;
+                        isUpdated = true;
+                    }
+                }
+
+                // 4. Process Text Node Auto-Formatting
+                if (node.type === 'textNode' && valIn !== undefined) {
+                    let textToSet = String(valIn);
+                    const isNumeric = !isNaN(Number(textToSet)) && textToSet.trim() !== '';
+                    const isLaTeX = textToSet.includes('\\') || textToSet.includes('{');
+                    const isSequence = textToSet.trim().startsWith('[') && textToSet.trim().endsWith(']');
+                    
+                    if ((isNumeric || isLaTeX || isSequence) && !(textToSet.startsWith('$$') && textToSet.endsWith('$$'))) {
+                        textToSet = `$$${textToSet.trim()}$$`;
+                    }
+                    
+                    if (textToSet !== node.data.text) {
+                        updatedData.text = textToSet;
+                        isUpdated = true;
+                    }
+                }
+
+                return isUpdated ? { ...node, data: updatedData } : node;
             });
 
             if (JSON.stringify(tempNodes) === JSON.stringify(nextNodes)) {
@@ -625,6 +725,7 @@ const useStore = create<AppState>()(
           edges: state.edges,
           theme: state.theme,
           isSidebarOpen: state.isSidebarOpen,
+          globalVars: state.globalVars,
       }),
   }
 )

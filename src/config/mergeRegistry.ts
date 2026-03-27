@@ -32,8 +32,8 @@ export interface MergeRule {
  */
 export const MergeRules: Record<ProxyableType, MergeRule> = {
     sliderNode: {
-        acceptedBy: ['textNode', 'calculateNode', 'solveNode'],
-        getSlotKey: (_id, name) => name || 'x',
+        acceptedBy: ['textNode', 'calculateNode', 'solveNode', 'graphNode'],
+        getSlotKey: (_id, name) => name || 'a',
         heightIncrement: 45,
     },
     buttonNode: {

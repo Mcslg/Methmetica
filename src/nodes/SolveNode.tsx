@@ -10,6 +10,9 @@ export function SolveNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const executeNode = useStore((state: AppState) => state.executeNode);
     const mfRef = useRef<any>(null);
 
+    // [PERF] Isolated store value to stop React from thrashing the web component
+    const formulaInStore = useStore((state: AppState) => state.nodes.find(n => n.id === id)?.data.formula || '');
+
     const wrt = data.variable || 'x';
 
     // 1. Sync handles (Equation in, Solutions out, Trigger)
@@ -26,22 +29,25 @@ export function SolveNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         }
     }, [id, data.handles, updateNodeData]);
 
-    // 2. Setup MathField for equation input
+    // [PERF] Manual sync only. No more props in JSX.
     useEffect(() => {
         const mf = mfRef.current;
         if (!mf) return;
 
-        if (mf.value !== data.formula && data.formula !== undefined) {
-            mf.value = data.formula;
+        if (mf.value !== formulaInStore) {
+            mf.value = formulaInStore;
         }
 
         const handleInput = (e: any) => {
-            updateNodeData(id, { formula: e.target.value });
+            const nextVal = e.target.value;
+            if (nextVal !== formulaInStore) {
+                updateNodeData(id, { formula: nextVal });
+            }
         };
 
         mf.addEventListener('input', handleInput);
         return () => mf.removeEventListener('input', handleInput);
-    }, [id, data.formula, updateNodeData]);
+    }, [id, formulaInStore, updateNodeData]);
 
     return (
         <NodeFrame
@@ -81,16 +87,7 @@ export function SolveNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             <math-field
                 ref={mfRef}
                 class="nodrag formula-input"
-                style={{ 
-                    fontSize: '1rem', 
-                    width: '100%', 
-                    padding: '6px', 
-                    borderRadius: '6px',
-                    color: 'var(--text-main)'
-                }}
-            >
-                {data.formula || ''}
-            </math-field>
+            />
 
             <style>{`
                 .solve-node {

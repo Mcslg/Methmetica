@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ReactFlow, Background, Controls, ReactFlowProvider, useReactFlow, BackgroundVariant } from '@xyflow/react';
+import { useShallow } from 'zustand/react/shallow';
 import '@xyflow/react/dist/style.css';
 
 import useStore from './store/useStore';
@@ -8,9 +9,34 @@ import { nodeTypes, nodeLibrary, getNodeDefinition } from './nodes/registry';
 import { Sidebar } from './components/Sidebar';
 import { FloatingPalette } from './components/FloatingPalette';
 import { Icons } from './components/Icons';
+import { DebugOverlay, countRender } from './components/DebugOverlay';
 
 function Flow() {
-  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, removeNode, handleProximitySnap, updateMergeHint, setAltPressed, setCtrlPressed, theme, isSidebarOpen, setDeletingHover, draggingEjectPos } = useStore();
+  const { 
+    nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, removeNode, 
+    handleProximitySnap, updateMergeHint, setAltPressed, setCtrlPressed, theme, 
+    isSidebarOpen, setDeletingHover, draggingEjectPos, hoveredNodeId, 
+    setHoveredNodeId, updateNodeDimensions 
+  } = useStore(useShallow(state => ({
+    nodes: state.nodes,
+    edges: state.edges,
+    onNodesChange: state.onNodesChange,
+    onEdgesChange: state.onEdgesChange,
+    onConnect: state.onConnect,
+    addNode: state.addNode,
+    removeNode: state.removeNode,
+    handleProximitySnap: state.handleProximitySnap,
+    updateMergeHint: state.updateMergeHint,
+    setAltPressed: state.setAltPressed,
+    setCtrlPressed: state.setCtrlPressed,
+    theme: state.theme,
+    isSidebarOpen: state.isSidebarOpen,
+    setDeletingHover: state.setDeletingHover,
+    draggingEjectPos: state.draggingEjectPos,
+    hoveredNodeId: state.hoveredNodeId,
+    setHoveredNodeId: state.setHoveredNodeId,
+    updateNodeDimensions: state.updateNodeDimensions
+  })));
   const mergeHint = useStore(state => state.mergeHint);
   const { screenToFlowPosition, flowToScreenPosition } = useReactFlow();
   const [paneMenu, setPaneMenu] = useState<{ x: number, y: number, screenX: number, screenY: number } | null>(null);
@@ -39,9 +65,46 @@ function Flow() {
     };
   }, [setAltPressed, setCtrlPressed]);
 
+
   useEffect(() => {
     document.body.setAttribute('data-theme', theme);
   }, [theme]);
+
+  // Handle Cmd+Scroll for node resizing with event aggregation
+  const resizeRafRef = useRef<number | null>(null);
+  const pendingDeltaRef = useRef<number>(0);
+
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+        // [FIX] Use ONLY metaKey (Cmd on Mac), NOT ctrlKey.
+        // On Mac, trackpad pinch-to-zoom fires wheel events with ctrlKey=true.
+        // If we also check ctrlKey, pinch gestures would resize nodes instead of zooming the canvas.
+        if (e.metaKey && hoveredNodeId) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            pendingDeltaRef.current += e.deltaY;
+
+            if (resizeRafRef.current === null) {
+                resizeRafRef.current = requestAnimationFrame(() => {
+                    const start = performance.now();
+                    const factorW = -1.2, factorH = -0.8;
+                    updateNodeDimensions(hoveredNodeId!, pendingDeltaRef.current * factorW, pendingDeltaRef.current * factorH);
+                    pendingDeltaRef.current = 0;
+                    resizeRafRef.current = null;
+                    const end = performance.now();
+                    if (end - start > 10) console.warn(`[Performance] Resize logic took ${Math.round(end - start)}ms`);
+                });
+            }
+        }
+    };
+
+    window.addEventListener('wheel', handleWheel, { passive: false, capture: true });
+    return () => {
+        window.removeEventListener('wheel', handleWheel, { capture: true });
+        if (resizeRafRef.current !== null) cancelAnimationFrame(resizeRafRef.current);
+    };
+  }, [hoveredNodeId, updateNodeDimensions]);
 
   useEffect(() => {
     radialSelectionRef.current = radialSelection;
@@ -91,15 +154,15 @@ function Flow() {
     item.desc.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const onPaneContextMenu = useCallback((e: MouseEvent | React.MouseEvent) => {
+  const onPaneContextMenu = useCallback((e: MouseEvent | React.MouseEvent | { preventDefault: () => void, clientX: number, clientY: number, shiftKey?: boolean }) => {
     e.preventDefault();
     if (radialMenu) {
-      if (!e.shiftKey) { setRadialMenu(null); setRadialSelection(null); }
+      if (!('shiftKey' in e && e.shiftKey)) { setRadialMenu(null); setRadialSelection(null); }
       return;
     }
     setNodeMenu(null);
     setSearchQuery('');
-    if (e.shiftKey) {
+    if ('shiftKey' in e && e.shiftKey) {
       setPaneMenu(null);
       setRadialMenu({ x: e.clientX, y: e.clientY, screenX: e.clientX, screenY: e.clientY });
       return;
@@ -114,13 +177,41 @@ function Flow() {
     setTimeout(() => searchInputRef.current?.focus(), 10);
   }, [radialMenu]);
 
-  const onNodeContextMenu = useCallback((e: React.MouseEvent, node: any) => {
+  const onNodeContextMenu = useCallback((e: React.MouseEvent | { currentTarget: any, clientX: number, clientY: number, preventDefault: () => void }, node: any) => {
     e.preventDefault();
     setPaneMenu(null);
-    const rect = e.currentTarget.getBoundingClientRect();
-    const relativeY = ((e.clientY - rect.top) / rect.height) * 100;
+    const rect = 'currentTarget' in e && e.currentTarget ? (e.currentTarget as HTMLElement).getBoundingClientRect() : { top: e.clientY, height: 100 };
+    const nodeHeight = (rect as any).height || 100;
+    const relativeY = ((e.clientY - (rect as any).top) / nodeHeight) * 100;
     setNodeMenu({ x: e.clientX, y: e.clientY, nodeId: node.id, relativeY });
   }, []);
+
+  // Long press for touch support
+  const touchTimerRef = useRef<any>(null);
+  const handleTouchStart = useCallback((e: any, node?: any) => {
+    const touch = e.touches[0];
+    const { clientX, clientY } = touch;
+    const target = e.currentTarget;
+    
+    if (touchTimerRef.current) clearTimeout(touchTimerRef.current);
+    
+    touchTimerRef.current = setTimeout(() => {
+      if (node) {
+        onNodeContextMenu({ preventDefault: () => {}, clientX, clientY, currentTarget: target }, node);
+      } else {
+        onPaneContextMenu({ preventDefault: () => {}, clientX, clientY });
+      }
+      touchTimerRef.current = null;
+    }, 600);
+  }, [onPaneContextMenu, onNodeContextMenu]);
+
+  const handleTouchEnd = useCallback(() => {
+    if (touchTimerRef.current) {
+      clearTimeout(touchTimerRef.current);
+      touchTimerRef.current = null;
+    }
+  }, []);
+
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -153,6 +244,17 @@ function Flow() {
     setPaneMenu(null); setRadialMenu(null);
   };
 
+  useEffect(() => {
+    const handleAddAtCenter = (e: any) => {
+      const type = e.detail.type;
+      const { x, y } = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+      handleAddNode(type, undefined, { x, y });
+    };
+    window.addEventListener('add-node-at-center', handleAddAtCenter);
+    return () => window.removeEventListener('add-node-at-center', handleAddAtCenter);
+  }, [handleAddNode]);
+
+
   const handleDeleteNode = () => { if (nodeMenu) { removeNode(nodeMenu.nodeId); setNodeMenu(null); } };
   const handleDuplicateNode = () => {
     if (!nodeMenu) return;
@@ -172,8 +274,11 @@ function Flow() {
     connectingNodeRef.current = null;
   }, []);
 
+  countRender('Flow (App.tsx)');
+
   return (
     <div style={{ width: '100vw', height: '100vh', background: 'var(--bg-page)' }}>
+      <DebugOverlay />
       <Sidebar />
       <FloatingPalette />
       <ReactFlow
@@ -183,7 +288,21 @@ function Flow() {
         onDragOver={onDragOver}
         onDrop={onDrop}
         connectOnClick={false}
+        onTouchStart={(e) => {
+          const target = e.target as HTMLElement;
+          const nodeEl = target.closest('.react-flow__node');
+          if (nodeEl) {
+            const nodeId = nodeEl.getAttribute('data-id');
+            const node = nodes.find(n => n.id === nodeId);
+            if (node) handleTouchStart(e, node);
+          } else if (target.classList.contains('react-flow__pane') || target.closest('.react-flow__pane')) {
+            handleTouchStart(e);
+          }
+        }}
+        onTouchEnd={handleTouchEnd}
+        onTouchMove={handleTouchEnd}
         onMouseMove={(e) => {
+
           if (idleTooltip) setIdleTooltip(null);
           if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
           const target = e.target as HTMLElement;
@@ -202,6 +321,8 @@ function Flow() {
           const y = 'clientY' in event ? event.clientY : (event.touches ? event.touches[0].clientY : 0);
           const threshold = isSidebarOpen ? 180 : 40;
           setDeletingHover(x < threshold);
+          
+          // Update merge hint with flow position
           updateMergeHint(node.id, screenToFlowPosition({ x, y }));
         }}
         onNodeDragStop={(event: any, node) => {
@@ -212,6 +333,7 @@ function Flow() {
         }}
         onPaneContextMenu={onPaneContextMenu}
         onMouseDown={(e: React.MouseEvent) => {
+
           setIdleTooltip(null);
           if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
           if (e.button === 2 && e.shiftKey) {
@@ -223,7 +345,10 @@ function Flow() {
           }
         }}
         onNodeContextMenu={onNodeContextMenu}
+        onNodeMouseEnter={(_e, node) => setHoveredNodeId(node.id)}
+        onNodeMouseLeave={() => setHoveredNodeId(null)}
         onClick={closeMenus}
+
         fitView
         colorMode={theme}
       >
@@ -345,12 +470,31 @@ function Flow() {
         if (!targetNode) return null;
         const bWidth = targetNode.measured?.width || targetNode.width || 200;
         const bHeight = targetNode.measured?.height || targetNode.height || 100;
-        const anchor = mergeHint.slotKey === 'comment' 
-          ? { x: targetNode.position.x + bWidth / 2, y: targetNode.position.y }
-          : { x: targetNode.position.x + bWidth, y: targetNode.position.y + bHeight / 2 };
+        let anchor = { x: targetNode.position.x + bWidth, y: targetNode.position.y + bHeight / 2 };
+        let offset = { x: 0, y: 0 };
+        let transform = 'translateY(-50%)';
+
+        if (mergeHint.side === 'left') {
+          anchor = { x: targetNode.position.x, y: targetNode.position.y + bHeight / 2 };
+          transform = 'translate(-100%, -50%)';
+          offset.x = -15;
+        } else if (mergeHint.side === 'right') {
+          anchor = { x: targetNode.position.x + bWidth, y: targetNode.position.y + bHeight / 2 };
+          transform = 'translateY(-50%)';
+          offset.x = 15;
+        } else if (mergeHint.side === 'top') {
+          anchor = { x: targetNode.position.x + bWidth / 2, y: targetNode.position.y };
+          transform = 'translateX(-50%) translateY(-100%)';
+          offset.y = -15;
+        } else if (mergeHint.side === 'bottom') {
+          anchor = { x: targetNode.position.x + bWidth / 2, y: targetNode.position.y + bHeight };
+          transform = 'translateX(-50%)';
+          offset.y = 15;
+        }
+
         const screenPos = flowToScreenPosition(anchor);
         return createPortal(
-          <div style={{ position: 'fixed', left: screenPos.x + (mergeHint.slotKey === 'resultText' ? 15 : 0), top: screenPos.y + (mergeHint.slotKey === 'comment' ? -15 : 0), transform: mergeHint.slotKey === 'comment' ? 'translateX(-50%) translateY(-100%)' : 'translateY(-50%)', zIndex: 99999, pointerEvents: 'none' }}>
+          <div style={{ position: 'fixed', left: screenPos.x + offset.x, top: screenPos.y + offset.y, transform, zIndex: 99999, pointerEvents: 'none' }}>
               <div className="merge-hint-pill"><span className="plus">+</span>{mergeHint.label}</div>
           </div>,
           document.body

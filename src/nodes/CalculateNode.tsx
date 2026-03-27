@@ -14,6 +14,8 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
     const mfRef = useRef<any>(null);
 
     const useExternalFormula = !!data.useExternalFormula;
+    // [PERF] Only subscribe to the specific formula string we need.
+    const formulaInStore = useStore((state: AppState) => state.nodes.find(n => n.id === id)?.data.formula || '');
     // The formula we actually parse for handles
     const formulaToParse = useExternalFormula ? (data.formulaInput || '') : (data.formula || '');
 
@@ -93,22 +95,26 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
         syncHandles();
     }, [id, formulaToParse, useExternalFormula, updateNodeData, globalVarsString]);
 
-    // Setup MathField for formula input
+    // [PERF] Manual sync only. No more children/value props in JSX.
     useEffect(() => {
         const mf = mfRef.current;
         if (!mf || useExternalFormula) return;
 
-        if (mf.value !== data.formula && data.formula !== undefined) {
-            mf.value = data.formula;
+        // Only push value to the Web Component if it actually differs from store
+        if (mf.value !== formulaInStore) {
+            mf.value = formulaInStore;
         }
 
         const handleInput = (e: any) => {
-            updateNodeData(id, { formula: e.target.value });
+            const nextVal = e.target.value;
+            if (nextVal !== formulaInStore) {
+                updateNodeData(id, { formula: nextVal });
+            }
         };
 
         mf.addEventListener('input', handleInput);
         return () => mf.removeEventListener('input', handleInput);
-    }, [id, data.formula, useExternalFormula, updateNodeData]);
+    }, [id, formulaInStore, useExternalFormula, updateNodeData]);
 
     const isLocked = !!data.slots?.buttonNode;
 
@@ -169,10 +175,7 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
                 <math-field
                     ref={mfRef}
                     class="nodrag formula-input"
-                    style={{ fontSize: '1rem', width: '100%', padding: '4px', borderRadius: '4px' }}
-                >
-                    {data.formula || ''}
-                </math-field>
+                />
             )}
 
             <style>{`

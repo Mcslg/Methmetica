@@ -12,9 +12,12 @@ import 'katex/dist/katex.min.css';
 import nerdamer from 'nerdamer/all.min';
 import { getMathEngine } from '../utils/MathEngine';
 import useStore, { type AppState, type AppNode, type NodeData, type CustomHandle, type HandleType } from '../store/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
+import { countRender } from '../components/DebugOverlay';
 
+// Helper for implicit multiplication
 const LINE_Y_THRESHOLD = 12; // px
 
 export const TextNodeContext = React.createContext<{
@@ -79,15 +82,24 @@ const SliderPill = TiptapNode.create({
             const sliderId = typeof sliderSource === 'string' ? sliderSource : null;
             const legacySliderNode = typeof sliderSource === 'object' ? sliderSource : null;
 
-            // Subscribe to the real node if we have an ID
-            const realSliderNode = useStore(state =>
-                sliderId ? state.nodes.find(n => n.id === sliderId) : null
-            );
+            // [PERF] Extremely granular subscription. Only re-render if the specific node's data changes.
+            const nodeData = useStore(useShallow(state => {
+                if (!sliderId) return null;
+                const found = state.nodes.find(n => n.id === sliderId);
+                if (!found) return null;
+                return { value: found.data.value, min: found.data.min, max: found.data.max, step: found.data.step };
+            }));
 
-            const activeNode = realSliderNode || legacySliderNode;
+            const activeNodeData = nodeData || (legacySliderNode ? { 
+                value: legacySliderNode.data.value, 
+                min: legacySliderNode.data.min, 
+                max: legacySliderNode.data.max, 
+                step: legacySliderNode.data.step 
+            } : null);
+            
             const updateNodeData = useStore(state => state.updateNodeData);
 
-            if (!activeNode) return (
+            if (!activeNodeData) return (
                 <NodeViewWrapper as="span" style={{
                     display: 'inline-flex', alignItems: 'center', background: 'rgba(255,0,0,0.1)',
                     color: '#ff4d4d', padding: '1px 6px', borderRadius: '4px', border: '1px dashed #ff4d4d',
@@ -97,7 +109,7 @@ const SliderPill = TiptapNode.create({
                 </NodeViewWrapper>
             );
 
-            const val = Number(activeNode.data.value);
+            const val = Number(activeNodeData.value);
 
             return (
                 <NodeViewWrapper
@@ -115,27 +127,29 @@ const SliderPill = TiptapNode.create({
                     <span style={{ fontSize: '0.65rem', color: 'var(--accent-bright)', fontWeight: 800 }}>{name}</span>
                     <input
                         type="range"
-                        min={activeNode.data.min ?? 0}
-                        max={activeNode.data.max ?? 10}
-                        step={activeNode.data.step ?? 0.1}
-                        value={val}
+                        min={activeNodeData.min ?? 0}
+                        max={activeNodeData.max ?? 100}
+                        step={activeNodeData.step ?? 1}
+                        value={activeNodeData.value || 0}
                         onChange={(e) => {
-                            const nextVal = e.target.value;
-                            if (realSliderNode) {
-                                updateNodeData(realSliderNode.id, { value: nextVal });
-                            } else {
-                                // Fallback for legacy data
-                                const nextSlots = {
-                                    ...ctx.slots,
-                                    [name]: {
-                                        ...(activeNode as AppNode),
-                                        data: { ...(activeNode as AppNode).data, value: nextVal }
-                                    }
-                                };
-                                updateNodeData(ctx.nodeId, { slots: nextSlots });
+                                const nextVal = e.target.value;
+                                const targetId = sliderId || (legacySliderNode as any)?.id;
+                                if (targetId) {
+                                    updateNodeData(targetId, { value: nextVal });
+                                } else {
+                                    // Fallback for legacy local data
+                                    const nextSlots = {
+                                        ...ctx.slots,
+                                        [name]: {
+                                            ...(legacySliderNode as any),
+                                            data: { ...(legacySliderNode as any).data, value: nextVal }
+                                        }
+                                    };
+                                    updateNodeData(ctx.nodeId, { slots: nextSlots });
                             }
                         }}
-                        onMouseDown={e => e.stopPropagation()}
+                        onPointerDown={e => e.stopPropagation()}
+
                         style={{
                             width: '50px', height: '3px', appearance: 'none', background: 'var(--border-header)',
                             borderRadius: '2px', outline: 'none', cursor: 'pointer'
@@ -205,22 +219,17 @@ const ButtonPill = TiptapNode.create({
             const ctx = React.useContext(TextNodeContext);
             const source = ctx.slots?.[name];
             const sid = typeof source === 'string' ? source : null;
-            const realNode = useStore(state => sid ? state.nodes.find(n => n.id === sid) : null);
+            // [PERF] Granular subscription for button/trigger
+            const exists = useStore(state => sid ? state.nodes.some(n => n.id === sid) : false);
 
-            if (!realNode) return <NodeViewWrapper as="span" style={{ opacity: 0.5 }}>[trigger]</NodeViewWrapper>;
+            if (!exists && !source) return <NodeViewWrapper as="span" style={{ opacity: 0.5 }}>[trigger]</NodeViewWrapper>;
 
             return (
                 <NodeViewWrapper as="span" className="trigger-pill-wrapper has-handle"
                     data-name={name} data-handle-id={`h-out-${name}`}
                     style={{ display: 'inline-flex', verticalAlign: 'middle', margin: '0 4px' }}>
                     <button
-                        onMouseDown={e => e.stopPropagation()}
-                        onClick={() => {
-                            useStore.getState().edges.filter(e => e.source === realNode.id).forEach(e => {
-                                useStore.getState().executeNode(e.target);
-                            });
-                        }}
-                        onPointerDown={(e) => {
+                        onPointerDown={e => {
                             if (useStore.getState().isCtrlPressed) {
                                 e.stopPropagation();
                                 const startX = e.clientX;
@@ -244,6 +253,15 @@ const ButtonPill = TiptapNode.create({
                                 e.stopPropagation();
                             }
                         }}
+                        onClick={() => {
+                            const targetId = sid || (source as any)?.id;
+                            if (targetId) {
+                                useStore.getState().edges.filter(e => e.source === targetId).forEach(e => {
+                                    useStore.getState().executeNode(e.target);
+                                });
+                            }
+                        }}
+
                         style={{
                             background: '#ffcc00', border: 'none', borderRadius: '12px', color: '#000',
                             fontSize: '0.6rem', fontWeight: 800, padding: '2px 8px', cursor: 'pointer'
@@ -282,22 +300,24 @@ const GatePill = TiptapNode.create({
             const name = node.attrs.name || 'gateNode';
             const ctx = React.useContext(TextNodeContext);
             const source = ctx.slots?.[name];
+            const updateNodeData = useStore(state => state.updateNodeData);
             const sid = typeof source === 'string' ? source : null;
-            const realNode = useStore(state => sid ? state.nodes.find(n => n.id === sid) : null);
+            // [PERF] Granular subscription for gate value
+            const gateValue = useStore(state => {
+                const targetId = sid || (source as any)?.id;
+                if (!targetId) return null;
+                return state.nodes.find(n => n.id === targetId)?.data.value;
+            });
 
-            if (!realNode) return <NodeViewWrapper as="span" style={{ opacity: 0.5 }}>[gate]</NodeViewWrapper>;
+            if (gateValue === null && !source) return <NodeViewWrapper as="span" style={{ opacity: 0.5 }}>[gate]</NodeViewWrapper>;
 
-            const isOpen = realNode.data.value === '1';
+            const isOpen = gateValue === '1';
 
             return (
                 <NodeViewWrapper as="span" className="gate-pill-wrapper has-handle"
                     data-name={name} data-handle-id={`h-out-${name}`}
                     style={{ display: 'inline-flex', verticalAlign: 'middle', margin: '0 4px' }}>
                     <div
-                        onMouseDown={e => e.stopPropagation()}
-                        onClick={() => {
-                            useStore.getState().updateNodeData(realNode.id, { value: isOpen ? '0' : '1' });
-                        }}
                         onPointerDown={(e) => {
                             if (useStore.getState().isCtrlPressed) {
                                 e.stopPropagation();
@@ -322,6 +342,13 @@ const GatePill = TiptapNode.create({
                                 e.stopPropagation();
                             }
                         }}
+                        onClick={() => {
+                            const targetId = sid || (source as any)?.id;
+                            if (targetId) {
+                                updateNodeData(targetId, { value: isOpen ? '0' : '1' });
+                            }
+                        }}
+
                         style={{
                             background: isOpen ? '#43e97b' : '#ff4757', border: 'none', borderRadius: '4px', color: '#000',
                             fontSize: '0.6rem', fontWeight: 800, padding: '2px 6px', cursor: 'pointer',
@@ -400,15 +427,25 @@ const MathPill = TiptapNode.create({
             const val = node.attrs.value || '';
             const name = node.attrs.name || '';
             const ctx = React.useContext(TextNodeContext);
+
+            // [PERF] Only subscribe to what this specific pill actually needs.
+            // edges removed: now using granular isConnected selector below.
             const isCtrlPressed = useStore(state => state.isCtrlPressed);
-            const edges = useStore(state => state.edges);
+            const globalVars = useStore(state => state.globalVars);
+            const setGlobalVar = useStore(state => state.setGlobalVar);
+            const theme = useStore(state => state.theme);
+
+            const isGlobal = name.startsWith('$');
 
             // Generate a stable ID based on name or value (sanitized)
             const safeVal = val.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
             const stableHandleId = name ? `h-auto-out-${name}` : `h-auto-out-math-${safeVal}`;
             const [localShowHandle, setLocalShowHandle] = useState(ctx.isHandleActive(`math-${val}`));
 
-            const isConnected = edges.some(e => e.source === ctx.nodeId && e.sourceHandle === stableHandleId);
+            // [PERF] Only re-render when THIS pill's connectivity changes, not all edges.
+            const isConnected = useStore(state =>
+                state.edges.some(e => e.source === ctx.nodeId && e.sourceHandle === stableHandleId)
+            );
             const effectiveShowHandle = localShowHandle || isConnected;
 
             // Trigger sync ONLY when connectivity changes, not on every render
@@ -524,9 +561,34 @@ const MathPill = TiptapNode.create({
                     console.error('Eval error:', e);
                     return null;
                 }
-            }, [val, isCtrlPressed, editor]);
+            }, [val, isCtrlPressed, editor, globalVars]); // Global vars might affect solve
 
-            const displayVal = useMemo(() => (isCtrlPressed && evaluatedVal !== null) ? evaluatedVal : val, [isCtrlPressed, evaluatedVal, val]);
+            // [NEW] Local state for reactive syncing of global variables
+            const [localVal, setLocalVal] = useState(val);
+
+            useEffect(() => {
+                if (isGlobal) {
+                    const globalVal = globalVars[name];
+                    if (globalVal !== undefined && globalVal !== localVal) {
+                        setLocalVal(globalVal);
+                        // Also proactively update the Tiptap document to keep it in sync, without moving focus
+                        const currentPos = typeof getPos === 'function' ? getPos() : null;
+                        if (typeof currentPos === 'number' && !editor.isDestroyed) {
+                            // Using a timeout to prevent flushSync errors during render
+                            setTimeout(() => {
+                                editor.commands.command(({ tr }) => {
+                                    tr.setNodeMarkup(currentPos, undefined, { ...node.attrs, value: globalVal });
+                                    return true;
+                                });
+                            }, 0);
+                        }
+                    }
+                } else if (val !== localVal) {
+                    setLocalVal(val);
+                }
+            }, [globalVars, name, isGlobal, val, editor, getPos, localVal]);
+
+            const displayVal = useMemo(() => (isCtrlPressed && evaluatedVal !== null) ? evaluatedVal : localVal, [isCtrlPressed, evaluatedVal, localVal]);
 
             const sequenceData = useMemo(() => {
                 let s = String(displayVal).trim();
@@ -613,7 +675,7 @@ const MathPill = TiptapNode.create({
             const onRightClick = (e: React.MouseEvent) => {
                 e.preventDefault();
                 e.stopPropagation();
-                ctx.editMath(val, { x: e.clientX, y: e.clientY });
+                ctx.editMath(localVal, { x: e.clientX, y: e.clientY });
             };
 
             // Ctrl/Cmd+Click: split pill into multiple pills
@@ -627,7 +689,7 @@ const MathPill = TiptapNode.create({
                 const currentPos = typeof getPos === 'function' ? getPos() : null;
                 if (typeof currentPos !== 'number') return;
 
-                const rawVal = evaluatedVal || val;
+                const rawVal = evaluatedVal || localVal;
 
                 if (e.altKey) {
                     let equations: string[] = [];
@@ -677,11 +739,15 @@ const MathPill = TiptapNode.create({
                     }
                 }
 
-                if (rawVal !== val) {
+                if (rawVal !== localVal) {
                     editor.chain().focus().command(({ tr }) => {
                         tr.setNodeMarkup(currentPos, undefined, { ...node.attrs, value: rawVal });
                         return true;
                     }).run();
+
+                    if (isGlobal) {
+                        setGlobalVar(name, rawVal);
+                    }
                 }
             };
 
@@ -695,14 +761,15 @@ const MathPill = TiptapNode.create({
                 <NodeViewWrapper
                     as="span"
                     className={`data-pill-render ${effectiveShowHandle ? 'has-handle' : ''} ${isCtrlPressed ? 'ctrl-preview' : ''}`}
-                    data-value={val}
+                    data-value={localVal}
                     data-name={name}
                     data-handle-id={stableHandleId}
                     data-show-handle={effectiveShowHandle ? 'true' : 'false'}
                     onContextMenu={onRightClick}
-                    onMouseDown={handleMouseDown}
+                    onPointerDown={handleMouseDown}
                     onCopy={handleCopy}
                     onMouseEnter={() => setIsHovered(true)}
+
                     onMouseLeave={() => setIsHovered(false)}
                     ref={pillRef}
                     contentEditable={false}
@@ -711,20 +778,22 @@ const MathPill = TiptapNode.create({
                         position: 'relative',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        background: isCtrlPressed ? 'rgba(67, 233, 123, 0.1)' : 'rgba(79, 172, 254, 0.05)',
-                        color: isCtrlPressed ? '#43e97b' : '#4facfe',
+                        background: isGlobal ? 'rgba(255, 204, 0, 0.15)' : (isCtrlPressed ? 'rgba(67, 233, 123, 0.1)' : 'rgba(79, 172, 254, 0.05)'),
+                        color: isGlobal ? '#ffcc00' : (isCtrlPressed ? '#43e97b' : '#4facfe'),
                         padding: '4px 10px',
                         borderRadius: '6px',
                         fontSize: '0.9em',
                         cursor: 'pointer',
-                        border: localShowHandle ? (isCtrlPressed ? '1px solid #43e97b' : '1px solid #4facfe') : (isCtrlPressed ? '1px solid rgba(67, 233, 123, 0.4)' : '1px solid rgba(79, 172, 254, 0.3)'),
+                        border: localShowHandle
+                            ? (isGlobal ? '1px solid #ffcc00' : (isCtrlPressed ? '1px solid #43e97b' : '1px solid #4facfe'))
+                            : (isGlobal ? '1px solid rgba(255, 204, 0, 0.5)' : (isCtrlPressed ? '1px solid rgba(67, 233, 123, 0.4)' : '1px solid rgba(79, 172, 254, 0.3)')),
                         margin: name ? '10px 4px 4px 4px' : '0 4px',
                         userSelect: 'text',
                         minHeight: '1.4em',
                         transition: 'all 0.2s ease',
                         verticalAlign: 'middle',
                         top: '-1px',
-                        boxShadow: localShowHandle ? (isCtrlPressed ? '0 0 10px rgba(67, 233, 123, 0.3)' : '0 0 10px rgba(79, 172, 254, 0.3)') : 'none',
+                        boxShadow: localShowHandle ? (isGlobal ? '0 0 10px rgba(255, 204, 0, 0.4)' : (isCtrlPressed ? '0 0 10px rgba(67, 233, 123, 0.3)' : '0 0 10px rgba(79, 172, 254, 0.3)')) : 'none',
                         zIndex: isCtrlPressed ? 10 : 1
                     }}
                 >
@@ -734,14 +803,14 @@ const MathPill = TiptapNode.create({
                             top: '-8px',
                             left: '8px',
                             fontSize: '0.6rem',
-                            color: isCtrlPressed ? '#43e97b' : 'rgba(255,255,255,0.5)',
-                            background: '#15151a',
+                            color: isGlobal ? '#ffcc00' : (isCtrlPressed ? '#43e97b' : (theme === 'dark' ? 'rgba(255,255,255,0.5)' : 'rgba(14, 47, 11, 0.6)')),
+                            background: 'var(--bg-node)',
                             padding: '0 4px',
                             lineHeight: 1,
                             fontWeight: 700,
                             letterSpacing: '0.05em',
                             pointerEvents: 'none',
-                            opacity: isCtrlPressed ? 0.8 : 1
+                            opacity: isGlobal ? 1 : 0.8
                         }}>
                             {name}
                         </span>
@@ -876,6 +945,7 @@ const MathPill = TiptapNode.create({
 // ── MAIN COMPONENT ────────────────────────────────────────────────────────
 
 export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
+    countRender('TextNode');
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
     const updateNodeInternals = useUpdateNodeInternals();
     const { screenToFlowPosition } = useReactFlow();
@@ -888,6 +958,12 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const mathNameInputRef = useRef<HTMLInputElement>(null);
     const editingValueRef = useRef<string | null>(null);
     const editingNameRef = useRef<string | null>(null);
+
+    // [NEW] Global variables suggestion state
+    const globalVars = useStore((state: AppState) => state.globalVars);
+    const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+    const [suggestionList, setSuggestionList] = useState<string[]>([]);
+    const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
 
     // Track which handles are toggled visible. Store in component state so it doesn't get wiped by Markdown.
     // Try to restore from outputs so handles don't disappear on reload.
@@ -1191,15 +1267,21 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         return () => clearTimeout(timer);
     }, [data.text, syncHandlesFromDOM]);
 
+    // [PERF] Stable ref so ResizeObserver is not recreated on every render.
+    const syncHandlesFromDOMRef = useRef(syncHandlesFromDOM);
+    useEffect(() => { syncHandlesFromDOMRef.current = syncHandlesFromDOM; }, [syncHandlesFromDOM]);
+
     useEffect(() => {
         if (!containerRef.current) return;
-        const observer = new ResizeObserver(() => syncHandlesFromDOM());
+        const observer = new ResizeObserver(() => syncHandlesFromDOMRef.current());
         observer.observe(containerRef.current);
         return () => observer.disconnect();
-    }, [syncHandlesFromDOM]);
+    }, []); // ← Created once, stable for component lifetime
 
 
     // Toolbar application
+    const setGlobalVar = useStore((state: AppState) => state.setGlobalVar);
+
     const insertMathOrData = () => {
         const latex = mathFieldRef.current?.value || '';
         const name = mathNameInputRef.current?.value || '';
@@ -1210,12 +1292,16 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             return;
         }
 
+        // Sync to global store if name is $-prefixed
+        if (name.startsWith('$')) {
+            setGlobalVar(name, latex);
+        }
+
         if (editor) {
             if (editingValueRef.current !== null) {
                 let foundPos = -1;
                 let attrs: any = null;
                 editor.state.doc.descendants((node, pos) => {
-                    // Try to match both value and name to be more specific, or just value if that's what we have
                     if (node.type.name === 'mathPill' &&
                         node.attrs.value === editingValueRef.current &&
                         (editingNameRef.current === null || node.attrs.name === editingNameRef.current)) {
@@ -1231,7 +1317,6 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                         return true;
                     });
 
-                    // Handle cleanup and rotation for activeHandles if needed
                     const oldKey = `math-${editingValueRef.current}`;
                     const newKey = `math-${latex}`;
                     if (activeHandles.has(oldKey)) {
@@ -1244,10 +1329,9 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                     }
                 }
             } else {
-                // Insert new directly as a mathPill node and add a trailing space
                 if (editor) {
                     editor.chain()
-                        .focus() // Ensure focus before insertion
+                        .focus()
                         .insertContent({ type: 'mathPill', attrs: { value: latex, name } })
                         .insertContent(' ')
                         .run();
@@ -1400,7 +1484,13 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <div style={{ fontSize: '0.6rem', color: '#4facfe', textTransform: 'uppercase', fontWeight: 700 }}>Formula</div>
                             {/* @ts-ignore */}
-                            <math-field ref={mathFieldRef} style={{ background: '#000', color: '#fff', padding: '6px 8px', borderRadius: '4px', border: '1px solid #333', fontSize: '1rem' }}
+                            <math-field
+                                ref={mathFieldRef}
+                                id="math-popup-field"
+                                style={{
+                                    background: '#000', color: '#fff', padding: '6px 8px', borderRadius: '4px', border: '1px solid #333', fontSize: '1rem',
+                                    transition: 'border-color 0.2s'
+                                }}
                                 onKeyDownCapture={(e: any) => {
                                     if (e.key === 'Enter') {
                                         e.preventDefault();
@@ -1419,7 +1509,7 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                             />
                         </div>
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px', position: 'relative' }}>
                             <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span style={{ fontSize: '0.65rem', color: '#888', fontWeight: 700 }}>NAME</span>
                                 <input
@@ -1435,16 +1525,134 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                                         outline: 'none',
                                         fontSize: '0.75rem',
                                         flex: 1,
-                                        minWidth: 0
+                                        minWidth: 0,
+                                        transition: 'border-color 0.2s'
+                                    }}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        const isGlobalName = val.startsWith('$');
+
+                                        // Gold border on name field
+                                        e.target.style.borderColor = isGlobalName ? '#ffcc00' : '#333';
+                                        e.target.style.color = isGlobalName ? '#ffcc00' : '#4facfe';
+
+                                        // Gold border on formula field
+                                        const mf = document.getElementById('math-popup-field') as HTMLElement | null;
+                                        if (mf) mf.style.border = isGlobalName ? '1px solid #ffcc00' : '1px solid #333';
+
+                                        // Auto-fill formula from store if name is global and formula is empty
+                                        if (isGlobalName && globalVars[val] && mathFieldRef.current && !mathFieldRef.current.value) {
+                                            mathFieldRef.current.value = globalVars[val];
+                                        }
+
+                                        // Suggestion list
+                                        if (isGlobalName) {
+                                            const matches = Object.keys(globalVars).filter(k => k.startsWith(val) && k !== val);
+                                            setSuggestionList(matches);
+                                            setSuggestionsOpen(matches.length > 0);
+                                            setSelectedSuggestionIndex(0);
+                                        } else {
+                                            setSuggestionsOpen(false);
+                                        }
                                     }}
                                     onKeyDownCapture={(e) => {
-                                        if (e.key === 'Enter') {
+                                        if (suggestionsOpen) {
+                                            if (e.key === 'ArrowDown') {
+                                                e.preventDefault();
+                                                setSelectedSuggestionIndex(prev => (prev + 1) % suggestionList.length);
+                                                return;
+                                            }
+                                            if (e.key === 'ArrowUp') {
+                                                e.preventDefault();
+                                                setSelectedSuggestionIndex(prev => (prev - 1 + suggestionList.length) % suggestionList.length);
+                                                return;
+                                            }
+                                            if (e.key === 'Tab') {
+                                                e.preventDefault();
+                                                const selected = suggestionList[selectedSuggestionIndex];
+                                                if (selected && mathNameInputRef.current) {
+                                                    mathNameInputRef.current.value = selected;
+                                                    // Also auto-fill formula
+                                                    if (mathFieldRef.current && !mathFieldRef.current.value && globalVars[selected]) {
+                                                        mathFieldRef.current.value = globalVars[selected];
+                                                    }
+                                                    setSuggestionsOpen(false);
+                                                }
+                                                return;
+                                            }
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                const selected = suggestionList[selectedSuggestionIndex];
+                                                if (selected && mathNameInputRef.current) {
+                                                    mathNameInputRef.current.value = selected;
+                                                    if (mathFieldRef.current && !mathFieldRef.current.value && globalVars[selected]) {
+                                                        mathFieldRef.current.value = globalVars[selected];
+                                                    }
+                                                    setSuggestionsOpen(false);
+                                                } else {
+                                                    insertMathOrData();
+                                                }
+                                                return;
+                                            }
+                                            if (e.key === 'Escape') {
+                                                setSuggestionsOpen(false);
+                                                e.stopPropagation();
+                                                return;
+                                            }
+                                        }
+
+                                        if (e.key === 'Enter' && !suggestionsOpen) {
                                             e.preventDefault();
                                             insertMathOrData();
                                         }
                                     }}
                                 />
                             </div>
+
+                            {suggestionsOpen && suggestionList.length > 0 && (
+                                <div style={{
+                                    position: 'absolute',
+                                    bottom: '100%',
+                                    left: '40px',
+                                    width: '150px',
+                                    background: '#1a1a20',
+                                    border: '1px solid #4facfe',
+                                    borderRadius: '6px',
+                                    padding: '4px',
+                                    boxShadow: '0 -4px 15px rgba(0,0,0,0.5)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '2px',
+                                    zIndex: 2100,
+                                    marginBottom: '8px'
+                                }}>
+                                    <div style={{ fontSize: '0.6rem', color: '#888', padding: '2px 4px' }}>Global Variables</div>
+                                    {suggestionList.map((sug, idx) => (
+                                        <div
+                                            key={sug}
+                                            style={{
+                                                padding: '4px 8px',
+                                                fontSize: '0.75rem',
+                                                color: '#ffcc00',
+                                                background: idx === selectedSuggestionIndex ? 'rgba(255,204,0,0.2)' : 'transparent',
+                                                borderRadius: '4px',
+                                                cursor: 'pointer'
+                                            }}
+                                            onClick={() => {
+                                                if (mathNameInputRef.current) {
+                                                    mathNameInputRef.current.value = sug;
+                                                    setSuggestionsOpen(false);
+                                                    mathNameInputRef.current.focus();
+                                                }
+                                            }}
+                                            onMouseEnter={() => setSelectedSuggestionIndex(idx)}
+                                        >
+                                            {sug}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
                             <div style={{ display: 'flex', gap: '8px' }}>
                                 <button onClick={() => setMathInputOpen(false)} style={{ background: 'transparent', border: 'none', color: '#888', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 600 }}>Cancel</button>
                                 <button onClick={() => insertMathOrData()} style={{ background: '#4facfe', border: 'none', color: '#000', padding: '5px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 800 }}>Save</button>
