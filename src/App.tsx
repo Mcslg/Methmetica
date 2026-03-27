@@ -317,6 +317,9 @@ function Flow() {
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
         onNodeDrag={(event: any, node) => {
+          // [PERF] Let math-field lose focus on drag to stop cursor/RAF thrashing
+          (document.activeElement as HTMLElement)?.blur();
+          
           const x = 'clientX' in event ? event.clientX : (event.touches ? event.touches[0].clientX : 0);
           const y = 'clientY' in event ? event.clientY : (event.touches ? event.touches[0].clientY : 0);
           const threshold = isSidebarOpen ? 180 : 40;

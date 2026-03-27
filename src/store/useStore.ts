@@ -583,7 +583,6 @@ const useStore = create<AppState>()(
     evaluateGraph: () => {
         incrementEvalGraph();
         const { nodes, edges } = get();
-        let nextNodes = [...nodes];
 
         // 1. Build rapid-access maps for incoming edges
         const targetToExplicit = new Map<string, typeof edges>();
@@ -592,7 +591,10 @@ const useStore = create<AppState>()(
             targetToExplicit.get(e.target)!.push(e);
         });
 
+        let nextNodes = nodes; // [PERF] Do not spread initially to retain reference if unchanged
+
         for (let i = 0; i < 5; i++) {
+            let hasChanged = false;
             const tempNodes = nextNodes.map(node => {
                 const explicitEdges = targetToExplicit.get(node.id) || [];
                 let valIn: string | undefined = undefined;
@@ -706,16 +708,19 @@ const useStore = create<AppState>()(
                     }
                 }
 
+                if (isUpdated) hasChanged = true;
                 return isUpdated ? { ...node, data: updatedData } : node;
             });
 
-            if (JSON.stringify(tempNodes) === JSON.stringify(nextNodes)) {
+            if (!hasChanged) {
                 break;
             }
             nextNodes = tempNodes;
         }
 
-        set({ nodes: nextNodes });
+        if (nextNodes !== nodes) {
+            set({ nodes: nextNodes });
+        }
     },
   }),
   {

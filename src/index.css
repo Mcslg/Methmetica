@@ -218,7 +218,7 @@ math-field {
   color: var(--text-main);
   font-family: inherit;
   box-shadow: none !important;
-  outline: none !important;
+  contain: content; /* [PERF] Isolates math-field layout from the rest of the page */
 }
 
 math-field:focus-within {

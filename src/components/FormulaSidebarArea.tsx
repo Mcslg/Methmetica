@@ -271,25 +271,41 @@ interface FormulaRowProps {
 
 const FormulaRow: React.FC<FormulaRowProps> = ({ index, formula, isLight, color, onUpdate, onRemove }) => {
     const mfRef = useRef<any>(null);
+    const isSettingValueRef = useRef(false);
+    const formulaRef = useRef(formula);
 
-    // [PERF] Isolated manual sync for formula rows
+    // Ref sync
+    useEffect(() => {
+        formulaRef.current = formula;
+    }, [formula]);
+
+    // Setup listener once
     useEffect(() => {
         const mf = mfRef.current;
         if (!mf) return;
-        if (mf.value !== formula) {
-            mf.value = formula;
-        }
         
         const handleInput = (e: any) => {
+            if (isSettingValueRef.current) return;
             const nextVal = e.target.value;
-            if (nextVal !== formula) {
+            if (nextVal !== formulaRef.current) {
                 onUpdate(index, nextVal);
             }
         };
         
         mf.addEventListener('input', handleInput);
         return () => mf.removeEventListener('input', handleInput);
-    }, [index, formula, onUpdate]);
+    }, [index, onUpdate]);
+
+    // Manual sync from store to web component
+    useEffect(() => {
+        const mf = mfRef.current;
+        if (!mf) return;
+        if (mf.value !== formula) {
+            isSettingValueRef.current = true;
+            mf.value = formula;
+            isSettingValueRef.current = false;
+        }
+    }, [formula]);
 
     return (
         <div style={{ 

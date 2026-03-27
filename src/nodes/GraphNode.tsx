@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
 import { useShallow } from 'zustand/react/shallow';
 import useStore, { type NodeData, type AppState } from '../store/useStore';
@@ -9,7 +9,7 @@ import { NodeFrame } from '../components/NodeFrame';
 import { FormulaSidebarArea } from '../components/FormulaSidebarArea';
 import { countRender } from '../components/DebugOverlay';
 
-export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
+export const GraphNode = memo(function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     countRender('GraphNode');
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
     const theme = useStore((state: AppState) => state.theme);
@@ -19,6 +19,7 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const mfRef = useRef<any>(null);
+    const isSettingValueRef = useRef(false);
 
     // [PERF] Isolated store value to stop React from thrashing the web component
     const formulaInStore = useStore((state: AppState) => state.nodes.find(n => n.id === id)?.data.formula || '');
@@ -87,25 +88,41 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         };
     }, []);
 
-    // [PERF] Manual sync only. No more props in JSX.
+    const formulaInStoreRef = useRef(formulaInStore);
+
+    // Ref sync without triggering effect loops
+    useEffect(() => {
+        formulaInStoreRef.current = formulaInStore;
+    }, [formulaInStore]);
+
+    // [PERF] Setup event listener once
     useEffect(() => {
         const mf = mfRef.current;
         if (!mf || isReceivingExternal) return;
 
-        if (mf.value !== formulaInStore) {
-            mf.value = formulaInStore;
-        }
-
         const handleInput = (e: any) => {
+            if (isSettingValueRef.current) return;
             const nextVal = e.target.value;
-            if (nextVal !== formulaInStore) {
+            if (nextVal !== formulaInStoreRef.current) {
                 updateNodeData(id, { formula: nextVal });
             }
         };
 
         mf.addEventListener('input', handleInput);
         return () => mf.removeEventListener('input', handleInput);
-    }, [id, formulaInStore, isReceivingExternal, updateNodeData]);
+    }, [id, isReceivingExternal, updateNodeData]);
+
+    // [PERF] Manual sync from store to web component
+    useEffect(() => {
+        const mf = mfRef.current;
+        if (!mf || isReceivingExternal) return;
+
+        if (mf.value !== formulaInStore) {
+            isSettingValueRef.current = true;
+            mf.value = formulaInStore;
+            isSettingValueRef.current = false;
+        }
+    }, [formulaInStore, isReceivingExternal]);
 
     const getMergedParams = useCallback(() => {
         const params: Record<string, number> = {};
@@ -617,4 +634,5 @@ export function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             `}</style>
         </NodeFrame>
     );
-}
+});
+

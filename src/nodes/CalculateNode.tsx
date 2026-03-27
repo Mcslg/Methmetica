@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
 import useStore, { type NodeData, type AppState, type CustomHandle } from '../store/useStore';
 import { getMathEngine } from '../utils/MathEngine';
@@ -8,10 +8,11 @@ import { NodeFrame } from '../components/NodeFrame';
 
 
 
-export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
+export const CalculateNode = memo(function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
     const executeNode = useStore((state: AppState) => state.executeNode);
     const mfRef = useRef<any>(null);
+    const isSettingValueRef = useRef(false);
 
     const useExternalFormula = !!data.useExternalFormula;
     // [PERF] Only subscribe to the specific formula string we need.
@@ -95,26 +96,41 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
         syncHandles();
     }, [id, formulaToParse, useExternalFormula, updateNodeData, globalVarsString]);
 
-    // [PERF] Manual sync only. No more children/value props in JSX.
+    const formulaInStoreRef = useRef(formulaInStore);
+
+    // Ref sync without triggering effect loops
+    useEffect(() => {
+        formulaInStoreRef.current = formulaInStore;
+    }, [formulaInStore]);
+
+    // [PERF] Setup event listener once
     useEffect(() => {
         const mf = mfRef.current;
         if (!mf || useExternalFormula) return;
 
-        // Only push value to the Web Component if it actually differs from store
-        if (mf.value !== formulaInStore) {
-            mf.value = formulaInStore;
-        }
-
         const handleInput = (e: any) => {
+            if (isSettingValueRef.current) return;
             const nextVal = e.target.value;
-            if (nextVal !== formulaInStore) {
+            if (nextVal !== formulaInStoreRef.current) {
                 updateNodeData(id, { formula: nextVal });
             }
         };
 
         mf.addEventListener('input', handleInput);
         return () => mf.removeEventListener('input', handleInput);
-    }, [id, formulaInStore, useExternalFormula, updateNodeData]);
+    }, [id, useExternalFormula, updateNodeData]);
+
+    // [PERF] Manual sync from store to web component
+    useEffect(() => {
+        const mf = mfRef.current;
+        if (!mf || useExternalFormula) return;
+
+        if (mf.value !== formulaInStore) {
+            isSettingValueRef.current = true;
+            mf.value = formulaInStore;
+            isSettingValueRef.current = false;
+        }
+    }, [formulaInStore, useExternalFormula]);
 
     const isLocked = !!data.slots?.buttonNode;
 
@@ -196,4 +212,5 @@ export function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>)
             `}</style>
         </NodeFrame>
     );
-}
+});
+
