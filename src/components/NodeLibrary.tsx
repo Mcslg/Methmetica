@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { nodeLibrary } from '../nodes/registry';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface NodeLibraryProps {
     onDragStart: (event: React.DragEvent, nodeType: string) => void;
@@ -7,6 +8,7 @@ interface NodeLibraryProps {
 }
 
 export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 'sidebar' }) => {
+    const { t } = useLanguage();
     const [isLibraryExpanded, setLibraryExpanded] = useState(false);
     const basicNodeTypes = ['textNode', 'calculateNode', 'graphNode', 'sliderNode'];
     const basicNodes = nodeLibrary.filter(n => basicNodeTypes.includes(n.type));
@@ -38,7 +40,7 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
                     className={`sidebar-btn more-btn ${layout === 'float' ? 'float-more' : ''}`} 
                     onClick={() => setLibraryExpanded(true)}
                 >
-                    Show More...
+                    {t('sidebar.show_more') || 'Show More...'}
                 </button>
             ) : (
                 <div className="node-library-grid more-nodes">
@@ -63,7 +65,7 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
                         onClick={() => setLibraryExpanded(false)}
                     >
                         <span style={{ fontSize: '1rem' }}>↑</span>
-                        <span>Collapse</span>
+                        <span>{t('sidebar.collapse') || 'Collapse'}</span>
                     </button>
                 </div>
             )}

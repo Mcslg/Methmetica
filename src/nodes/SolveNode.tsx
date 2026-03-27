@@ -28,6 +28,10 @@ export const SolveNode = memo(function SolveNode({ id, data, selected }: NodePro
         }
     }, [id, data.handles, updateNodeData]);
 
+    useEffect(() => {
+        executeNode(id, true);
+    }, [data.inputSignature, id, executeNode]);
+
 
     return (
         <NodeFrame

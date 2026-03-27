@@ -4,8 +4,10 @@ import { NodeLibrary } from './NodeLibrary';
 import { Icons } from './Icons';
 import TitleLogo from '../assets/Title.svg';
 import TitleDarkLogo from '../assets/Title_dark.svg';
+import { useLanguage } from '../contexts/LanguageContext';
 
 export function Sidebar() {
+    const { t, language, setLanguage } = useLanguage();
     const { nodes, edges, setGraph, theme, setTheme, isSidebarOpen, setSidebarOpen, isDeletingHover, isPaletteFloating, setPaletteFloating } = useStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [holdProgress, setHoldProgress] = React.useState(0);
@@ -40,10 +42,10 @@ export function Sidebar() {
                 if (data && Array.isArray(data.nodes) && Array.isArray(data.edges)) {
                     setGraph(data.nodes, data.edges);
                 } else {
-                    alert('Invalid project file format.');
+                    alert(t('common.invalid_file') || 'Invalid project file format.');
                 }
             } catch (err) {
-                alert('Failed to parse project file.');
+                alert(t('common.parse_error') || 'Failed to parse project file.');
             }
         };
         reader.readAsText(file);
@@ -78,13 +80,13 @@ export function Sidebar() {
                         alt="methmatica"
                         style={{ height: '64px', width: 'auto', marginTop: '6px' }}
                     />
-                    <p style={{ marginTop: '4px' }}>v0.8.0</p>
+                    <p style={{ marginTop: '4px' }}>v0.9.0</p>
                 </div>
 
                 {!isPaletteFloating && (
                     <div className="sidebar-section">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                            <label style={{ marginBottom: 0 }}>Add Nodes <span>(Drag & Drop)</span></label>
+                            <label style={{ marginBottom: 0 }}>{t('sidebar.title')} <span>(Drag & Drop)</span></label>
                             <button
                                 className="icon-btn-small"
                                 title="Float Toolkit"
@@ -98,12 +100,12 @@ export function Sidebar() {
                 )}
 
                 <div className="sidebar-section">
-                    <label>Project</label>
+                    <label>{t('sidebar.project')}</label>
                     <button className="sidebar-btn" onClick={handleSave}>
-                        <Icons.Save /> Save / Export
+                        <Icons.Save /> {t('sidebar.save_export')}
                     </button>
                     <button className="sidebar-btn" onClick={() => fileInputRef.current?.click()}>
-                        <Icons.Load /> Load / Import
+                        <Icons.Load /> {t('sidebar.load_import')}
                     </button>
                     <button
                         className="sidebar-btn danger hold-btn"
@@ -115,23 +117,27 @@ export function Sidebar() {
                     >
                         <div className="hold-progress" style={{ width: `${holdProgress}%` }} />
                         <Icons.Clear />
-                        <span>{holdProgress > 0 ? 'Hold to Clear' : 'Clear All'}</span>
+                        <span>{holdProgress > 0 ? (t('sidebar.hold_to_clear') || 'Hold to Clear') : (t('sidebar.clear_all') || 'Clear All')}</span>
                     </button>
                 </div>
 
                 <div className="sidebar-section">
-                    <label>System</label>
+                    <label>{t('sidebar.system')}</label>
                     <div className="stat-row">
-                        <span>Nodes:</span>
+                        <span>{t('sidebar.nodes_count')}:</span>
                         <span>{nodes.length}</span>
                     </div>
                     <div className="stat-row">
-                        <span>Edges:</span>
+                        <span>{t('sidebar.edges_count')}:</span>
                         <span>{edges.length}</span>
                     </div>
                     <button className="sidebar-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} style={{ marginTop: '8px' }}>
                         {theme === 'dark' ? <Icons.Sun /> : <Icons.Moon />}
-                        {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+                        {theme === 'dark' ? t('sidebar.theme_toggle_light') || 'Light Mode' : t('sidebar.theme_toggle_dark') || 'Dark Mode'}
+                    </button>
+                    <button className="sidebar-btn" onClick={() => setLanguage(language === 'en' ? 'zh-TW' : 'en')} style={{ marginTop: '4px' }}>
+                        <Icons.Languages />
+                        {language === 'en' ? '繁體中文' : 'English'}
                     </button>
                 </div>
 
@@ -146,7 +152,7 @@ export function Sidebar() {
                 {isDeletingHover && (
                     <div className="delete-overlay">
                         <Icons.Clear />
-                        <span>Drop to Delete</span>
+                        <span>{t('sidebar.drop_to_delete') || 'Drop to Delete'}</span>
                     </div>
                 )}
             </div>

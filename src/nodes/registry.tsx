@@ -12,6 +12,7 @@ import { RangeNode, executeRangeNode } from './RangeNode';
 import { ForEachNode, executeForEachNode } from './ForEachNode';
 import { GraphNode } from './GraphNode';
 import { SliderNode } from './SliderNode';
+import { BalanceNode } from './BalanceNode';
 import { SolveNode } from './SolveNode';
 import { CalculationService } from '../utils/CalculationService';
 import {
@@ -148,6 +149,14 @@ export const nodeRegistry: NodeDefinition[] = [
         component: SolveNode,
         metadata: { label: 'Solver', desc: 'Equation solver', category: 'Math', icon: <Icons.Solve />, color: 'var(--accent-bright)' },
         defaultSize: { width: 220, height: 160 },
+        defaultHandles: [{ id: 'h-in', type: 'input', position: 'left', offset: 50, label: 'eq' }, { id: 'h-out', type: 'output', position: 'right', offset: 50 }],
+        execute: mathExecute
+    },
+    {
+        type: 'balanceNode',
+        component: BalanceNode,
+        metadata: { label: 'Balance', desc: 'Step-by-step equivalence', category: 'Math', icon: <Icons.Balance />, color: 'var(--accent-bright)' },
+        defaultSize: { width: 240, height: 300 },
         defaultHandles: [{ id: 'h-in', type: 'input', position: 'left', offset: 50, label: 'eq' }, { id: 'h-out', type: 'output', position: 'right', offset: 50 }],
         execute: mathExecute
     },

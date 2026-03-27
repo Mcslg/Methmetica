@@ -15,7 +15,7 @@
  */
 
 export type ProxyableType = 'sliderNode' | 'buttonNode' | 'gateNode' | 'textNode';
-export type ContainerType = 'textNode' | 'calculateNode' | 'solveNode' | 'graphNode' | 'calculusNode' | 'gateNode' | 'rangeNode';
+export type ContainerType = 'textNode' | 'calculateNode' | 'solveNode' | 'graphNode' | 'calculusNode' | 'gateNode' | 'rangeNode' | 'balanceNode';
 
 export interface MergeRule {
     /** Which container types accept this proxyable type */
@@ -47,7 +47,7 @@ export const MergeRules: Record<ProxyableType, MergeRule> = {
         heightIncrement: 55,
     },
     textNode: {
-        acceptedBy: ['calculateNode', 'solveNode', 'graphNode', 'calculusNode', 'gateNode', 'rangeNode'],
+        acceptedBy: ['calculateNode', 'solveNode', 'graphNode', 'calculusNode', 'gateNode', 'rangeNode', 'balanceNode'],
         getSlotKey: (_id, name) => name || 'comment',
         heightIncrement: 0, 
     },
@@ -57,7 +57,7 @@ export const MergeRules: Record<ProxyableType, MergeRule> = {
 export const proxyableTypes = Object.keys(MergeRules) as ProxyableType[];
 
 /** All container node types */
-export const containerTypes: ContainerType[] = ['textNode', 'calculateNode', 'solveNode', 'graphNode', 'calculusNode', 'gateNode', 'rangeNode'];
+export const containerTypes: ContainerType[] = ['textNode', 'calculateNode', 'solveNode', 'graphNode', 'calculusNode', 'gateNode', 'rangeNode', 'balanceNode'];
 
 /**
  * Check if a node of `aType` can be absorbed into a node of `bType`.

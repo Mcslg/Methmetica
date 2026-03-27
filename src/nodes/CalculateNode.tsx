@@ -95,14 +95,13 @@ export const CalculateNode = memo(function CalculateNode({ id, data, selected }:
 
     const isLocked = !!data.slots?.buttonNode;
 
-    // Re-execute when external formula input changes, UNLESS locked
+    // Re-execute when external formula input OR upstream variables change, UNLESS locked
     useEffect(() => {
-        if (useExternalFormula && data.formulaInput !== undefined) {
-            if (!isLocked) {
-                executeNode(id);
-            }
+        if (!isLocked) {
+            if (useExternalFormula && data.formulaInput === undefined) return;
+            executeNode(id);
         }
-    }, [data.formulaInput, useExternalFormula, id, executeNode, isLocked]);
+    }, [data.formulaInput, data.inputSignature, useExternalFormula, id, executeNode, isLocked, formulaToParse]);
 
     return (
         <NodeFrame

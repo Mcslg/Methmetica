@@ -18,22 +18,35 @@ export const MathInput: React.FC<MathInputProps> = React.memo(({ value, onChange
         valueRef.current = value;
     }, [value]);
 
+    const onChangeRef = useRef(onChange);
+    useEffect(() => {
+        onChangeRef.current = onChange;
+    }, [onChange]);
+
     // Setup input listener exactly once
     useEffect(() => {
         const mf = mfRef.current;
         if (!mf) return;
 
+        let frameId: number;
         const handleInput = (e: any) => {
             if (isSettingValueRef.current) return; // Prevent fake inputs when syncing from React
             const nextVal = e.target.value;
-            if (nextVal !== valueRef.current && onChange) {
-                onChange(nextVal);
+            if (nextVal !== valueRef.current && onChangeRef.current) {
+                // Use RAF to decouple from React render cycle and prevent thrashing
+                cancelAnimationFrame(frameId);
+                frameId = requestAnimationFrame(() => {
+                    onChangeRef.current!(nextVal);
+                });
             }
         };
 
         mf.addEventListener('input', handleInput);
-        return () => mf.removeEventListener('input', handleInput);
-    }, [onChange]);
+        return () => {
+            mf.removeEventListener('input', handleInput);
+            cancelAnimationFrame(frameId);
+        };
+    }, []); // Empty deps to bind only once
 
     // Manually sync changes from React store to the Web Component
     useEffect(() => {

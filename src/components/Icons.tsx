@@ -172,5 +172,25 @@ export const Icons = {
       <rect x="14" y="14" width="7" height="7" />
       <rect x="3" y="14" width="7" height="7" />
     </svg>
+  ),
+  Balance: (props?: any) => (
+    <svg {...iconProps} {...props}>
+      <path d="M12 22V3" />
+      <path d="M5 12h14" />
+      <path d="M12 3l-7 9" />
+      <path d="M12 3l7 9" />
+      <circle cx="5" cy="15" r="3" />
+      <circle cx="19" cy="15" r="3" />
+    </svg>
+  ),
+  Languages: (props?: any) => (
+    <svg {...iconProps} {...props}>
+      <path d="m5 8 6 6" />
+      <path d="m4 14 6-6 2-3" />
+      <path d="M2 5h12" />
+      <path d="M7 2h1" />
+      <path d="m22 22-5-10-5 10" />
+      <path d="M14 18h6" />
+    </svg>
   )
 };

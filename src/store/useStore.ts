@@ -51,6 +51,9 @@ export type NodeData = {
     gateValue?: string; // Value representing gate pass/block state
     label?: string; // Custom title for the node header
     parentId?: string; // ID of the container node that absorbed this node (for Option B Proxy)
+    operations?: { op: string; value: string }[]; // For BalanceNode history
+    currentFormula?: string; // For BalanceNode interim result
+    inputSignature?: string; // A signature combining all incoming variable edge values to trigger calculation hooks
 };
 
 export type AppNode = Node<NodeData>;
@@ -66,6 +69,7 @@ export type AppState = {
     removeHandle: (nodeId: string, handleId: string) => void;
     updateHandle: (nodeId: string, handleId: string, patch: Partial<CustomHandle>) => void;
     addNode: (node: AppNode) => void;
+    addNodes: (nodes: AppNode[]) => void;
     removeNode: (nodeId: string) => void;
     executeNode: (nodeId: string, force?: boolean) => void;
     handleProximitySnap: (nodeId: string) => void;
@@ -223,7 +227,7 @@ const useStore = create<AppState>()(
                             }
                         }
                         // Rule for RIGHT Merges (Results for nodes that aren't TextNodes)
-                        else if (side === 'right' && (b.type === 'calculateNode' || b.type === 'solveNode')) {
+                        else if (side === 'right' && (b.type === 'calculateNode' || b.type === 'solveNode' || b.type === 'balanceNode')) {
                             if (a.type === 'textNode' && !slots.resultText) {
                                 bestHint = { targetId: b.id, slotKey: 'resultText', label: '+ Result Display', side: 'right' };
                             } else if (a.type === 'sliderNode') {
@@ -432,6 +436,12 @@ const useStore = create<AppState>()(
     addNode: (node: AppNode) => {
         set({
             nodes: [...get().nodes, node],
+        });
+    },
+
+    addNodes: (newNodes: AppNode[]) => {
+        set({
+            nodes: [...get().nodes, ...newNodes],
         });
     },
 
@@ -712,9 +722,14 @@ const useStore = create<AppState>()(
             }
 
             // Process Generic Input
-            if (node.type === 'decimalNode' || node.type === 'calculusNode' || node.type === 'gateNode') {
+            if (node.type === 'decimalNode' || node.type === 'calculusNode' || node.type === 'gateNode' || node.type === 'balanceNode') {
                 if (valIn !== node.data.input && node.type !== 'gateNode') {
                     updatedData.input = valIn;
+                    // For BalanceNode, if the root input changes, we reset the currentFormula to run through operations
+                    if (node.type === 'balanceNode') {
+                        // The executeNode will rebuild it, so we ensure it knows
+                        updatedData.currentFormula = valIn;
+                    }
                     isUpdated = true;
                 }
                 if (valIn !== node.data.value && node.type === 'gateNode') {
@@ -736,6 +751,19 @@ const useStore = create<AppState>()(
                 
                 if (textToSet !== node.data.text) {
                     updatedData.text = textToSet;
+                    isUpdated = true;
+                }
+            }
+
+            // Build input signature to trigger downstream recalculation reliably
+            if (['calculateNode', 'solveNode', 'graphNode', 'balanceNode'].includes(node.type || '')) {
+                const signature = explicitEdges.map(e => {
+                    const source = nodeMap.get(e.source);
+                    return `${e.targetHandle}=${(e.sourceHandle && source?.data.outputs?.[e.sourceHandle]) ?? source?.data.value}`;
+                }).sort().join('|');
+
+                if (signature !== node.data.inputSignature) {
+                    updatedData.inputSignature = signature;
                     isUpdated = true;
                 }
             }

@@ -10,13 +10,15 @@ import { Sidebar } from './components/Sidebar';
 import { FloatingPalette } from './components/FloatingPalette';
 import { Icons } from './components/Icons';
 import { DebugOverlay, countRender } from './components/DebugOverlay';
+import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 
 function Flow() {
+  const { t } = useLanguage();
   const { 
-    nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, removeNode, 
+    nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, addNodes, removeNode, 
     handleProximitySnap, updateMergeHint, setAltPressed, setCtrlPressed, theme, 
     isSidebarOpen, setDeletingHover, draggingEjectPos, hoveredNodeId, 
-    setHoveredNodeId, updateNodeDimensions 
+    setHoveredNodeId, updateNodeDimensions, isAltPressed 
   } = useStore(useShallow(state => ({
     nodes: state.nodes,
     edges: state.edges,
@@ -24,6 +26,7 @@ function Flow() {
     onEdgesChange: state.onEdgesChange,
     onConnect: state.onConnect,
     addNode: state.addNode,
+    addNodes: state.addNodes,
     removeNode: state.removeNode,
     handleProximitySnap: state.handleProximitySnap,
     updateMergeHint: state.updateMergeHint,
@@ -35,7 +38,8 @@ function Flow() {
     draggingEjectPos: state.draggingEjectPos,
     hoveredNodeId: state.hoveredNodeId,
     setHoveredNodeId: state.setHoveredNodeId,
-    updateNodeDimensions: state.updateNodeDimensions
+    updateNodeDimensions: state.updateNodeDimensions,
+    isAltPressed: state.isAltPressed
   })));
   const mergeHint = useStore(state => state.mergeHint);
   const { screenToFlowPosition, flowToScreenPosition } = useReactFlow();
@@ -316,6 +320,21 @@ function Flow() {
         onConnect={onConnect}
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
+        onNodeDragStart={(event, _node, nodesBeingDragged) => {
+          if (event.altKey || isAltPressed) {
+            // [CLONE] Create a copy of each dragged node at its starting position.
+            // Since onNodeDragStart is called exactly when the drag begins, 
+            // the positions in nodesBeingDragged are the original positions.
+            const copies = nodesBeingDragged.map(n => ({
+              ...n,
+              id: `${n.type}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+              data: { ...n.data }, 
+              selected: false,
+              dragging: false,
+            }));
+            addNodes(copies as any);
+          }
+        }}
         onNodeDrag={(event: any, node) => {
           // [PERF] Let math-field lose focus on drag to stop cursor/RAF thrashing
           (document.activeElement as HTMLElement)?.blur();
@@ -369,7 +388,7 @@ function Flow() {
               ref={searchInputRef}
               type="text"
               className="command-input"
-              placeholder="Search nodes..."
+              placeholder={t('common.search_placeholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -382,7 +401,7 @@ function Flow() {
             {filteredLibrary.length > 0 ? (
               Array.from(new Set(filteredLibrary.map(n => n.category))).map(cat => (
                 <React.Fragment key={cat}>
-                  <div className="command-category">{cat}</div>
+                  <div className="command-category">{t(`categories.${cat.toLowerCase()}`)}</div>
                   {filteredLibrary.filter(n => n.category === cat).map(item => (
                     <div key={item.type} className="command-item" onClick={() => handleAddNode(item.type)}>
                       <div className="command-icon" style={{ '--theme-color': item.color } as any}>{item.icon}</div>
@@ -391,7 +410,7 @@ function Flow() {
                   ))}
                 </React.Fragment>
               ))
-            ) : <div className="command-empty">No nodes found.</div>}
+            ) : <div className="command-empty">{t('common.no_nodes')}</div>}
           </div>
         </div>
       )}
@@ -401,8 +420,8 @@ function Flow() {
           <svg className="pie-svg" viewBox="0 0 320 320">
             {(() => {
                 const items = [
-                  { type: 'calculateNode', label: 'Math', icon: <Icons.Calculate size={24} />, color: '#ffcc33', start: 2, end: 178 },
-                  { type: 'textNode', label: 'Text', icon: <Icons.Text size={24} />, color: '#4facfe', start: 182, end: 358 }
+                  { type: 'calculateNode', label: t('nodes.calculate.title'), icon: <Icons.Calculate size={24} />, color: '#ffcc33', start: 2, end: 178 },
+                  { type: 'textNode', label: t('categories.text') || 'Text', icon: <Icons.Text size={24} />, color: '#4facfe', start: 182, end: 358 }
                 ];
                 const center = 160; const outer = 140; const inner = 55;
                 const polarToCartesian = (r: number, angle: number) => {
@@ -426,7 +445,7 @@ function Flow() {
                           <g className="pie-label-group" transform={`translate(${tx}, ${ty})`}>
                             <g transform="translate(-12, -35)" style={{ color: item.color }}>{item.icon}</g>
                             <text className="pie-item-label" y="5" style={{ fill: 'var(--text-main)', opacity: isActive ? 1 : 0.6 }}>{item.label}</text>
-                            <text className="pie-item-desc" y="20" style={{ fill: 'var(--text-main)', opacity: 0.4 }}>{item.type === 'calculateNode' ? 'Calculation' : 'Logic'}</text>
+                            <text className="pie-item-desc" y="20" style={{ fill: 'var(--text-main)', opacity: 0.4 }}>{item.type === 'calculateNode' ? t('nodes.calculate.desc') || 'Calculation' : t('categories.logic')}</text>
                           </g>
                         </g>
                     );
@@ -440,17 +459,17 @@ function Flow() {
 
       {nodeMenu && (
         <div className="pane-context-menu" style={{ position: 'absolute', left: nodeMenu.x, top: nodeMenu.y, zIndex: 1000 }} onMouseLeave={() => setNodeMenu(null)}>
-          <div className="menu-header">Node Actions</div>
-          <div className="menu-item" onClick={handleDuplicateNode}>Duplicate Node</div>
-          <div className="menu-item" style={{ color: '#ff4757' }} onClick={handleDeleteNode}>Delete Node</div>
+          <div className="menu-header">{t('common.node_actions')}</div>
+          <div className="menu-item" onClick={handleDuplicateNode}>{t('common.duplicate')}</div>
+          <div className="menu-item" style={{ color: '#ff4757' }} onClick={handleDeleteNode}>{t('common.delete')}</div>
         </div>
       )}
 
       {idleTooltip && createPortal(
         <div className="idle-tooltip" style={{ position: 'fixed', left: idleTooltip.x + 20, top: idleTooltip.y + 20, background: 'var(--bg-node)', backdropFilter: 'blur(10px)', border: '1px solid var(--border-node)', padding: '8px 14px', borderRadius: '12px', color: 'var(--text-main)', fontSize: '0.75rem', pointerEvents: 'none', zIndex: 9999, boxShadow: 'var(--node-shadow)', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 500 }}>
-          <span><span style={{ color: '#4facfe', fontWeight: 700 }}>右鍵</span> 創造節點</span>
+          <span><span style={{ color: '#4facfe', fontWeight: 700 }}>{t('tips.right_click')}</span> {t('tips.create_node')}</span>
           <span style={{ opacity: 0.3 }}>|</span>
-          <span><span style={{ color: '#ffcc00', fontWeight: 700 }}>Shift + 右鍵</span> 快速創造</span>
+          <span><span style={{ color: '#ffcc00', fontWeight: 700 }}>{t('tips.shift_right_click')}</span> {t('tips.quick_create')}</span>
         </div>,
         document.body
       )}
@@ -516,9 +535,11 @@ function Flow() {
 
 function App() {
   return (
-    <ReactFlowProvider>
-      <Flow />
-    </ReactFlowProvider>
+    <LanguageProvider>
+      <ReactFlowProvider>
+        <Flow />
+      </ReactFlowProvider>
+    </LanguageProvider>
   );
 }
 

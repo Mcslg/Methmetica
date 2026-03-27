@@ -25,9 +25,56 @@ export class CalculationService {
             case 'toolNode':
             case 'graphNode':
                 return this.executeFunction(node, context);
+            case 'balanceNode':
+                return this.executeBalance(node);
             default:
                 throw new Error('Unknown node type');
         }
+    }
+
+    private static executeBalance(node: AppNode): string {
+        const inputEq = node.data.input || '';
+        if (!inputEq || !inputEq.includes('=')) return inputEq;
+
+        const ce = getMathEngine();
+        const parts = inputEq.split('=');
+        if (parts.length !== 2) return inputEq;
+
+        let [lhs, rhs] = parts;
+        
+        const ops = node.data.operations || [];
+        for (const op of ops) {
+            let funcName = '';
+            if (op.op === '+') funcName = 'Add';
+            if (op.op === '-') funcName = 'Subtract';
+            if (op.op === '*') funcName = 'Multiply';
+            if (op.op === '/') funcName = 'Divide';
+
+            if (funcName) {
+                ce.pushScope();
+                // We use compute engine's evaluation to keep the form mathematically valid
+                try {
+                    const lExpr = ce.box([funcName, ce.parse(lhs), ce.parse(op.value)]).evaluate();
+                    const rExpr = ce.box([funcName, ce.parse(rhs), ce.parse(op.value)]).evaluate();
+                    lhs = lExpr.latex || lExpr.toString();
+                    rhs = rExpr.latex || rExpr.toString();
+                } catch (e) {
+                    console.error('Balance error', e);
+                }
+                ce.popScope();
+            }
+        }
+
+        const res = `${lhs}=${rhs}`;
+        
+        // Synchronize the computed result to the currentFormula state, but avoid immediate re-render loops.
+        if (node.data.currentFormula !== res) {
+            setTimeout(() => {
+                useStore.getState().updateNodeData(node.id, { currentFormula: res });
+            }, 0);
+        }
+
+        return res;
     }
 
     private static executeDecimal(node: AppNode): string {
