@@ -38,6 +38,8 @@ export const zhTW = {
       sub: "兩邊同減",
       mul: "兩邊同乘",
       div: "兩邊同除",
+      interactive: "互動操作區",
+      error_parsing: "輸入方程式 (例如 x+3=7) 以手動操作",
       labels: {
         add: "兩邊同加",
         sub: "兩邊同減",
@@ -52,6 +54,19 @@ export const zhTW = {
       output: "輸出",
       waiting: "等待輸入中...",
       desc: "數學運算"
+    },
+    calculus: {
+      steps: "推導步驟 (STEP-BY-STEP)",
+      solve_ai: "使用 AI 生成詳細步驟",
+      thinking: "AI 思考中...",
+      no_rule: "結構過於複雜，預設規則無法解析",
+      waiting: "等待輸入中...",
+      ejectable: "可分離",
+      diff: "微分 (d/dx)",
+      integ: "積分 (∫)",
+      limit: "極限 (lim)",
+      variable: "變數",
+      approach: "趨近於"
     }
   },
   sidebar: {

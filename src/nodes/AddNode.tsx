@@ -1,9 +1,10 @@
+import { memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
 import useStore, { type NodeData, type AppState } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
-import 'mathlive';
+import { MathInput } from '../components/MathInput';
 
-export function AddNode({ id, data }: NodeProps<Node<NodeData>>) {
+export const AddNode = memo(function AddNode({ id, data }: NodeProps<Node<NodeData>>) {
     const executeNode = useStore((state: AppState) => state.executeNode);
 
     return (
@@ -19,15 +20,13 @@ export function AddNode({ id, data }: NodeProps<Node<NodeData>>) {
                 </button>
             </div>
             <div className="node-content math-input-container">
-                {/* @ts-ignore */}
-                <math-field
-                    read-only
+                <MathInput
+                    value={data.value || '?'}
+                    readOnly={true}
                     style={{ fontSize: '1.2rem', color: '#00f2fe', background: 'transparent', border: 'none', appearance: 'none' }}
-                >
-                    {data.value || '?'}
-                    {/* @ts-ignore */}
-                </math-field>
+                />
             </div>
         </div>
     );
-}
+});
+

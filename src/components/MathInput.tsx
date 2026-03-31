@@ -1,17 +1,23 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import 'mathlive';
 
 interface MathInputProps {
     value: string;
     onChange?: (value: string) => void;
+    onKeyDown?: (e: React.KeyboardEvent) => void;
     className?: string;
     style?: React.CSSProperties;
+    readOnly?: boolean;
+    id?: string;
 }
 
-export const MathInput: React.FC<MathInputProps> = React.memo(({ value, onChange, className, style }) => {
+export const MathInput = forwardRef<any, MathInputProps>(({ value, onChange, onKeyDown, className, style, readOnly, id }, ref) => {
     const mfRef = useRef<any>(null);
     const isSettingValueRef = useRef(false);
     const valueRef = useRef(value);
+
+    // Expose the underlying math-field to parent refs
+    useImperativeHandle(ref, () => mfRef.current);
 
     // Keep the ref updated with the latest prop without triggering effects
     useEffect(() => {
@@ -63,8 +69,13 @@ export const MathInput: React.FC<MathInputProps> = React.memo(({ value, onChange
     return (
         <math-field
             ref={mfRef}
+            id={id}
             class={className}
             style={style as any}
+            read-only={readOnly ? "true" : undefined}
+            onKeyDown={onKeyDown as any}
         />
     );
 });
+
+MathInput.displayName = 'MathInput';

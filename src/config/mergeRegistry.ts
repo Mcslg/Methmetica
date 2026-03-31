@@ -14,7 +14,7 @@
  *   2. Add it to the `acceptedBy` list in applicable proxyable types
  */
 
-export type ProxyableType = 'sliderNode' | 'buttonNode' | 'gateNode' | 'textNode';
+export type ProxyableType = 'sliderNode' | 'buttonNode' | 'gateNode' | 'textNode' | 'appendNode';
 export type ContainerType = 'textNode' | 'calculateNode' | 'solveNode' | 'graphNode' | 'calculusNode' | 'gateNode' | 'rangeNode' | 'balanceNode';
 
 export interface MergeRule {
@@ -51,6 +51,11 @@ export const MergeRules: Record<ProxyableType, MergeRule> = {
         getSlotKey: (_id, name) => name || 'comment',
         heightIncrement: 0, 
     },
+    appendNode: {
+        acceptedBy: ['textNode'],
+        getSlotKey: () => 'appender',
+        heightIncrement: 0,
+    }
 };
 
 /** All proxyable node types */

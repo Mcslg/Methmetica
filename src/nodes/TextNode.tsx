@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback, useMemo, useState } from 'react';
+import React, { useRef, useEffect, useCallback, useMemo, useState, memo } from 'react';
 import { type NodeProps, type Node, NodeResizer, useUpdateNodeInternals, Handle, Position, useReactFlow } from '@xyflow/react';
 import { createPortal } from 'react-dom';
 import { EditorContent, useEditor, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
@@ -15,6 +15,8 @@ import useStore, { type AppState, type AppNode, type NodeData, type CustomHandle
 import { useShallow } from 'zustand/react/shallow';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
+import { MathInput } from '../components/MathInput';
+
 import { countRender } from '../components/DebugOverlay';
 
 // Helper for implicit multiplication
@@ -29,6 +31,7 @@ export const TextNodeContext = React.createContext<{
     renameTrigger: (oldLabel: string, newLabel: string) => void;
     triggerSync: () => void;
     handleEject: (name: string, pos?: { x: number, y: number }) => void;
+    inputs?: Record<string, string>;
 }>({
     nodeId: '',
     isHandleActive: () => false,
@@ -37,6 +40,7 @@ export const TextNodeContext = React.createContext<{
     renameTrigger: () => { },
     triggerSync: () => { },
     handleEject: () => { },
+    inputs: {},
 });
 
 /**
@@ -78,11 +82,12 @@ const SliderPill = TiptapNode.create({
             const name = node.attrs.name || 'x';
             const ctx = React.useContext(TextNodeContext);
             const sliderSource = ctx.slots?.[name];
+            const globalVars = useStore(state => state.globalVars);
 
             const sliderId = typeof sliderSource === 'string' ? sliderSource : null;
             const legacySliderNode = typeof sliderSource === 'object' ? sliderSource : null;
 
-            // [PERF] Extremely granular subscription. Only re-render if the specific node's data changes.
+            // [PERF] Extremely granular subscription.
             const nodeData = useStore(useShallow(state => {
                 if (!sliderId) return null;
                 const found = state.nodes.find(n => n.id === sliderId);
@@ -90,26 +95,40 @@ const SliderPill = TiptapNode.create({
                 return { value: found.data.value, min: found.data.min, max: found.data.max, step: found.data.step };
             }));
 
-            const activeNodeData = nodeData || (legacySliderNode ? { 
-                value: legacySliderNode.data.value, 
-                min: legacySliderNode.data.min, 
-                max: legacySliderNode.data.max, 
-                step: legacySliderNode.data.step 
-            } : null);
+            // Resolve value: 1. From absorbed node, 2. From Global ($), 3. Null
+            let finalValue = "0";
+            let finalMin = 0;
+            let finalMax = 100;
+            let finalStep = 1;
+            let exists = false;
+
+            if (nodeData || legacySliderNode) {
+                const data = nodeData || (legacySliderNode as any).data;
+                finalValue = data.value || "0";
+                finalMin = data.min ?? 0;
+                finalMax = data.max ?? 100;
+                finalStep = data.step ?? 1;
+                exists = true;
+            } else if (name.startsWith('$') && globalVars[name] !== undefined) {
+                finalValue = globalVars[name];
+                exists = true; 
+            }
             
             const updateNodeData = useStore(state => state.updateNodeData);
+            const setGlobalVar = useStore(state => state.setGlobalVar);
 
-            if (!activeNodeData) return (
+            if (!exists) return (
                 <NodeViewWrapper as="span" style={{
-                    display: 'inline-flex', alignItems: 'center', background: 'rgba(255,0,0,0.1)',
-                    color: '#ff4d4d', padding: '1px 6px', borderRadius: '4px', border: '1px dashed #ff4d4d',
-                    fontSize: '0.65rem', verticalAlign: 'middle', cursor: 'help'
-                }} title={`Slider '${name}' not found. Drop a Slider node here.`}>
-                    ⚠ {name}
+                    display: 'inline-flex', alignItems: 'center', background: 'rgba(255,255,255,0.05)',
+                    color: 'var(--text-sub)', padding: '1px 6px', borderRadius: '4px', border: '1px dashed var(--border-node)',
+                    fontSize: '0.65rem', verticalAlign: 'middle', cursor: 'help', opacity: 0.5
+                }} title={`Slider '${name}' not found. Merge a Slider node or name it as global (e.g. $x).`}>
+                    ? {name}
                 </NodeViewWrapper>
             );
 
-            const val = Number(activeNodeData.value);
+            const val = Number(finalValue);
+
 
             return (
                 <NodeViewWrapper
@@ -127,17 +146,20 @@ const SliderPill = TiptapNode.create({
                     <span style={{ fontSize: '0.65rem', color: 'var(--accent-bright)', fontWeight: 800 }}>{name}</span>
                     <input
                         type="range"
-                        min={activeNodeData.min ?? 0}
-                        max={activeNodeData.max ?? 100}
-                        step={activeNodeData.step ?? 1}
-                        value={activeNodeData.value || 0}
+                        min={finalMin}
+                        max={finalMax}
+                        step={finalStep}
+                        value={finalValue}
                         onChange={(e) => {
                                 const nextVal = e.target.value;
+                                if (name.startsWith('$')) {
+                                    setGlobalVar(name, nextVal);
+                                }
+                                
                                 const targetId = sliderId || (legacySliderNode as any)?.id;
                                 if (targetId) {
                                     updateNodeData(targetId, { value: nextVal });
                                 } else {
-                                    // Fallback for legacy local data
                                     const nextSlots = {
                                         ...ctx.slots,
                                         [name]: {
@@ -437,25 +459,36 @@ const MathPill = TiptapNode.create({
 
             const isGlobal = name.startsWith('$');
 
-            // Generate a stable ID based on name or value (sanitized)
+            // Generate stable IDs
             const safeVal = val.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
-            const stableHandleId = name ? `h-auto-out-${name}` : `h-auto-out-math-${safeVal}`;
+            const outHandleId = name ? `h-auto-out-${name}` : `h-auto-out-math-${safeVal}`;
+            const inHandleId = name ? `h-auto-in-${name}` : `h-auto-in-math-${safeVal}`;
+            
             const [localShowHandle, setLocalShowHandle] = useState(ctx.isHandleActive(`math-${val}`));
 
             // [PERF] Only re-render when THIS pill's connectivity changes, not all edges.
-            const isConnected = useStore(state =>
-                state.edges.some(e => e.source === ctx.nodeId && e.sourceHandle === stableHandleId)
+            const isConnectedOut = useStore(state =>
+                state.edges.some(e => e.source === ctx.nodeId && e.sourceHandle === outHandleId)
             );
-            const effectiveShowHandle = localShowHandle || isConnected;
+            const isConnectedIn = useStore(state =>
+                state.edges.some(e => e.target === ctx.nodeId && e.targetHandle === inHandleId)
+            );
+            
+            // Check for incoming value from graph evaluation
+            const remoteVal = ctx.inputs?.[inHandleId];
+            const hasRemoteVal = remoteVal !== undefined;
+
+            const effectiveShowHandle = localShowHandle || isConnectedOut || isConnectedIn;
 
             // Trigger sync ONLY when connectivity changes, not on every render
-            const prevConnectedVal = useRef(isConnected);
+            const prevConnectedVal = useRef(isConnectedOut || isConnectedIn);
             useEffect(() => {
-                if (prevConnectedVal.current !== isConnected) {
-                    prevConnectedVal.current = isConnected;
+                const con = isConnectedOut || isConnectedIn;
+                if (prevConnectedVal.current !== con) {
+                    prevConnectedVal.current = con;
                     ctx.triggerSync();
                 }
-            }, [isConnected, ctx]);
+            }, [isConnectedOut, isConnectedIn, ctx]);
 
             const [isHovered, setIsHovered] = useState(false);
             const pillRef = useRef<HTMLSpanElement>(null);
@@ -588,7 +621,8 @@ const MathPill = TiptapNode.create({
                 }
             }, [globalVars, name, isGlobal, val, editor, getPos, localVal]);
 
-            const displayVal = useMemo(() => (isCtrlPressed && evaluatedVal !== null) ? evaluatedVal : localVal, [isCtrlPressed, evaluatedVal, localVal]);
+            const finalBaseVal = hasRemoteVal ? remoteVal : localVal;
+            const displayVal = useMemo(() => (isCtrlPressed && evaluatedVal !== null) ? evaluatedVal : finalBaseVal, [isCtrlPressed, evaluatedVal, finalBaseVal]);
 
             const sequenceData = useMemo(() => {
                 let s = String(displayVal).trim();
@@ -763,7 +797,8 @@ const MathPill = TiptapNode.create({
                     className={`data-pill-render ${effectiveShowHandle ? 'has-handle' : ''} ${isCtrlPressed ? 'ctrl-preview' : ''}`}
                     data-value={localVal}
                     data-name={name}
-                    data-handle-id={stableHandleId}
+                    data-handle-out={outHandleId}
+                    data-handle-in={inHandleId}
                     data-show-handle={effectiveShowHandle ? 'true' : 'false'}
                     onContextMenu={onRightClick}
                     onPointerDown={handleMouseDown}
@@ -778,22 +813,22 @@ const MathPill = TiptapNode.create({
                         position: 'relative',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        background: isGlobal ? 'rgba(255, 204, 0, 0.15)' : (isCtrlPressed ? 'rgba(67, 233, 123, 0.1)' : 'rgba(79, 172, 254, 0.05)'),
-                        color: isGlobal ? '#ffcc00' : (isCtrlPressed ? '#43e97b' : '#4facfe'),
+                        background: isGlobal ? 'rgba(255, 204, 0, 0.15)' : (isConnectedIn ? 'rgba(180, 100, 255, 0.1)' : (isCtrlPressed ? 'rgba(67, 233, 123, 0.1)' : 'rgba(79, 172, 254, 0.05)')),
+                        color: isGlobal ? '#ffcc00' : (isConnectedIn ? '#b464ff' : (isCtrlPressed ? '#43e97b' : '#4facfe')),
                         padding: '4px 10px',
                         borderRadius: '6px',
                         fontSize: '0.9em',
                         cursor: 'pointer',
                         border: localShowHandle
-                            ? (isGlobal ? '1px solid #ffcc00' : (isCtrlPressed ? '1px solid #43e97b' : '1px solid #4facfe'))
-                            : (isGlobal ? '1px solid rgba(255, 204, 0, 0.5)' : (isCtrlPressed ? '1px solid rgba(67, 233, 123, 0.4)' : '1px solid rgba(79, 172, 254, 0.3)')),
+                            ? (isGlobal ? '1px solid #ffcc00' : (isConnectedIn ? '1px solid #b464ff' : (isCtrlPressed ? '1px solid #43e97b' : '1px solid #4facfe')))
+                            : (isGlobal ? '1px solid rgba(255, 204, 0, 0.5)' : (isConnectedIn ? '1px solid rgba(180, 100, 255, 0.4)' : (isCtrlPressed ? '1px solid rgba(67, 233, 123, 0.4)' : '1px solid rgba(79, 172, 254, 0.3)'))),
                         margin: name ? '10px 4px 4px 4px' : '0 4px',
                         userSelect: 'text',
                         minHeight: '1.4em',
                         transition: 'all 0.2s ease',
                         verticalAlign: 'middle',
                         top: '-1px',
-                        boxShadow: localShowHandle ? (isGlobal ? '0 0 10px rgba(255, 204, 0, 0.4)' : (isCtrlPressed ? '0 0 10px rgba(67, 233, 123, 0.3)' : '0 0 10px rgba(79, 172, 254, 0.3)')) : 'none',
+                        boxShadow: localShowHandle ? (isGlobal ? '0 0 10px rgba(255, 204, 0, 0.4)' : (isConnectedIn ? '0 0 10px rgba(180, 100, 255, 0.3)' : (isCtrlPressed ? '0 0 10px rgba(67, 233, 123, 0.3)' : '0 0 10px rgba(79, 172, 254, 0.3)'))) : 'none',
                         zIndex: isCtrlPressed ? 10 : 1
                     }}
                 >
@@ -817,24 +852,28 @@ const MathPill = TiptapNode.create({
                     )}
 
                     {!effectiveShowHandle && (
-                        <Handle
-                            type="source"
-                            position={Position.Right}
-                            id={stableHandleId}
-                            style={{
-                                width: '100%',
-                                height: '100%',
-                                top: 0,
-                                left: 0,
-                                position: 'absolute',
-                                transform: 'none',
-                                background: 'transparent',
-                                border: 'none',
-                                opacity: 0,
-                                zIndex: 5,
-                                cursor: 'crosshair'
-                            }}
-                        />
+                        <>
+                            {/* Output Handle (Right Half) */}
+                            <Handle
+                                type="source"
+                                position={Position.Right}
+                                id={outHandleId}
+                                style={{
+                                    width: '50%', height: '100%', top: 0, right: 0, position: 'absolute',
+                                    transform: 'none', background: 'transparent', border: 'none', opacity: 0, zIndex: 5, cursor: 'crosshair'
+                                }}
+                            />
+                            {/* Input Handle (Left Half) */}
+                            <Handle
+                                type="target"
+                                position={Position.Left}
+                                id={inHandleId}
+                                style={{
+                                    width: '50%', height: '100%', top: 0, left: 0, position: 'absolute',
+                                    transform: 'none', background: 'transparent', border: 'none', opacity: 0, zIndex: 6, cursor: 'crosshair'
+                                }}
+                            />
+                        </>
                     )}
 
                     <span style={{
@@ -944,7 +983,7 @@ const MathPill = TiptapNode.create({
 
 // ── MAIN COMPONENT ────────────────────────────────────────────────────────
 
-export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
+const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     countRender('TextNode');
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
     const updateNodeInternals = useUpdateNodeInternals();
@@ -1213,28 +1252,44 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             const STAGGER_GAP = 12;
 
             group.elements.forEach((el, subIdx) => {
-                const isDataPill = el.classList.contains('data-pill-render');
+                const isMathPill = el.classList.contains('data-pill-render');
                 const name = el.getAttribute('data-name');
-                const customHandleId = el.getAttribute('data-handle-id');
-                const hType: HandleType = 'output';
-                const hPrefix = 'out';
-
-                const hId = customHandleId || `h-auto-${hPrefix}-${(isDataPill && name) ? name : `${groupIdx}-${subIdx}`}`;
-
+                
                 const staggerOffset = (subIdx - (totalInGroup - 1) / 2) * STAGGER_GAP;
                 const offset = Math.max(0, Math.min(100, ((group.centerY + staggerOffset - containerRect.top) / containerRect.height) * 100));
 
-                if (!newHandles.some(h => h.id === hId)) {
-                    newHandles.push({ id: hId, type: hType, position: 'right', offset, label: (isDataPill && name) ? name : undefined });
-                }
+                if (isMathPill) {
+                    const outId = el.getAttribute('data-handle-out') || `h-auto-out-${name || `${groupIdx}-${subIdx}`}`;
+                    const inId = el.getAttribute('data-handle-in') || `h-auto-in-${name || `${groupIdx}-${subIdx}`}`;
+                    
+                    if (!newHandles.some(h => h.id === outId)) {
+                        newHandles.push({ id: outId, type: 'output', position: 'right', offset, label: name || undefined });
+                    }
+                    if (!newHandles.some(h => h.id === inId)) {
+                        newHandles.push({ id: inId, type: 'input', position: 'left', offset, label: name || undefined });
+                    }
+                    
+                    if (!newOutputs[outId]) {
+                        let outVal = el.getAttribute('data-value') || '';
+                        if (outVal.trim() === '\\top') outVal = '1';
+                        if (outVal.trim() === '\\bot') outVal = '0';
+                        newOutputs[outId] = outVal;
+                    }
+                } else {
+                    const customHandleId = el.getAttribute('data-handle-id');
+                    const hType: HandleType = 'output';
+                    const hId = customHandleId || `h-auto-out-${name || `${groupIdx}-${subIdx}`}`;
 
-                if (isDataPill && !newOutputs[hId]) {
-                    let outVal = el.getAttribute('data-value') || '';
-                    if (outVal.trim() === '\\top') outVal = '1';
-                    if (outVal.trim() === '\\bot') outVal = '0';
-                    newOutputs[hId] = outVal;
+                    if (!newHandles.some(h => h.id === hId)) {
+                        newHandles.push({ id: hId, type: hType, position: 'right', offset, label: name || undefined });
+                    }
+
+                    if (!newOutputs[hId]) {
+                        let outVal = el.getAttribute('data-value') || '';
+                        newOutputs[hId] = outVal;
+                    }
+                    el.setAttribute('data-handle-id', hId);
                 }
-                el.setAttribute('data-handle-id', hId);
             });
         });
 
@@ -1359,8 +1414,9 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         editMath,
         renameTrigger,
         triggerSync,
-        handleEject
-    }), [id, data.slots, isHandleActive, toggleHandle, editMath, renameTrigger, triggerSync, handleEject]);
+        handleEject,
+        inputs: data.inputs
+    }), [id, data.slots, isHandleActive, toggleHandle, editMath, renameTrigger, triggerSync, handleEject, data.inputs]);
 
     return (
         <TextNodeContext.Provider value={contextValue}>
@@ -1483,31 +1539,31 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                     }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <div style={{ fontSize: '0.6rem', color: '#4facfe', textTransform: 'uppercase', fontWeight: 700 }}>Formula</div>
-                            {/* @ts-ignore */}
-                            <math-field
-                                ref={mathFieldRef}
+                            <MathInput
                                 id="math-popup-field"
+                                ref={mathFieldRef}
+                                value={mathFieldRef.current?.value || ''}
+                                onChange={() => {
+                                    // MathInput handles its own state synchronization with the underlying web component
+                                }}
+                                onKeyDown={(e: any) => {
+                                    if (e.key === ':' || e.key === ';') {
+                                        e.preventDefault();
+                                        mathNameInputRef.current?.focus();
+                                    }
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        insertMathOrData();
+                                    }
+                                }}
                                 style={{
                                     background: '#000', color: '#fff', padding: '6px 8px', borderRadius: '4px', border: '1px solid #333', fontSize: '1rem',
                                     transition: 'border-color 0.2s'
                                 }}
-                                onKeyDownCapture={(e: any) => {
-                                    if (e.key === 'Enter') {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        insertMathOrData();
-                                    }
-                                    if (e.key === ':') {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        setTimeout(() => mathNameInputRef.current?.focus(), 10);
-                                    }
-                                    if (e.key === 'Escape') {
-                                        setMathInputOpen(false);
-                                    }
-                                }}
                             />
+
                         </div>
+
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px', position: 'relative' }}>
                             <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1729,3 +1785,5 @@ export function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         </TextNodeContext.Provider>
     );
 }
+
+export const TextNode = memo(_TextNode);

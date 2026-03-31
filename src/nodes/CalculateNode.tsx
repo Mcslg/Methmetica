@@ -1,5 +1,5 @@
 import { useEffect, memo } from 'react';
-import { type NodeProps, type Node } from '@xyflow/react';
+import { type NodeProps, type Node, useUpdateNodeInternals } from '@xyflow/react';
 import useStore, { type NodeData, type AppState, type CustomHandle } from '../store/useStore';
 import { getMathEngine } from '../utils/MathEngine';
 import { Icons } from '../components/Icons';
@@ -10,6 +10,7 @@ import { MathInput } from '../components/MathInput';
 export const CalculateNode = memo(function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
     const executeNode = useStore((state: AppState) => state.executeNode);
+    const updateNodeInternals = useUpdateNodeInternals();
 
     const useExternalFormula = !!data.useExternalFormula;
     // [PERF] Only subscribe to the specific formula string we need.
@@ -46,31 +47,32 @@ export const CalculateNode = memo(function CalculateNode({ id, data, selected }:
                     const globalVarsSet = new Set(globalVarsString ? globalVarsString.split(',') : []);
                     const tempVariables = variables.filter((v: string) => !globalVarsSet.has(v));
 
-                    newInputHandles = tempVariables.map((v: string, index: number) => {
-                        const existing = currentHandles.find((h: any) => h.label === v || h.id === `h-in-${v}`);
-                        if (existing) return existing;
+                    // If we have variables, update. If we have NO variables but we ARE typing (formula exists), 
+                    // we might want to keep the old ones to avoid flickering, but ONLY if we haven't successfully parsed a non-variable formula.
+                    if (tempVariables.length === 0 && /[a-zA-Z]/.test(formulaToParse)) {
+                        newInputHandles = currentHandles.filter(h => h.type === 'input');
+                    } else {
+                        newInputHandles = tempVariables.map((v: string, index: number) => {
+                            const existing = currentHandles.find((h: any) => h.label === v || h.id === `h-in-${v}`);
+                            if (existing) return existing;
 
-                        const spacing = 100 / (tempVariables.length + 1);
-                        return {
-                            id: `h-in-${v}`,
-                            type: 'input',
-                            position: 'left',
-                            offset: (index + 1) * spacing,
-                            label: v
-                        } as any;
-                    });
+                            const spacing = 100 / (tempVariables.length + 1);
+                            return {
+                                id: `h-in-${v}`,
+                                type: 'input',
+                                position: 'left',
+                                offset: (index + 1) * spacing,
+                                label: v
+                            } as any;
+                        });
+                    }
                 } catch (e) {
-                    // Formula might be incomplete
-                }
-            } else if (!useExternalFormula) {
-                // If no formula and not external, ensure a default input exists
-                const hasDefaultIn = currentHandles.some(h => h.id === 'h-in');
-                if (!hasDefaultIn) {
-                    newInputHandles = [{ id: 'h-in', type: 'input', position: 'left', offset: 50 }];
-                } else {
-                    newInputHandles = [currentHandles.find(h => h.id === 'h-in')!];
+                    // Formula might be incomplete mid-typing.
+                    // IMPORTANT: Keep existing input handles so connections don't break!
+                    newInputHandles = currentHandles.filter(h => h.type === 'input');
                 }
             }
+            // else: if !formulaToParse, newInputHandles is [], removing the default circle.
 
             // 2. Add special handle for external formula if enabled
             const specialHandles: CustomHandle[] = [];
@@ -87,6 +89,8 @@ export const CalculateNode = memo(function CalculateNode({ id, data, selected }:
             // 4. Update if changed (JSON.stringify is a quick way to compare simple handle objects)
             if (JSON.stringify(nextHandles) !== JSON.stringify(currentHandles)) {
                 updateNodeData(id, { handles: nextHandles });
+                // Notify React Flow to re-render handles immediately
+                updateNodeInternals(id);
             }
         };
 

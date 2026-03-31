@@ -38,6 +38,8 @@ export const en = {
       sub: "Subtract from both sides",
       mul: "Multiply both sides",
       div: "Divide both sides",
+      interactive: "Interactive Area",
+      error_parsing: "Enter an equation (e.g. x+3=7) to start",
       labels: {
         add: "Add",
         sub: "Sub",
@@ -52,6 +54,19 @@ export const en = {
       output: "Output",
       waiting: "Waiting for input...",
       desc: "Calculation"
+    },
+    calculus: {
+      steps: "STEP-BY-STEP",
+      solve_ai: "Solve with AI",
+      thinking: "AI Thinking...",
+      no_rule: "Too complex for rules.",
+      waiting: "Waiting for input...",
+      ejectable: "EJECTABLE",
+      diff: "Differentiate (d/dx)",
+      integ: "Integrate (∫)",
+      limit: "Limit (lim)",
+      variable: "VARIABLE",
+      approach: "APPROACHES"
     }
   },
   sidebar: {

@@ -1,37 +1,13 @@
-import { useEffect, useRef } from 'react';
+import { memo } from 'react';
 import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
 import useStore, { type NodeData } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
-import 'mathlive';
+import { MathInput } from '../components/MathInput';
 
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      'math-field': any;
-    }
-  }
-}
+export const NumberNode = memo(function NumberNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
+  const updateNodeData = useStore.getState().updateNodeData;
 
-export function NumberNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
-  const mfRef = useRef<any>(null);
-
-  useEffect(() => {
-    const mf = mfRef.current;
-    if (!mf) return;
-
-    // Prevent update loops
-    if (mf.value !== data.value && data.value !== undefined) {
-      mf.value = data.value;
-    }
-
-    const handleInput = (e: any) => {
-      useStore.getState().updateNodeData(id, { value: e.target.value });
-    };
-
-    mf.addEventListener('input', handleInput);
-    return () => mf.removeEventListener('input', handleInput);
-  }, [id, data.value]);
 
   const touchingClasses = data.touchingEdges
     ? Object.entries(data.touchingEdges)
@@ -51,16 +27,14 @@ export function NumberNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
       />
       <div className="node-header"><span><Icons.Number /> Data</span></div>
       <div className="node-content math-input-container">
-        {/* @ts-ignore */}
-        <math-field
-          ref={mfRef}
-          class="nodrag"
+        <MathInput
+          value={data.value || ''}
+          onChange={(val) => updateNodeData(id, { value: val })}
+          className="nodrag"
           style={{ fontSize: '1.2rem', minWidth: '80px', padding: '5px', color: 'var(--text-main)' }}
-        >
-          {data.value || ''}
-          {/* @ts-ignore */}
-        </math-field>
+        />
       </div>
     </div>
   );
-}
+});
+

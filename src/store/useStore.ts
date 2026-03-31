@@ -28,6 +28,14 @@ export type CustomHandle = {
     lineIndex?: number; // For TextNode: which line this handle is pinned to
 };
 
+export type BalanceOperation = {
+    op: string;
+    value: string;
+    targetSide?: 'lhs' | 'rhs';
+    factor?: string;
+    result?: string;
+};
+
 export type NodeData = {
     value?: string;
     formula?: string; // For function nodes
@@ -35,7 +43,7 @@ export type NodeData = {
     handles?: CustomHandle[];
     input?: string; // For utility nodes to receive data
     touchingEdges?: { left?: boolean, right?: boolean, top?: boolean, bottom?: boolean };
-    variant?: 'diff' | 'integ' | 'insert'; // Added 'insert'
+    variant?: 'diff' | 'integ' | 'limit' | 'insert' | 'sine' | 'square' | 'sawtooth' | 'triangle' | 'custom';
     variable?: string; // For specifying differentiation/integration variable
     useExternalFormula?: boolean;
     formulaInput?: string; // Formula string received from an external connection
@@ -51,9 +59,11 @@ export type NodeData = {
     gateValue?: string; // Value representing gate pass/block state
     label?: string; // Custom title for the node header
     parentId?: string; // ID of the container node that absorbed this node (for Option B Proxy)
-    operations?: { op: string; value: string }[]; // For BalanceNode history
+    operations?: BalanceOperation[]; // For BalanceNode history
     currentFormula?: string; // For BalanceNode interim result
     inputSignature?: string; // A signature combining all incoming variable edge values to trigger calculation hooks
+    inputs?: Record<string, string>; // Multi-input support (handleId -> value)
+    limitPoint?: string; // For CalculusNode limit target (e.g. x -> a)
 };
 
 export type AppNode = Node<NodeData>;
@@ -108,6 +118,14 @@ export type AppState = {
     // [NEW] Global variables via $ prefix
     globalVars: Record<string, string>;
     setGlobalVar: (name: string, value: string) => void;
+
+    // [UNDO/REDO]
+    undoStack: { nodes: AppNode[]; edges: Edge[]; globalVars: Record<string, string> }[];
+    redoStack: { nodes: AppNode[]; edges: Edge[]; globalVars: Record<string, string> }[];
+    lastSnapshotTime: number; // Internal timestamp
+    takeSnapshot: (force?: boolean) => void;
+    undo: () => void;
+    redo: () => void;
 };
 
 // Initial setup nodes
@@ -131,10 +149,83 @@ const useStore = create<AppState>()(
 
             globalVars: {},
             setGlobalVar: (name: string, value: string) => {
+                get().takeSnapshot(false); // Snapshot with cool-down BEFORE change
                 set((state) => ({
                     globalVars: { ...state.globalVars, [name]: value }
                 }));
                 // Evaluate graph so calculation nodes re-run immediately with the new global var
+                get().evaluateGraph();
+            },
+
+            undoStack: [],
+            redoStack: [],
+            lastSnapshotTime: 0,
+
+            takeSnapshot: (force = true) => {
+                const { nodes, edges, globalVars, undoStack, lastSnapshotTime } = get();
+                const now = Date.now();
+
+                // COOLDOWN: If not forced and it's been less than 1.5s since last snapshot, skip.
+                // This prevents typing from creating 100 undo points.
+                if (!force && (now - lastSnapshotTime < 1500)) {
+                    return;
+                }
+                
+                // Keep history limited (e.g., last 50 steps)
+                const MAX_HISTORY = 50;
+                
+                // Only snapshot if something actually changed from the last version
+                const last = undoStack[undoStack.length - 1];
+                if (last && 
+                    JSON.stringify(last.nodes) === JSON.stringify(nodes) && 
+                    JSON.stringify(last.edges) === JSON.stringify(edges) &&
+                    JSON.stringify(last.globalVars) === JSON.stringify(globalVars)) {
+                    return;
+                }
+
+                set({
+                    undoStack: [...undoStack.slice(-MAX_HISTORY + 1), {
+                        // We deep copy to avoid reference issues
+                        nodes: JSON.parse(JSON.stringify(nodes)),
+                        edges: JSON.parse(JSON.stringify(edges)),
+                        globalVars: { ...globalVars }
+                    }],
+                    redoStack: [], // Clear redo on new action
+                    lastSnapshotTime: now
+                });
+            },
+
+            undo: () => {
+                const { nodes, edges, globalVars, undoStack, redoStack } = get();
+                if (undoStack.length === 0) return;
+
+                const prev = undoStack[undoStack.length - 1];
+                const newUndo = undoStack.slice(0, -1);
+
+                set({
+                    nodes: prev.nodes,
+                    edges: prev.edges,
+                    globalVars: prev.globalVars,
+                    undoStack: newUndo,
+                    redoStack: [{ nodes, edges, globalVars }, ...redoStack].slice(0, 50)
+                });
+                get().evaluateGraph();
+            },
+
+            redo: () => {
+                const { nodes, edges, globalVars, undoStack, redoStack } = get();
+                if (redoStack.length === 0) return;
+
+                const next = redoStack[0];
+                const newRedo = redoStack.slice(1);
+
+                set({
+                    nodes: next.nodes,
+                    edges: next.edges,
+                    globalVars: next.globalVars,
+                    undoStack: [...undoStack, { nodes, edges, globalVars }].slice(-50),
+                    redoStack: newRedo
+                });
                 get().evaluateGraph();
             },
 
@@ -147,6 +238,7 @@ const useStore = create<AppState>()(
             updateNodeDimensions: (nodeId, deltaW, deltaH) => {
                 const start = performance.now();
                 const { nodes } = get();
+                get().takeSnapshot(false); // Snapshot with cool-down for resizing
                 set({
                     nodes: nodes.map(n => {
                         if (n.id === nodeId) {
@@ -199,10 +291,11 @@ const useStore = create<AppState>()(
                     if (isOver) {
                         const dxLeft = Math.max(0, Math.abs(mousePos.x - b.position.x));
                         const dyTop = Math.max(0, Math.abs(mousePos.y - b.position.y));
+                        const dyBottom = Math.max(0, Math.abs(mousePos.y - (b.position.y + bHeight)));
                         const slots = b.data.slots || {};
 
                         // Detect side if not forced
-                        const side = forcedSide || (dyTop < 50 ? 'top' : dxLeft < 50 ? 'left' : 'right');
+                        const side = forcedSide || (dyTop < 40 ? 'top' : dyBottom < 40 ? 'bottom' : dxLeft < 40 ? 'left' : 'right');
 
                         // Rule for LEFT Merges (Inputs/Sidebar)
                         if (side === 'left' && b.type === 'graphNode') {
@@ -217,17 +310,27 @@ const useStore = create<AppState>()(
                                 }
                             }
                         } 
-                        // [FIX] Rule for TextNode Merges (Sliders, Buttons, Gates)
+                        // [FIX] Rule for TextNode Merges (Sliders, Buttons, Gates, Calculators, Loggers)
                         else if (b.type === 'textNode') {
                             if (a.type === 'sliderNode' || a.type === 'buttonNode' || a.type === 'gateNode') {
                                 const key = a.data.nodeName || (a.type === 'sliderNode' ? 'x' : a.type === 'buttonNode' ? 'btn' : 'gate');
                                 if (!slots[key]) {
-                                    bestHint = { targetId: b.id, slotKey: key, label: `+ Embed ${a.type.replace('Node', '')} (${key})`, side: 'right' };
+                                    bestHint = { targetId: b.id, slotKey: key, label: `+ Embed ${a.type.replace('Node', '')} (${key})`, side: side };
+                                }
+                            } else if (a.type === 'calculateNode' || a.type === 'balanceNode' || a.type === 'calculusNode') {
+                                // For calculations, use the custom label or generic name
+                                const key = a.data.label || a.data.nodeName || (a.type === 'calculateNode' ? 'Result' : a.type === 'balanceNode' ? 'Eq' : 'Steps');
+                                if (!slots[key]) {
+                                    bestHint = { targetId: b.id, slotKey: key, label: `+ Insert Result/Step (${key})`, side: side };
+                                }
+                            } else if (a.type === 'appendNode') {
+                                if (!slots.appender) {
+                                    bestHint = { targetId: b.id, slotKey: 'appender', label: '+ Add Appender (Log)', side: 'bottom' };
                                 }
                             }
                         }
                         // Rule for RIGHT Merges (Results for nodes that aren't TextNodes)
-                        else if (side === 'right' && (b.type === 'calculateNode' || b.type === 'solveNode' || b.type === 'balanceNode')) {
+                        else if (side === 'right' && (b.type === 'calculateNode' || b.type === 'solveNode' || b.type === 'balanceNode' || b.type === 'calculusNode')) {
                             if (a.type === 'textNode' && !slots.resultText) {
                                 bestHint = { targetId: b.id, slotKey: 'resultText', label: '+ Result Display', side: 'right' };
                             } else if (a.type === 'sliderNode') {
@@ -243,6 +346,12 @@ const useStore = create<AppState>()(
                                 bestHint = { targetId: b.id, slotKey: 'comment', label: '+ Add Note', side: 'top' };
                             }
                         }
+                        // [NEW] Rule for BOTTOM Merges (Specifically for AppendNode or others)
+                        else if (side === 'bottom') {
+                            if (a.type === 'appendNode' && b.type === 'textNode' && !slots.appender) {
+                                bestHint = { targetId: b.id, slotKey: 'appender', label: '+ Add Appender (Log)', side: 'bottom' };
+                            }
+                        }
                         break; 
                     }
                 }
@@ -256,6 +365,7 @@ const useStore = create<AppState>()(
             },
 
             handleEject: (containerId, slotKey, flowPos) => {
+                get().takeSnapshot(); // Snapshot BEFORE change
                 const state = get();
                 const containerNode = state.nodes.find(n => n.id === containerId);
                 if (!containerNode || !containerNode.data.slots) return;
@@ -279,12 +389,26 @@ const useStore = create<AppState>()(
                         const newSlots = { ...n.data.slots };
                         delete newSlots[slotKey];
                         let newHeight = n.height;
-                        if (n.type === 'calculateNode' || n.type === 'solveNode') {
+                        let newWidth = n.width;
+
+                        if (n.type === 'calculateNode' || n.type === 'solveNode' || n.type === 'calculusNode') {
                             const curHeight = n.height || n.measured?.height || 100;
                             const decr = (slotKey === 'gateNode') ? 55 : 45;
                             newHeight = Math.max(80, curHeight - decr);
                         }
-                        return { ...n, height: newHeight, data: { ...n.data, slots: newSlots } };
+
+                        if (slotKey === 'formulaSidebar' && n.type === 'graphNode') {
+                            const curWidth = n.width || n.measured?.width || 300;
+                            newWidth = Math.max(300, curWidth - 220);
+                        }
+
+                        return { 
+                            ...n, 
+                            height: newHeight, 
+                            width: newWidth,
+                            style: { ...n.style, width: newWidth, height: newHeight },
+                            data: { ...n.data, slots: newSlots } 
+                        };
                     }
                     return n;
                 });
@@ -304,6 +428,9 @@ const useStore = create<AppState>()(
             },
 
             setGraph: (nodes, edges) => {
+                if (nodes.length > 0 || edges.length > 0) {
+                    get().takeSnapshot(); // Snapshot BEFORE clear-all or massive change
+                }
                 set({ nodes, edges });
                 // If it's a clear-all action (empty nodes and edges), we should clear globalVars too
                 if (nodes.length === 0 && edges.length === 0) {
@@ -319,6 +446,9 @@ const useStore = create<AppState>()(
 
 
     onNodesChange: (changes: NodeChange<AppNode>[]) => {
+        if (changes.some(c => c.type === 'remove')) {
+            get().takeSnapshot(); // Snapshot BEFORE removal
+        }
         set({
             nodes: applyNodeChanges(changes, get().nodes),
         });
@@ -343,6 +473,7 @@ const useStore = create<AppState>()(
     },
 
     onConnect: (connection: Connection) => {
+        get().takeSnapshot(); // Snapshot BEFORE connecting
         const newEdge = {
             ...connection,
             type: 'default',
@@ -364,16 +495,41 @@ const useStore = create<AppState>()(
         const node = nodes.find(n => n.id === nodeId);
         if (!node) return;
 
+        get().takeSnapshot(false); // Snapshot with COOLDOWN (not forced)
         const nextData = { ...node.data, ...dataPatch };
 
-        // If handles changed, we MUST cleanup orphaned edges to prevent ghost connections
         let nextEdges = edges;
         if (dataPatch.handles) {
-            const nextHandleIds = new Set(dataPatch.handles.map(h => h.id));
-            nextEdges = edges.filter(e => {
-                if (e.source === nodeId && e.sourceHandle && !nextHandleIds.has(e.sourceHandle)) return false;
-                if (e.target === nodeId && e.targetHandle && !nextHandleIds.has(e.targetHandle)) return false;
-                return true;
+            const oldHandles = node.data.handles || [];
+            const newHandles = dataPatch.handles;
+            
+            // Map old handles by type and position index for re-binding
+            const oldInputHandles = oldHandles.filter(h => h.type === 'input');
+            const oldOutputHandles = oldHandles.filter(h => h.type === 'output');
+            const newInputHandles = newHandles.filter(h => h.type === 'input');
+            const newOutputHandles = newHandles.filter(h => h.type === 'output');
+
+            const nextHandleIds = new Set(newHandles.map(h => h.id));
+            
+            nextEdges = edges.map(e => {
+                const isOurSource = e.source === nodeId;
+                const isOurTarget = e.target === nodeId;
+
+                if (isOurSource && e.sourceHandle && !nextHandleIds.has(e.sourceHandle)) {
+                    // Source handle (output) went missing. Try to find a replacement at the same index.
+                    const oldIdx = oldOutputHandles.findIndex(h => h.id === e.sourceHandle);
+                    if (oldIdx !== -1 && newOutputHandles[oldIdx]) {
+                        return { ...e, sourceHandle: newOutputHandles[oldIdx].id };
+                    }
+                }
+                if (isOurTarget && e.targetHandle && !nextHandleIds.has(e.targetHandle)) {
+                    // Target handle (input) went missing. Try to find a replacement at the same index.
+                    const oldIdx = oldInputHandles.findIndex(h => h.id === e.targetHandle);
+                    if (oldIdx !== -1 && newInputHandles[oldIdx]) {
+                        return { ...e, targetHandle: newInputHandles[oldIdx].id };
+                    }
+                }
+                return e;
             });
         }
 
@@ -434,18 +590,21 @@ const useStore = create<AppState>()(
     },
 
     addNode: (node: AppNode) => {
+        get().takeSnapshot(); // Snapshot BEFORE adding
         set({
             nodes: [...get().nodes, node],
         });
     },
 
     addNodes: (newNodes: AppNode[]) => {
+        get().takeSnapshot(); // Snapshot BEFORE adding multiple
         set({
             nodes: [...get().nodes, ...newNodes],
         });
     },
 
     removeNode: (nodeId: string) => {
+        get().takeSnapshot(); // Snapshot BEFORE removing
         const { nodes, edges } = get();
         
         // 1. Identify direct children to be deleted along with the parent
@@ -538,6 +697,7 @@ const useStore = create<AppState>()(
     // checkProximity removed
 
     handleProximitySnap: (nodeId: string) => {
+        get().takeSnapshot(); // Snapshot BEFORE snap
         const { nodes, mergeHint } = get();
         const a = nodes.find(n => n.id === nodeId);
         if (!a) { console.warn("Snap fail: A not found"); return; }
@@ -555,11 +715,25 @@ const useStore = create<AppState>()(
                     console.log(`Merging ${a.id} into ${b.id} at ${slotKey}`);
                     const newSlots = { ...currentSlots, [slotKey]: a.id };
                     const curHeight = b.height || b.measured?.height || 100;
-                    const nextHeight = (b.type === 'textNode') ? curHeight : curHeight + rule.heightIncrement;
+                    const curWidth = b.width || b.measured?.width || 200;
+                    
+                    let nextHeight = (b.type === 'textNode') ? curHeight : curHeight + rule.heightIncrement;
+                    let nextWidth = curWidth;
+
+                    // [NEW] Automatic widening for sidebars
+                    if (slotKey === 'formulaSidebar' && b.type === 'graphNode') {
+                        nextWidth += 220; 
+                    }
 
                     set({
                         nodes: get().nodes.map(n => {
-                            if (n.id === b.id) return { ...n, height: nextHeight, data: { ...n.data, slots: newSlots } };
+                            if (n.id === b.id) return { 
+                                ...n, 
+                                width: nextWidth, 
+                                height: nextHeight, 
+                                style: { ...n.style, width: nextWidth, height: nextHeight },
+                                data: { ...n.data, slots: newSlots } 
+                            };
                             if (n.id === a.id) return { ...n, hidden: true, selected: false, data: { ...n.data, parentId: b.id } };
                             return n;
                         }),
@@ -642,29 +816,37 @@ const useStore = create<AppState>()(
             const explicitEdges = targetToExplicit.get(node.id) || [];
             let valIn: string | undefined = undefined;
             let gateValFromEdge: string | undefined = undefined;
+            const collectedInputs: Record<string, string> = {};
 
             if (explicitEdges.length > 0) {
-                const values = explicitEdges.map(e => {
+                explicitEdges.forEach(e => {
                     const source = nodeMap.get(e.source);
-                    if (!source) return undefined;
-                    if (e.sourceHandle && source.data.outputs?.[e.sourceHandle] !== undefined) {
-                        return source.data.outputs[e.sourceHandle];
+                    if (!source) return;
+                    const val = (e.sourceHandle && source.data.outputs?.[e.sourceHandle] !== undefined)
+                        ? source.data.outputs[e.sourceHandle]
+                        : source.data.value;
+                    
+                    if (val !== undefined) {
+                        if (e.targetHandle) {
+                            collectedInputs[e.targetHandle] = val;
+                        }
+                        if (valIn === undefined) valIn = val; // First one is the generic input
                     }
-                    return source.data.value;
-                });
-                valIn = values.find(v => v !== undefined);
 
-                const gateEdge = explicitEdges.find(e => e.targetHandle === 'h-gate-in');
-                if (gateEdge) {
-                    const source = nodeMap.get(gateEdge.source);
-                    if (source) {
-                        gateValFromEdge = (gateEdge.sourceHandle && source.data.outputs?.[gateEdge.sourceHandle]) ?? source.data.value;
+                    if (e.targetHandle === 'h-gate-in') {
+                        gateValFromEdge = val;
                     }
-                }
+                });
             }
 
             let updatedData = { ...node.data };
             let isUpdated = false;
+
+            // Sync inputs Record
+            if (JSON.stringify(collectedInputs) !== JSON.stringify(node.data.inputs || {})) {
+                updatedData.inputs = collectedInputs;
+                isUpdated = true;
+            }
 
             // Process Gate Value
             if (gateValFromEdge !== undefined && gateValFromEdge !== node.data.gateValue) {
@@ -676,7 +858,7 @@ const useStore = create<AppState>()(
             }
 
             // Process Formula Input
-            if (node.type === 'calculateNode' || node.type === 'graphNode') {
+            if (node.type === 'calculateNode' || node.type === 'graphNode' || node.type === 'soundNode') {
                 const formulaEdges = edges.filter(e => e.target === node.id && e.targetHandle === 'h-fn-in');
                 let formulaVal: string | undefined = undefined;
                 
@@ -738,8 +920,9 @@ const useStore = create<AppState>()(
                 }
             }
 
-            // Process Text Node
-            if (node.type === 'textNode' && valIn !== undefined) {
+            // Process Text Node (Only if generic input and NO specific handles are connected)
+            const hasSpecificInputs = Object.keys(collectedInputs).length > 0;
+            if (node.type === 'textNode' && valIn !== undefined && !hasSpecificInputs) {
                 let textToSet = String(valIn);
                 const isNumeric = !isNaN(Number(textToSet)) && textToSet.trim() !== '';
                 const isLaTeX = textToSet.includes('\\') || textToSet.includes('{');

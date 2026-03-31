@@ -192,5 +192,12 @@ export const Icons = {
       <path d="m22 22-5-10-5 10" />
       <path d="M14 18h6" />
     </svg>
+  ),
+  Sound: (props?: any) => (
+    <svg {...iconProps} {...props}>
+      <path d="M11 5L6 9H2V15H6L11 19V5Z" />
+      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+      <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+    </svg>
   )
 };

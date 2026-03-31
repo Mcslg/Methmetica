@@ -1,90 +1,56 @@
-import { NodeResizer, type NodeProps, type Node } from '@xyflow/react';
+import { memo } from 'react';
+import { type NodeProps, type Node } from '@xyflow/react';
 import useStore, { type NodeData, type AppNode, type AppState } from '../store/useStore';
-import { appendNodeHandles, insertNodeHandles } from './handles';
-import { DynamicHandles } from './DynamicHandles';
+import { NodeFrame } from '../components/NodeFrame';
 import { Icons } from '../components/Icons';
 
-export const AppendNode = ({ id, data, selected }: NodeProps<Node<NodeData>>) => {
-    const nodes = useStore(state => state.nodes);
+export const AppendNode = memo(function AppendNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore(state => state.updateNodeData);
-
     const isInsert = data.variant === 'insert';
-
-    // Find the neighbor TextNode we are attached to (output target)
-    const getTargetTextNode = () => {
-        const explicitTargets = useStore.getState().edges
-            .filter(e => e.source === id)
-            .map(e => e.target);
-            
-        return nodes.find(n => explicitTargets.includes(n.id) && n.type === 'textNode');
-    };
-
-    const target = getTargetTextNode();
-    const isAttached = !!target;
 
     const toggleMode = () => {
         const nextVariant = isInsert ? undefined : 'insert';
-        const nextHandles = isInsert ? appendNodeHandles : insertNodeHandles;
-        updateNodeData(id, { variant: nextVariant as any, handles: nextHandles });
+        updateNodeData(id, { variant: nextVariant as any });
     };
 
     return (
-        <div 
-            className={`math-node append-node ${isAttached ? 'attached' : 'detached'}`}
-            style={{
-                width: '100%',
-                height: '100%',
-                overflow: 'visible',
-                display: 'flex',
-                flexDirection: 'column',
-                boxSizing: 'border-box',
-                padding: '0',
-                background: isAttached ? 'var(--bg-node)' : 'var(--bg-input)',
-                border: isAttached ? '1px solid var(--accent-bright)' : '1px solid var(--border-node)',
-                borderRadius: '16px',
-            }}
+        <NodeFrame
+            id={id}
+            data={data}
+            selected={selected}
+            icon={<Icons.Append />}
+            defaultLabel="Appender"
+            className="append-node"
+            headerExtras={
+                <button 
+                    onClick={toggleMode}
+                    className="variant-toggle"
+                    style={{
+                        padding: '2px 6px',
+                        cursor: 'pointer',
+                        fontSize: '0.65rem'
+                    }}
+                >
+                    {isInsert ? 'INSERT' : 'APPEND'}
+                </button>
+            }
         >
-            <NodeResizer minWidth={160} minHeight={120} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
-            
-            <div className="node-header" style={{ 
-                color: isAttached ? 'var(--accent-bright)' : 'var(--text-sub)',
+            <div style={{
+                textAlign: 'center',
+                padding: '10px',
+                color: 'var(--text-sub)',
+                fontSize: '0.75rem',
+                border: '1px dashed var(--border-node)',
+                borderRadius: '8px'
             }}>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span>
-                        <Icons.Append />
-                        Append
-                    </span>
-                    <button 
-                        onClick={toggleMode}
-                        className="variant-toggle"
-                        style={{
-                            padding: '2px 6px',
-                            cursor: 'pointer',
-                        }}
-                    >
-                        {isInsert ? 'Insert' : 'Append'}
-                    </button>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '0.5rem', opacity: 0.8 }}>{isAttached ? 'CONNECTED' : 'STANDBY'}</span>
-                    <span>{isAttached ? '●' : '○'}</span>
+                {isInsert ? 'Insert mode active' : 'Append mode active'}
+                <div style={{ marginTop: '4px', fontSize: '0.65rem', opacity: 0.7 }}>
+                    Connect input to log data
                 </div>
             </div>
-
-            <DynamicHandles 
-                nodeId={id} 
-                handles={data.handles} 
-                allowedTypes={['input']} 
-                touchingEdges={data.touchingEdges}
-            />
-
-            <style>{`
-                .append-node.attached { box-shadow: 0 0 15px rgba(67, 233, 123, 0.15); }
-                .append-node.detached { border-style: dashed; }
-            `}</style>
-        </div>
+        </NodeFrame>
     );
-};
+});
 
 export const executeAppendNode = (node: AppNode, state: AppState): void => {
     const { nodes, edges, updateNodeData } = state;
@@ -97,13 +63,16 @@ export const executeAppendNode = (node: AppNode, state: AppState): void => {
 
     const val = values[0];
     if (val !== undefined && val !== '') {
-        // Find explicit target neighbors
+        // [MODULAR] 1. Find explicit target neighbors
         const explicitTargets = edges
             .filter(e => e.source === node.id)
             .map(e => e.target);
 
-        // Specifically find the textNode among neighbors
-        const targetNode = nodes.find(n => explicitTargets.includes(n.id) && n.type === 'textNode');
+        // [MODULAR] 2. Find the target textNode (Either neighbor OR parent container)
+        let targetNode = nodes.find(n => explicitTargets.includes(n.id) && n.type === 'textNode');
+        if (!targetNode && node.data.parentId) {
+            targetNode = nodes.find(n => n.id === node.data.parentId);
+        }
 
         if (targetNode?.type === 'textNode') {
             const oldText = targetNode.data.text || '';

@@ -257,6 +257,19 @@ export const FormulaSidebarArea: React.FC<FormulaSidebarAreaProps> = ({ containe
                     color: var(--text-main) !important;
                     border-color: var(--accent) !important;
                 }
+                .custom-scrollbar::-webkit-scrollbar {
+                    width: 4px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb {
+                    background: var(--scroll-thumb);
+                    border-radius: 10px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                    background: var(--accent-bright);
+                }
             `}</style>
         </div>
     );

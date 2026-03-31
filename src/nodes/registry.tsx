@@ -14,6 +14,7 @@ import { GraphNode } from './GraphNode';
 import { SliderNode } from './SliderNode';
 import { BalanceNode } from './BalanceNode';
 import { SolveNode } from './SolveNode';
+import { SoundNode } from './SoundNode';
 import { CalculationService } from '../utils/CalculationService';
 import {
     dataNodeHandles,
@@ -26,7 +27,8 @@ import {
     rangeNodeHandles,
     forEachNodeHandles,
     graphNodeHandles,
-    sliderNodeHandles
+    sliderNodeHandles,
+    soundNodeHandles
 } from './handles';
 import {
     type CustomHandle,
@@ -87,7 +89,7 @@ export const nodeRegistry: NodeDefinition[] = [
         type: 'calculusNode',
         component: CalculusNode,
         metadata: { label: 'Calculus', desc: 'Derivatives & Integrals', category: 'Math', icon: <Icons.Calculus />, color: 'var(--accent-bright)' },
-        defaultSize: { width: 160, height: 75 },
+        defaultSize: { width: 220, height: 80 },
         defaultHandles: calculusNodeHandles,
         execute: mathExecute
     },
@@ -159,6 +161,13 @@ export const nodeRegistry: NodeDefinition[] = [
         defaultSize: { width: 240, height: 300 },
         defaultHandles: [{ id: 'h-in', type: 'input', position: 'left', offset: 50, label: 'eq' }, { id: 'h-out', type: 'output', position: 'right', offset: 50 }],
         execute: mathExecute
+    },
+    {
+        type: 'soundNode',
+        component: SoundNode,
+        metadata: { label: 'Sound', desc: 'Synthesize sound from math', category: 'Output', icon: <Icons.Sound />, color: '#4ade80' },
+        defaultSize: { width: 220, height: 160 },
+        defaultHandles: soundNodeHandles
     },
     {
         type: 'numberNode',

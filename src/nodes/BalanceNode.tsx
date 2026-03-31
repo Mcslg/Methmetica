@@ -1,6 +1,6 @@
 import { useEffect, memo, useRef, useState } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
-import useStore, { type NodeData, type AppState } from '../store/useStore';
+import useStore, { type NodeData, type AppState, type BalanceOperation } from '../store/useStore';
 import { Icons } from '../components/Icons';
 import { NodeFrame } from '../components/NodeFrame';
 import { MathInput } from '../components/MathInput';
@@ -12,43 +12,43 @@ export const BalanceNode = memo(function BalanceNode({ id, data, selected }: Nod
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
     const executeNode = useStore((state: AppState) => state.executeNode);
     const opValRef = useRef<HTMLInputElement>(null);
-    const [inputGesture, setInputGesture] = useState<{ startY: number, curY: number } | null>(null);
+    // Gesture state for the global op input (swipe down = divide)
+    const [gesture, setGesture] = useState<{ startY: number; curY: number } | null>(null);
 
-    // Initial setup for handles
+    // Initial handles
     useEffect(() => {
-        const currentHandles = data.handles || [];
-        const hasIn = currentHandles.some(h => h.id === 'h-in');
-        const hasOut = currentHandles.some(h => h.type === 'output');
+        const current = data.handles || [];
+        const hasIn = current.some((h: any) => h.id === 'h-in');
+        const hasOut = current.some((h: any) => h.type === 'output');
         if (!hasIn || !hasOut) {
-            updateNodeData(id, { 
+            updateNodeData(id, {
                 handles: [
                     { id: 'h-in', type: 'input', position: 'left', offset: 50, label: 'eq' },
-                    { id: 'h-out', type: 'output', position: 'right', offset: 50 }
-                ] 
+                    { id: 'h-out', type: 'output', position: 'right', offset: 50 },
+                ],
             });
         }
     }, [id, data.handles, updateNodeData]);
 
     useEffect(() => {
         executeNode(id);
-    }, [data.inputSignature, id, executeNode]);
+    }, [data.inputSignature, data.input, id, executeNode]);
 
-    const operations = data.operations || [];
-    // If no formula is inputted, fallback to the connected input
+    const operations: BalanceOperation[] = data.operations || [];
     const currentFormula = data.currentFormula ?? data.input ?? '';
+    // Only show history when a TextNode is merged (provides the step-display area)
+    const hasMergedText = !!data.slots?.resultText;
 
-    // Step 1: Just record the operation to the history list without complex evaluation yet
-    const addOperation = (op: string) => {
-        let val = opValRef.current?.value || '0';
-        // Basic normalization
-        val = val.trim();
-        if (!val) val = '0';
-        
-        const newOps = [...operations, { op, value: val }];
+    const appendOperation = (nextOp: BalanceOperation) => {
+        const newOps = [...operations, nextOp];
         updateNodeData(id, { operations: newOps });
         executeNode(id);
-        
-        // Clear input
+    };
+
+    const applyOp = (op: string) => {
+        const val = opValRef.current?.value?.trim();
+        if (!val) return;
+        appendOperation({ op, value: val });
         if (opValRef.current) opValRef.current.value = '';
     };
 
@@ -57,68 +57,29 @@ export const BalanceNode = memo(function BalanceNode({ id, data, selected }: Nod
         newOps.splice(idx, 1);
         updateNodeData(id, { operations: newOps });
         executeNode(id);
-    }
-
-    const getOpLabel = (op: string, val: string) => {
-        const labels: Record<string, string> = {
-            '+': t('nodes.balance.labels.add'),
-            '-': t('nodes.balance.labels.sub'),
-            '*': t('nodes.balance.labels.mul'),
-            '/': t('nodes.balance.labels.div')
-        };
-        return `${labels[op] || op} ${val} ${t('nodes.balance.labels.to_both')}`;
     };
 
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === 'Enter') {
-            const val = e.currentTarget.value.trim();
-            if (val) addOperation('+');
-        }
-    };
-
-    const handleInputPointerDown = (e: React.PointerEvent) => {
-        // e.stopPropagation(); is omitted to allow input focusing
+    // Swipe-down gesture on input = divide both sides
+    const handleGestureDown = (e: React.PointerEvent) => {
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-        setInputGesture({ startY: e.clientY, curY: e.clientY });
+        setGesture({ startY: e.clientY, curY: e.clientY });
     };
-    
-    const handleInputPointerMove = (e: React.PointerEvent) => {
-        if (!inputGesture) return;
-        setInputGesture({ ...inputGesture, curY: e.clientY });
-        
-        // If it starts looking like a swipe, blur the input to stop keyboard/selection
-        if (Math.abs(e.clientY - inputGesture.startY) > 10) {
-            opValRef.current?.blur();
-        }
+    const handleGestureMove = (e: React.PointerEvent) => {
+        if (!gesture) return;
+        setGesture({ ...gesture, curY: e.clientY });
+        if (Math.abs(e.clientY - gesture.startY) > 10) opValRef.current?.blur();
     };
-
-    const handleInputPointerUp = (e: React.PointerEvent) => {
-        if (inputGesture) {
+    const handleGestureUp = (e: React.PointerEvent) => {
+        if (gesture) {
             (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-            if ((e.clientY - inputGesture.startY) > 30) {
-                // Dragged down!
-                const val = opValRef.current?.value || '';
-                if (val.trim()) {
-                    addOperation('/');
-                    if (opValRef.current) opValRef.current.value = '';
-                }
-            }
+            if (e.clientY - gesture.startY > 30) applyOp('/');
         }
-        setInputGesture(null);
+        setGesture(null);
     };
 
-    const handleOpDrop = (e: React.DragEvent) => {
-        e.preventDefault();
-        const dropVal = e.dataTransfer.getData('text/plain');
-        if (dropVal) {
-            // Drop onto input means Add
-            const prevVal = opValRef.current?.value;
-            if (opValRef.current) opValRef.current.value = dropVal;
-            addOperation('+');
-            if (opValRef.current) opValRef.current.value = prevVal || '';
-        }
-    };
-    
+    const swipeDelta = gesture ? gesture.curY - gesture.startY : 0;
+    const showDivHint = swipeDelta > 10;
+
     return (
         <NodeFrame
             id={id}
@@ -128,162 +89,253 @@ export const BalanceNode = memo(function BalanceNode({ id, data, selected }: Nod
             defaultLabel={t('nodes.balance.title')}
             className="balance-node"
         >
-            <div style={{ padding: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-sub)', textTransform: 'uppercase' }}>
-                    {t('nodes.balance.original')}
-                </div>
-                <div style={{ 
-                    borderRadius: '6px',
-                    justifyContent: 'center',
-                    display: 'flex',
-                    minHeight: '20px'
-                }}>
-                    <MathInput 
-                        value={data.input || ''} 
-                        onChange={(v) => updateNodeData(id, { input: v })} 
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '2px' }}>
+
+                {/* ── Original equation input ── */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span className="bn-section-label">{t('nodes.balance.original')}</span>
+                    <MathInput
+                        value={data.input || ''}
+                        onChange={(v) => updateNodeData(id, { input: v })}
                         className="nodrag formula-input"
                     />
                 </div>
-                
-                {operations.length > 0 && !!data.slots?.resultText && (
-                    <div style={{ 
-                        display: 'flex', 
-                        flexDirection: 'column', 
-                        gap: '4px',
-                        background: 'var(--bg-node-dim)',
-                        padding: '6px',
-                        borderRadius: '6px',
-                        marginTop: '4px',
-                        border: '1px solid var(--border-node)',
-                        maxHeight: '120px',
-                        overflowY: 'auto'
-                    }}>
-                        {operations.map((op: any, i: number) => (
-                            <div key={i} style={{ 
-                                display: 'flex', 
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                fontSize: '0.75rem', 
-                                padding: '4px 8px',
-                                background: 'var(--bg-node)',
-                                border: '1px solid var(--border-node)',
-                                borderRadius: '4px',
-                                color: 'var(--text-main)',
-                                boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-                            }}>
-                                <span style={{ fontWeight: 500 }}>{getOpLabel(op.op, op.value)}</span>
-                                <span 
-                                    onClick={() => removeOperation(i)} 
-                                    style={{
-                                        cursor: 'pointer', 
-                                        color: 'var(--text-sub)',
-                                        marginLeft: '8px',
-                                        fontSize: '0.9rem',
-                                        opacity: 0.6
-                                    }}
-                                    onMouseOver={(e) => (e.currentTarget.style.color = '#ff4757')}
-                                    onMouseOut={(e) => (e.currentTarget.style.color = 'var(--text-sub)')}
-                                >
-                                    ×
-                                </span>
-                            </div>
-                        ))}
+
+                {/* ── Interactive equation stage ── */}
+                <InteractiveEquation
+                    formula={currentFormula}
+                    onApplyOperation={(op, val, meta) => {
+                        appendOperation({ op, value: val, ...meta });
+                    }}
+                />
+
+                {/* ── Global operations: apply to BOTH sides ── */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                    <span className="bn-section-label">{t('nodes.balance.operations')}</span>
+                    <div className="bn-global-ops nodrag">
+                        {/* Value input with swipe-down = divide */}
+                        <div
+                            className="bn-op-input-wrap"
+                            onPointerDown={handleGestureDown}
+                            onPointerMove={handleGestureMove}
+                            onPointerUp={handleGestureUp}
+                            onPointerCancel={handleGestureUp}
+                            style={{ touchAction: 'none', position: 'relative', flex: 1 }}
+                        >
+                            <input
+                                ref={opValRef}
+                                type="text"
+                                placeholder={t('nodes.balance.placeholder')}
+                                className="bn-op-input"
+                                onKeyDown={(e) => e.key === 'Enter' && applyOp('+')}
+                            />
+                            {showDivHint && (
+                                <div className="bn-swipe-hint" style={{
+                                    opacity: Math.min(1, swipeDelta / 35)
+                                }}>÷</div>
+                            )}
+                        </div>
+                        {/* Op buttons */}
+                        <div className="bn-op-btns">
+                            {(['+', '-', '×', '÷'] as const).map((sym) => {
+                                const op = sym === '×' ? '*' : sym === '÷' ? '/' : sym;
+                                const color = sym === '+' ? '#4ade80' : sym === '-' ? '#ff7855' : sym === '×' ? '#4facfe' : '#f9a826';
+                                return (
+                                    <button
+                                        key={sym}
+                                        className="bn-op-btn"
+                                        style={{ '--btn-color': color } as any}
+                                        onClick={() => applyOp(op)}
+                                        title={`${sym} both sides`}
+                                    >{sym}</button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+
+                {/* ── Operations history: only when TextNode is merged ── */}
+                {hasMergedText && operations.length > 0 && (
+                    <div className="bn-history">
+                        <div className="bn-history-list">
+                            {operations.map((op, i) => (
+                                <div key={i} className="bn-step">
+                                    <span className={`bn-step-badge bn-op-${op.op}`}>
+                                        {op.op === 'factor' ? 'ƒ' : op.op === '(' ? '( )' : op.op === '*' ? '×' : op.op === '/' ? '÷' : op.op}
+                                    </span>
+                                    <MathInput
+                                        readOnly
+                                        value={op.op === 'factor' && op.factor ? op.factor : op.value}
+                                        style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: '0.85rem', padding: 0, flex: 1 }}
+                                    />
+                                    <span className="bn-step-remove" onClick={() => removeOperation(i)}>×</span>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 )}
 
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-sub)', textTransform: 'uppercase', marginTop: '4px' }}>
-                    {t('nodes.balance.operations')}
-                </div>
-                
-                <div 
-                    style={{ 
-                        position: 'relative', 
-                        display: 'flex', 
-                        alignItems: 'center',
-                        touchAction: 'none'
-                    }}
-                    onPointerDown={handleInputPointerDown}
-                    onPointerMove={handleInputPointerMove}
-                    onPointerUp={handleInputPointerUp}
-                    onPointerCancel={handleInputPointerUp}
-                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
-                    onDrop={handleOpDrop}
-                    className="balance-op-input nodrag"
-                >
-                    <input 
-                        ref={opValRef}
-                        type="text" 
-                        onKeyDown={handleKeyDown}
-                        placeholder={t('nodes.balance.placeholder')}
-                        style={{ 
-                            flex: 1, 
-                            background: 'var(--bg-input)', 
-                            border: '1px solid var(--border-node)', 
-                            color: 'var(--text-main)',
-                            borderRadius: '4px',
-                            padding: '6px 10px',
-                            fontSize: '0.85rem',
-                            outline: 'none',
-                            textAlign: 'center',
-                            boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)'
-                        }}
+                {/* ── Current result — always shown ── */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span className="bn-section-label">{t('nodes.balance.current')}</span>
+                    <MathInput
+                        value={currentFormula}
+                        onChange={(v) => updateNodeData(id, { currentFormula: v })}
+                        className={`nodrag formula-input${operations.length > 0 ? ' bn-result-field' : ''}`}
                     />
-                    
-                    {inputGesture && (inputGesture.curY - inputGesture.startY) > 10 && (
-                        <div style={{
-                            position: 'absolute',
-                            left: 0, right: 0, bottom: '-20px',
-                            display: 'flex', justifyContent: 'center',
-                            pointerEvents: 'none',
-                            opacity: Math.min(1, (inputGesture.curY - inputGesture.startY) / 30)
-                        }}>
-                             <span style={{color: 'var(--accent)', fontWeight: 'bold', fontSize: '1.2rem'}}>÷</span>
-                        </div>
-                    )}
                 </div>
-
-
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-sub)', textTransform: 'uppercase', marginTop: '4px' }}>
-                    {t('nodes.balance.interactive')}
-                </div>
-                <InteractiveEquation 
-                    formula={currentFormula} 
-                    onApplyOperation={(op, val) => {
-                        const newOps = [...operations, { op, value: val }];
-                        updateNodeData(id, { operations: newOps });
-                        executeNode(id);
-                    }} 
-                />
-
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-sub)', textTransform: 'uppercase', marginTop: '4px' }}>
-                    {t('nodes.balance.current')}
-                </div>
-                <MathInput 
-                    value={currentFormula} 
-                    onChange={(v) => updateNodeData(id, { currentFormula: v })} 
-                    className="nodrag formula-input"
-                />
             </div>
 
             <style>{`
-                .balance-node .op-btn {
-                    background: var(--bg-input);
-                    border: 1px solid var(--border-node);
-                    color: var(--text-main);
-                    border-radius: 4px;
-                    cursor: pointer;
-                    width: 26px;
-                    height: 26px;
+                .balance-node .bn-section-label {
+                    font-size: 0.6rem;
+                    font-weight: 700;
+                    letter-spacing: 0.08em;
+                    text-transform: uppercase;
+                    color: rgba(255,255,255,0.25);
+                    user-select: none;
+                }
+                [data-theme='light'] .balance-node .bn-section-label {
+                    color: rgba(14,47,11,0.35);
+                }
+
+                /* Global ops row */
+                .balance-node .bn-global-ops {
                     display: flex;
                     align-items: center;
-                    justifyContent: center;
-                    font-weight: bold;
-                    transition: all 0.2s;
+                    gap: 6px;
                 }
-                .balance-node .op-btn:hover {
-                    background: var(--accent);
-                    color: white;
-                    border-color: var(--accent);
+                .balance-node .bn-op-input-wrap {
+                    flex: 1;
+                }
+                .balance-node .bn-op-input {
+                    width: 100%;
+                    box-sizing: border-box;
+                    background: rgba(0,0,0,0.25);
+                    border: 1px solid rgba(255,255,255,0.1);
+                    color: var(--text-main);
+                    border-radius: 8px;
+                    padding: 6px 10px;
+                    font-size: 0.85rem;
+                    font-family: inherit;
+                    outline: none;
+                    text-align: center;
+                    transition: border-color 0.15s;
+                }
+                .balance-node .bn-op-input:focus {
+                    border-color: rgba(255,255,255,0.25);
+                }
+                [data-theme='light'] .balance-node .bn-op-input {
+                    background: rgba(14,47,11,0.05);
+                    border-color: rgba(14,47,11,0.15);
+                    color: var(--text-main);
+                }
+                /* Swipe-down divide hint */
+                .balance-node .bn-swipe-hint {
+                    position: absolute;
+                    left: 50%;
+                    bottom: -18px;
+                    transform: translateX(-50%);
+                    font-size: 1.1rem;
+                    font-weight: bold;
+                    color: #f9a826;
+                    pointer-events: none;
+                }
+                /* Op buttons */
+                .balance-node .bn-op-btns {
+                    display: flex;
+                    gap: 3px;
+                }
+                .balance-node .bn-op-btn {
+                    width: 28px;
+                    height: 28px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    background: rgba(255,255,255,0.04);
+                    border: 1px solid rgba(255,255,255,0.1);
+                    color: rgba(255,255,255,0.55);
+                    border-radius: 7px;
+                    cursor: pointer;
+                    font-size: 0.9rem;
+                    font-weight: 700;
+                    transition: all 0.14s;
+                    font-family: inherit;
+                }
+                .balance-node .bn-op-btn:hover {
+                    background: color-mix(in srgb, var(--btn-color) 18%, transparent);
+                    border-color: color-mix(in srgb, var(--btn-color) 50%, transparent);
+                    color: var(--btn-color);
+                }
+                [data-theme='light'] .balance-node .bn-op-btn {
+                    background: rgba(14,47,11,0.04);
+                    border-color: rgba(14,47,11,0.12);
+                    color: rgba(14,47,11,0.5);
+                }
+
+                /* History list (TextNode merged only) */
+                .balance-node .bn-history {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 3px;
+                    max-height: 110px;
+                    overflow-y: auto;
+                }
+                .balance-node .bn-step {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 3px 8px 3px 5px;
+                    background: rgba(255,255,255,0.03);
+                    border: 1px solid rgba(255,255,255,0.06);
+                    border-radius: 7px;
+                    transition: background 0.15s;
+                }
+                .balance-node .bn-step:hover { background: rgba(255,255,255,0.06); }
+                [data-theme='light'] .balance-node .bn-step {
+                    background: rgba(14,47,11,0.03);
+                    border-color: rgba(14,47,11,0.08);
+                }
+                .balance-node .bn-step-badge {
+                    font-size: 0.75rem;
+                    font-weight: 800;
+                    min-width: 20px;
+                    height: 20px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 5px;
+                    flex-shrink: 0;
+                }
+                .balance-node .bn-op-\\+ { background: rgba(74,222,128,0.15); color: #4ade80; }
+                .balance-node .bn-op-\\- { background: rgba(255,100,80,0.15); color: #ff7855; }
+                .balance-node .bn-op-\\* { background: rgba(79,172,254,0.15); color: #4facfe; }
+                .balance-node .bn-op-\\/ { background: rgba(249,168,38,0.15); color: #f9a826; }
+                .balance-node .bn-op-\\( { background: rgba(200,150,255,0.15); color: #c896ff; }
+                [data-theme='light'] .balance-node .bn-op-\\+ { background: rgba(14,120,50,0.12); color: #0e7832; }
+                [data-theme='light'] .balance-node .bn-op-\\- { background: rgba(180,30,10,0.1); color: #b41e0a; }
+                [data-theme='light'] .balance-node .bn-op-\\* { background: rgba(10,80,180,0.1); color: #0a50b4; }
+                [data-theme='light'] .balance-node .bn-op-\\/ { background: rgba(160,90,0,0.1); color: #a05a00; }
+                [data-theme='light'] .balance-node .bn-op-\\( { background: rgba(120,0,200,0.1); color: #7800c8; }
+                .balance-node .bn-step-remove {
+                    cursor: pointer;
+                    font-size: 1rem;
+                    opacity: 0.25;
+                    transition: opacity 0.15s, color 0.15s;
+                    margin-left: auto;
+                    flex-shrink: 0;
+                    user-select: none;
+                }
+                .balance-node .bn-step-remove:hover { opacity: 1; color: #ff4757; }
+
+                /* Result formula highlight */
+                .balance-node .bn-result-field {
+                    border-color: rgba(74,222,128,0.3) !important;
+                    box-shadow: 0 0 0 1px rgba(74,222,128,0.08) !important;
+                }
+                [data-theme='light'] .balance-node .bn-result-field {
+                    border-color: rgba(14,47,11,0.3) !important;
+                    box-shadow: none !important;
                 }
             `}</style>
         </NodeFrame>

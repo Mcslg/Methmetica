@@ -53,3 +53,9 @@ export const graphNodeHandles: CustomHandle[] = [
 export const sliderNodeHandles: CustomHandle[] = [
     { id: 'h-out', type: 'output', position: 'right', offset: 50, label: 'val' }
 ];
+
+export const soundNodeHandles: CustomHandle[] = [
+    { id: 'h-fn-in', type: 'input', position: 'left', offset: 25, label: 'f(x)' },
+    { id: 'h-freq', type: 'input', position: 'left', offset: 50, label: 'Freq' },
+    { id: 'h-vol', type: 'input', position: 'left', offset: 75, label: 'Vol' },
+];

@@ -1,10 +1,10 @@
 import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
-import { useEffect } from 'react';
+import { useEffect, memo } from 'react';
 import useStore, { type AppState, type NodeData } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
 
-export function DecimalNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
+export const DecimalNode = memo(function DecimalNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
 
     const handleToDecimal = (inputVal?: string) => {
@@ -68,4 +68,5 @@ export function DecimalNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             </div>
         </div>
     );
-}
+});
+

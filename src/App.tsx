@@ -18,7 +18,7 @@ function Flow() {
     nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, addNodes, removeNode, 
     handleProximitySnap, updateMergeHint, setAltPressed, setCtrlPressed, theme, 
     isSidebarOpen, setDeletingHover, draggingEjectPos, hoveredNodeId, 
-    setHoveredNodeId, updateNodeDimensions, isAltPressed 
+    setHoveredNodeId, updateNodeDimensions, isAltPressed, undo, redo, takeSnapshot
   } = useStore(useShallow(state => ({
     nodes: state.nodes,
     edges: state.edges,
@@ -39,7 +39,10 @@ function Flow() {
     hoveredNodeId: state.hoveredNodeId,
     setHoveredNodeId: state.setHoveredNodeId,
     updateNodeDimensions: state.updateNodeDimensions,
-    isAltPressed: state.isAltPressed
+    isAltPressed: state.isAltPressed,
+    undo: state.undo,
+    redo: state.redo,
+    takeSnapshot: state.takeSnapshot
   })));
   const mergeHint = useStore(state => state.mergeHint);
   const { screenToFlowPosition, flowToScreenPosition } = useReactFlow();
@@ -60,6 +63,22 @@ function Flow() {
       if (e.key === 'Shift') setIsShiftPressed(e.type === 'keydown');
       if (e.key === 'Alt') setAltPressed(e.type === 'keydown');
       if (e.key === 'Control' || e.key === 'Meta') setCtrlPressed(e.type === 'keydown');
+
+      // [UNDO/REDO Shortcuts]
+      if (e.type === 'keydown' && (e.metaKey || e.ctrlKey)) {
+        if (e.key === 'z') {
+          if (e.shiftKey) {
+            e.preventDefault();
+            redo();
+          } else {
+            e.preventDefault();
+            undo();
+          }
+        } else if (e.key === 'y') {
+          e.preventDefault();
+          redo();
+        }
+      }
     };
     window.addEventListener('keydown', handleKey);
     window.addEventListener('keyup', handleKey);
@@ -321,6 +340,7 @@ function Flow() {
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
         onNodeDragStart={(event, _node, nodesBeingDragged) => {
+          takeSnapshot(); // Snapshot BEFORE dragging
           if (event.altKey || isAltPressed) {
             // [CLONE] Create a copy of each dragged node at its starting position.
             // Since onNodeDragStart is called exactly when the drag begins, 

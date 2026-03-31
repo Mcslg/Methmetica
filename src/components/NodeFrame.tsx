@@ -4,6 +4,7 @@ import useStore, { type AppState } from '../store/useStore';
 import { DynamicHandles } from '../nodes/DynamicHandles';
 import { CommentArea } from './CommentArea';
 import { ResultArea } from './ResultArea';
+import { CalculusStepsArea } from './CalculusStepsArea';
 import { Icons } from './Icons';
 
 interface NodeFrameProps {
@@ -119,6 +120,10 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
             
             {data.slots?.resultText && (
                 <ResultArea containerId={id} targetSid={data.slots.resultText as string} />
+            )}
+
+            {data.slots?.stepsArea && (
+                <CalculusStepsArea containerId={id} />
             )}
 
             <DynamicHandles

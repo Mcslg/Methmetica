@@ -1,12 +1,13 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, memo } from 'react';
 import { NodeResizer } from '@xyflow/react';
 import useStore, { type AppState } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
 
-export function SliderNode({ id, data, selected, className }: any) {
+export const SliderNode = memo(function SliderNode({ id, data, selected, className }: any) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
     const executeNode = useStore((state: AppState) => state.executeNode);
+    const setGlobalVar = useStore((state: AppState) => state.setGlobalVar);
 
     const name = data.nodeName || 'x';
     const min = data.min !== undefined ? Number(data.min) : 0;
@@ -31,6 +32,12 @@ export function SliderNode({ id, data, selected, className }: any) {
             value: String(newVal),
             outputs: { 'h-out': String(newVal) }
         });
+        
+        // Broadcast to global vars if name starts with $
+        if (name.startsWith('$')) {
+            setGlobalVar(name, String(newVal));
+        }
+        
         executeNode(id);
     };
 
@@ -171,4 +178,5 @@ export function SliderNode({ id, data, selected, className }: any) {
             `}</style>
         </div>
     );
-}
+});
+

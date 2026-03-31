@@ -2,6 +2,8 @@ import React from 'react';
 import { useReactFlow } from '@xyflow/react';
 import useStore, { type AppState } from '../store/useStore';
 import { Icons } from './Icons';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 
 interface ResultAreaProps {
     containerId: string;
@@ -79,8 +81,18 @@ export const ResultArea: React.FC<ResultAreaProps> = ({ containerId, targetSid: 
             title="Result Display Area | Ctrl+Drag to eject"
         >
             <Icons.Text width={12} height={12} style={{ color: '#4facfe', opacity: 0.8 }} />
-            <span style={{ opacity: 0.6, fontSize: '0.7rem', letterSpacing: '0.05em' }}>RESULT</span>
-            <span style={{ color: '#4facfe', fontSize: '1.1rem', fontFamily: 'monospace' }}>{resultValue}</span>
+            <span style={{ opacity: 0.6, fontSize: '0.7rem', letterSpacing: '0.05em', marginRight: '4px' }}>RESULT:</span>
+            <div 
+                className="result-katex"
+                dangerouslySetInnerHTML={{ __html: katex.renderToString(String(resultValue), { throwOnError: false }) }}
+                style={{ 
+                    color: 'var(--accent-bright)', 
+                    fontSize: '1.2rem',
+                    lineHeight: 1,
+                    display: 'flex',
+                    alignItems: 'center'
+                }}
+            />
 
             <style>{`
                 @keyframes result-slide-in {

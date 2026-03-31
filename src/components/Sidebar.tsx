@@ -188,6 +188,21 @@ export function Sidebar() {
                     flex-direction: column;
                     gap: 28px;
                     box-shadow: 20px 0 50px rgba(0,0,0,0.15);
+                    overflow-y: auto;
+                    overflow-x: hidden;
+                }
+                .sidebar-drawer::-webkit-scrollbar {
+                    width: 4px;
+                }
+                .sidebar-drawer::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+                .sidebar-drawer::-webkit-scrollbar-thumb {
+                    background: var(--scroll-thumb);
+                    border-radius: 10px;
+                }
+                .sidebar-drawer::-webkit-scrollbar-thumb:hover {
+                    background: var(--accent-bright);
                 }
                 .sidebar-header {
                     display: flex;

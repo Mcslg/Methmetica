@@ -1,4 +1,4 @@
-import { getMathEngine } from './MathEngine';
+import { getMathEngine, getMathSymbol } from './MathEngine';
 import useStore, { type AppNode } from '../store/useStore';
 import { type Edge } from '@xyflow/react';
 // @ts-ignore
@@ -52,16 +52,62 @@ export class CalculationService {
 
             if (funcName) {
                 ce.pushScope();
-                // We use compute engine's evaluation to keep the form mathematically valid
+                // Find all symbols in the current sides and "unassign" them locally
+                // to prevent global variable substitution during balance operations.
                 try {
-                    const lExpr = ce.box([funcName, ce.parse(lhs), ce.parse(op.value)]).evaluate();
-                    const rExpr = ce.box([funcName, ce.parse(rhs), ce.parse(op.value)]).evaluate();
+                    const lFull = ce.parse(lhs);
+                    const rFull = ce.parse(rhs);
+                    const allSymbols = new Set([...lFull.symbols, ...rFull.symbols]);
+                    allSymbols.forEach(s => {
+                        ce.assign(s, ce.parse(s)); // Force it to be itself (a symbol)
+                    });
+
+                    const lExpr = ce.box([funcName, lFull, ce.parse(op.value)]).simplify();
+                    const rExpr = ce.box([funcName, rFull, ce.parse(op.value)]).simplify();
                     lhs = lExpr.latex || lExpr.toString();
                     rhs = rExpr.latex || rExpr.toString();
                 } catch (e) {
                     console.error('Balance error', e);
                 }
                 ce.popScope();
+            } else if (op.op === '(' && op.value) {
+                const wrap = (s: string) => {
+                    const escapeRegex = (value: string) => value.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    const regex = new RegExp(escapeRegex(op.value).replace(/\s+/g, '\\s*'));
+                    const match = s.match(regex);
+                    if (!match || match.index === undefined) return s;
+
+                    const before = s.slice(0, match.index);
+                    const targetLatex = `\\left( ${op.value} \\right)`;
+                    return `${before}${targetLatex}${s.slice(match.index + match[0].length)}`;
+                };
+
+                if (op.targetSide === 'lhs') lhs = wrap(lhs);
+                else if (op.targetSide === 'rhs') rhs = wrap(rhs);
+                else {
+                    lhs = wrap(lhs);
+                    rhs = wrap(rhs);
+                }
+            } else if (op.op === 'factor' && op.value && op.factor && op.result) {
+                const factorize = (s: string) => {
+                    const escapeRegex = (value: string) => value.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    const regex = new RegExp(escapeRegex(op.value).replace(/\s+/g, '\\s*'));
+                    const match = s.match(regex);
+                    if (!match || match.index === undefined) return s;
+
+                    const replacement = op.factor === '-1'
+                        ? `-\\left(${op.result}\\right)`
+                        : `${op.factor}\\left(${op.result}\\right)`;
+
+                    return `${s.slice(0, match.index)}${replacement}${s.slice(match.index + match[0].length)}`;
+                };
+
+                if (op.targetSide === 'lhs') lhs = factorize(lhs);
+                else if (op.targetSide === 'rhs') rhs = factorize(rhs);
+                else {
+                    lhs = factorize(lhs);
+                    rhs = factorize(rhs);
+                }
             }
         }
 
@@ -103,13 +149,86 @@ export class CalculationService {
         const ce = getMathEngine();
         const variant = node.data.variant || 'diff';
         const wrt = node.data.variable || 'x';
+        const wrtSymbol = getMathSymbol(wrt);
 
         const expr = ce.parse(inputVal);
         let result;
         if (variant === 'diff') {
-            result = ce.box(['Derivative', expr, wrt]).evaluate();
+            result = ce.box(['D', expr, wrtSymbol]).evaluate();
+        } else if (variant === 'integ') {
+            result = ce.box(['Integrate', expr, wrtSymbol]).evaluate();
+        } else if (variant === 'limit') {
+            const limitPoint = node.data.limitPoint !== undefined ? node.data.limitPoint : '';
+            
+            // Clean up limit point input
+            let lp = String(limitPoint).trim().toLowerCase();
+            // Map inf keywords to nerdamer's Infinity token
+            if (lp === '' || lp === 'inf' || lp === 'infinity' || lp === '∞' || lp === '\\infty') {
+                lp = 'Infinity';
+            } else if (lp === '-inf' || lp === '-infinity' || lp === '-∞' || lp === '-\\infty') {
+                lp = '-Infinity';
+            }
+
+            // Helper: convert LaTeX to nerdamer-friendly string
+            const latexToNerdamer = (s: string): string =>
+                s.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1)/($2)')
+                 .replace(/\\left\(/g, '(').replace(/\\right\)/g, ')')
+                 .replace(/\\sin/g, 'sin').replace(/\\cos/g, 'cos')
+                 .replace(/\\tan/g, 'tan').replace(/\\ln/g, 'log')
+                 .replace(/\\sqrt\{([^{}]+)\}/g, 'sqrt($1)')
+                 .replace(/\\cdot/g, '*')
+                 .replace(/\{/g, '(').replace(/\}/g, ')')
+                 .replace(/\\/g, '')
+                 .trim();
+
+            // Helper: numerical two-sided limit approximation
+            const numericalLimit = (exprStr: string, varName: string, target: string): string | null => {
+                try {
+                    const a = target === 'Infinity' ? 1e12 : target === '-Infinity' ? -1e12 : parseFloat(target);
+                    if (isNaN(a)) return null;
+                    const epsilon = Math.abs(a) > 1 ? Math.abs(a) * 1e-7 : 1e-7;
+                    const evalAt = (v: number): number => {
+                        const expr2 = ce.parse(exprStr);
+                        const sub = ce.box(['Replace', expr2, ce.box(['Equal', getMathSymbol(varName), v])]).evaluate();
+                        return Number(sub.valueOf());
+                    };
+                    const l1 = evalAt(a - epsilon);
+                    const l2 = evalAt(a + epsilon);
+                    if (!isFinite(l1) && !isFinite(l2)) return l1 > 0 ? '\\infty' : '-\\infty';
+                    if (Math.abs(l1 - l2) < 1e-6) {
+                        const val = (l1 + l2) / 2;
+                        return Number.isInteger(val) ? String(val) : val.toPrecision(6);
+                    }
+                    return null; // Limit does not exist
+                } catch { return null; }
+            };
+
+            // Attempt 1: nerdamer symbolic
+            try {
+                const exprStr = latexToNerdamer(inputVal);
+                const limitResult = nerdamer(`limit(${exprStr}, ${wrt}, ${lp})`);
+                return limitResult.toTeX();
+            } catch (e) {
+                if (e instanceof RangeError) {
+                    console.warn('nerdamer limit stack overflow, falling back to numerical');
+                } else {
+                    console.error('nerdamer limit error', e);
+                }
+            }
+
+            // Attempt 2: numerical approximation
+            {
+                const numResult = numericalLimit(inputVal, wrt, lp);
+                if (numResult !== null) return numResult;
+            }
+
+            // Attempt 3: CE direct substitution (for finite, continuous points)
+            {
+                const targetValue = ce.parse(lp === 'Infinity' ? '\\infty' : lp);
+                result = ce.box(['Replace', expr, ce.box(['Equal', wrtSymbol, targetValue])]).evaluate();
+            }
         } else {
-            result = ce.box(['Integrate', expr, wrt]).evaluate();
+            result = ce.box(['D', expr, wrtSymbol]).evaluate();
         }
         return result.latex;
     }
