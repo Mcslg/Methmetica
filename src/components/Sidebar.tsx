@@ -80,7 +80,7 @@ export function Sidebar() {
                         alt="methmatica"
                         style={{ height: '64px', width: 'auto', marginTop: '6px' }}
                     />
-                    <p style={{ marginTop: '4px' }}>v0.9.0</p>
+                    <p style={{ marginTop: '4px' }}>v0.7.1</p>
                 </div>
 
                 {!isPaletteFloating && (

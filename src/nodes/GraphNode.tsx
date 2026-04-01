@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
-import { useShallow } from 'zustand/react/shallow';
+
 import useStore, { type NodeData, type AppState } from '../store/useStore';
 import { getMathEngine } from '../utils/MathEngine';
 import { Icons } from '../components/Icons';

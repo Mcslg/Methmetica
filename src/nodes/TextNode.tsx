@@ -2,8 +2,17 @@ import React, { useRef, useEffect, useCallback, useMemo, useState, memo } from '
 import { type NodeProps, type Node, NodeResizer, useUpdateNodeInternals, Handle, Position, useReactFlow } from '@xyflow/react';
 import { createPortal } from 'react-dom';
 import { EditorContent, useEditor, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
+import { BubbleMenu, FloatingMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown as TiptapMarkdown } from 'tiptap-markdown';
+import { Underline } from '@tiptap/extension-underline';
+import { Highlight } from '@tiptap/extension-highlight';
+import { TextStyle } from '@tiptap/extension-text-style';
+import { Color } from '@tiptap/extension-color';
+import { TaskList } from '@tiptap/extension-task-list';
+import { TaskItem } from '@tiptap/extension-task-item';
+import { TextAlign } from '@tiptap/extension-text-align';
+import { Placeholder } from '@tiptap/extension-placeholder';
 import { Node as TiptapNode, mergeAttributes, type ExtendedRegExpMatchArray, type Range } from '@tiptap/core';
 import { type EditorState } from '@tiptap/pm/state';
 import katex from 'katex';
@@ -11,7 +20,7 @@ import 'katex/dist/katex.min.css';
 // @ts-ignore
 import nerdamer from 'nerdamer/all.min';
 import { getMathEngine } from '../utils/MathEngine';
-import useStore, { type AppState, type AppNode, type NodeData, type CustomHandle, type HandleType } from '../store/useStore';
+import useStore, { type AppState, type NodeData, type CustomHandle, type HandleType } from '../store/useStore';
 import { useShallow } from 'zustand/react/shallow';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
@@ -1034,13 +1043,23 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
     const editor = useEditor({
         extensions: [
             StarterKit.configure({
-                codeBlock: false,
-                code: false,
+                codeBlock: {},
+                code: {},
             }),
             TiptapMarkdown.configure({
                 html: true,
                 tightLists: true,
                 linkify: false,
+            }),
+            Underline,
+            TextStyle,
+            Color,
+            Highlight.configure({ multicolor: true }),
+            TextAlign.configure({ types: ['heading', 'paragraph'] }),
+            TaskList,
+            TaskItem.configure({ nested: true }),
+            Placeholder.configure({
+                placeholder: "Type '/' for commands or start typing...",
             }),
             MathPill,
             SliderPill,
@@ -1398,13 +1417,6 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
         editingNameRef.current = null;
     };
 
-    const applyFormatting = (cmd: 'bold' | 'heading' | 'bulletList') => {
-        if (!editor) return;
-        editor.chain().focus();
-        if (cmd === 'bold') editor.chain().toggleBold().run();
-        if (cmd === 'heading') editor.chain().toggleHeading({ level: 1 }).run();
-        if (cmd === 'bulletList') editor.chain().toggleBulletList().run();
-    };
 
     const contextValue = useMemo(() => ({
         nodeId: id,
@@ -1479,45 +1491,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                     </div>
                 </div>
 
-                {(selected || editor?.isFocused) && (
-                    <div className="text-toolbar nodrag" onMouseDown={e => e.preventDefault()}
-                        style={{
-                            position: 'absolute',
-                            bottom: 'calc(100% + 8px)',
-                            left: 0,
-                            right: 0,
-                            display: 'flex',
-                            gap: '4px',
-                            padding: '6px 8px',
-                            background: 'var(--bg-node)',
-                            border: '1px solid var(--border-node)',
-                            borderRadius: '10px',
-                            boxShadow: 'var(--node-shadow)',
-                            flexWrap: 'wrap',
-                            zIndex: 1000
-                        }}>
-                        <button title="Bold" onClick={() => applyFormatting('bold')}>B</button>
-                        <button title="H1" onClick={() => applyFormatting('heading')}>H1</button>
-                        <button title="Bullet" onClick={() => applyFormatting('bulletList')}>•</button>
-                        <button title="Add Data Pill" onClick={() => {
-                            editMath('');
-                        }} style={{ color: '#4facfe', fontWeight: 'bold' }}>$$ math $$</button>
 
-                        <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '8px', alignItems: 'center' }}>
-                            {['#ffffff', '#ff7eb9', '#7afcff', '#4facfe', '#43e97b', '#ffcc33'].map(col => (
-                                <div
-                                    key={col}
-                                    onClick={() => updateNodeData(id, { style: { ...(data.style || {}), color: col } })}
-                                    style={{
-                                        width: 12, height: 12, borderRadius: '50%', background: col, cursor: 'pointer',
-                                        border: (data.style?.color || '#ffffff') === col ? '1px solid #fff' : '1px solid transparent',
-                                        boxShadow: (data.style?.color || '#ffffff') === col ? `0 0 5px ${col}` : 'none'
-                                    }}
-                                />
-                            ))}
-                        </div>
-                    </div>
-                )}
 
                 {mathInputOpen && popupPos && createPortal(
                     <div className="math-popup nodrag" style={{
@@ -1721,6 +1695,74 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                 <div ref={contentRef} className="node-content custom-scrollbar nodrag" style={{
                     position: 'relative', flexGrow: 1, overflowY: 'auto', padding: '0px'
                 }}>
+                    {editor && (
+                        <BubbleMenu
+                            className="tiptap-bubble-menu nodrag"
+                            editor={editor}
+                            style={{
+                                display: 'flex', background: 'var(--bg-node)', padding: '6px',
+                                borderRadius: '8px', border: '1px solid var(--border-node)',
+                                boxShadow: '0 8px 16px rgba(0,0,0,0.5)', gap: '4px', zIndex: 9999
+                            }}
+                        >
+                            <button
+                                title="Bold (Cmd+B)"
+                                onClick={() => editor.chain().focus().toggleBold().run()}
+                                className={`tiptap-menu-btn ${editor.isActive('bold') ? 'is-active' : ''}`}
+                                style={{ fontWeight: 'bold' }}>B</button>
+                            <button
+                                title="Italic (Cmd+I)"
+                                onClick={() => editor.chain().focus().toggleItalic().run()}
+                                className={`tiptap-menu-btn ${editor.isActive('italic') ? 'is-active' : ''}`}
+                                style={{ fontStyle: 'italic' }}>I</button>
+                            <button
+                                title="Underline (Cmd+U)"
+                                onClick={() => editor.chain().focus().toggleUnderline().run()}
+                                className={`tiptap-menu-btn ${editor.isActive('underline') ? 'is-active' : ''}`}
+                                style={{ textDecoration: 'underline' }}>U</button>
+                            <button
+                                title="Strikethrough (Cmd+Shift+X)"
+                                onClick={() => editor.chain().focus().toggleStrike().run()}
+                                className={`tiptap-menu-btn ${editor.isActive('strike') ? 'is-active' : ''}`}
+                                style={{ textDecoration: 'line-through' }}>S</button>
+                            <button
+                                title="Inline Code (Cmd+E)"
+                                onClick={() => editor.chain().focus().toggleCode().run()}
+                                className={`tiptap-menu-btn ${editor.isActive('code') ? 'is-active' : ''}`}
+                                style={{ fontFamily: 'monospace' }}>{'<>'}</button>
+                            <div style={{ width: '1px', background: 'var(--border-node)', height: '20px', alignSelf: 'center', margin: '0 4px' }} />
+                            
+                            <label className="tiptap-menu-btn" title="Text Color" style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '4px' }}>
+                                <input
+                                    type="color"
+                                    onInput={(event) => editor.chain().focus().setColor((event.target as HTMLInputElement).value).run()}
+                                    value={editor.getAttributes('textStyle').color || '#ffffff'}
+                                    style={{ width: '16px', height: '16px', padding: '0', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                                />
+                            </label>
+
+                            <button
+                                title="Highlight Background (Yellow)"
+                                onClick={() => editor.chain().focus().toggleHighlight({ color: '#ffcc00' }).run()}
+                                className={`tiptap-menu-btn ${editor.isActive('highlight', { color: '#ffcc00' }) ? 'is-active' : ''}`}
+                                style={{ color: '#ffcc00', fontWeight: 'bold' }}
+                            >
+                                H
+                            </button>
+                        </BubbleMenu>
+                    )}
+                    {editor && (
+                        <FloatingMenu
+                            className="tiptap-floating-menu nodrag"
+                            editor={editor}
+                            style={{ display: 'flex', gap: '4px', background: 'transparent', zIndex: 9999 }}
+                        >
+                            <button title="Heading 1" onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} className="tiptap-menu-btn float-btn">H1</button>
+                            <button title="Heading 2" onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} className="tiptap-menu-btn float-btn">H2</button>
+                            <button title="Bullet List" onClick={() => editor.chain().focus().toggleBulletList().run()} className="tiptap-menu-btn float-btn">• List</button>
+                            <button title="Task List" onClick={() => editor.chain().focus().toggleTaskList().run()} className="tiptap-menu-btn float-btn">☑ Task</button>
+                        </FloatingMenu>
+                    )}
                     <EditorContent
                         editor={editor}
                         className="tiptap-editor-container nodrag"
@@ -1777,8 +1819,38 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                     from { transform: scale(0.95); opacity: 0; }
                     to { transform: scale(1); opacity: 1; }
                 }
-                .text-toolbar button { background: transparent; border: none; color: #ccc; cursor: pointer; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; transition: all 0.2s; }
-                .text-toolbar button:hover { background: rgba(255,255,255,0.1); color: #fff; }
+                .tiptap-menu-btn {
+                    background: transparent;
+                    border: none;
+                    color: var(--text-main);
+                    cursor: pointer;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    font-size: 0.85rem;
+                    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+                .tiptap-menu-btn:hover {
+                    background: rgba(255, 255, 255, 0.1);
+                }
+                .tiptap-menu-btn.is-active {
+                    background: var(--focus-bg, rgba(79, 172, 254, 0.3));
+                    color: #fff;
+                    box-shadow: inset 0 0 0 1px rgba(79, 172, 254, 0.5);
+                }
+                .tiptap-menu-btn.float-btn {
+                    background: var(--bg-card);
+                    border: 1px solid var(--border-node);
+                    font-size: 0.75rem;
+                    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+                }
+                .tiptap-menu-btn.float-btn:hover {
+                    border-color: rgba(79, 172, 254, 0.5);
+                    background: var(--bg-node);
+                    transform: translateY(-1px);
+                }
                 math-field:focus-within { outline: 2px solid #4facfe; border-radius: 4px; }
             `}</style>
             </div>

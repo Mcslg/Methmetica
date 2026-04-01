@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useReactFlow } from '@xyflow/react';
 import useStore, { type AppState } from '../store/useStore';
 import 'mathlive';

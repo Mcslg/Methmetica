@@ -36,8 +36,6 @@ export const BalanceNode = memo(function BalanceNode({ id, data, selected }: Nod
 
     const operations: BalanceOperation[] = data.operations || [];
     const currentFormula = data.currentFormula ?? data.input ?? '';
-    // Only show history when a TextNode is merged (provides the step-display area)
-    const hasMergedText = !!data.slots?.resultText;
 
     const appendOperation = (nextOp: BalanceOperation) => {
         const newOps = [...operations, nextOp];
@@ -56,6 +54,11 @@ export const BalanceNode = memo(function BalanceNode({ id, data, selected }: Nod
         const newOps = [...operations];
         newOps.splice(idx, 1);
         updateNodeData(id, { operations: newOps });
+        executeNode(id);
+    };
+
+    const clearOperations = () => {
+        updateNodeData(id, { operations: [] });
         executeNode(id);
     };
 
@@ -79,6 +82,35 @@ export const BalanceNode = memo(function BalanceNode({ id, data, selected }: Nod
 
     const swipeDelta = gesture ? gesture.curY - gesture.startY : 0;
     const showDivHint = swipeDelta > 10;
+
+    const getOperationBadge = (op: BalanceOperation) => {
+        if (op.op === 'factor') return 'ƒ';
+        if (op.op === 'expand') return '⤢';
+        if (op.op === 'simplify') return '≈';
+        if (op.op === '(') return '( )';
+        if (op.op === '*') return '×';
+        if (op.op === '/') return '÷';
+        return op.op;
+    };
+
+    const getOperationLabel = (op: BalanceOperation) => {
+        if (op.op === 'factor') return op.factor ? `Factor out ${op.factor}` : 'Factor';
+        if (op.op === 'expand') return 'Expand';
+        if (op.op === 'simplify') return 'Simplify';
+        if (op.op === '(') return 'Group';
+        if (op.op === '+') return `Add ${op.value}`;
+        if (op.op === '-') return `Subtract ${op.value}`;
+        if (op.op === '*') return `Multiply by ${op.value}`;
+        if (op.op === '/') return `Divide by ${op.value}`;
+        return op.op;
+    };
+
+    const getOperationPreview = (op: BalanceOperation) => {
+        if (op.op === 'factor' && op.factor && op.result) return `${op.factor}(${op.result})`;
+        if ((op.op === 'expand' || op.op === 'simplify') && op.result) return op.result;
+        if (op.op === '(') return `(${op.value})`;
+        return op.value;
+    };
 
     return (
         <NodeFrame
@@ -154,27 +186,6 @@ export const BalanceNode = memo(function BalanceNode({ id, data, selected }: Nod
                     </div>
                 </div>
 
-                {/* ── Operations history: only when TextNode is merged ── */}
-                {hasMergedText && operations.length > 0 && (
-                    <div className="bn-history">
-                        <div className="bn-history-list">
-                            {operations.map((op, i) => (
-                                <div key={i} className="bn-step">
-                                    <span className={`bn-step-badge bn-op-${op.op}`}>
-                                        {op.op === 'factor' ? 'ƒ' : op.op === '(' ? '( )' : op.op === '*' ? '×' : op.op === '/' ? '÷' : op.op}
-                                    </span>
-                                    <MathInput
-                                        readOnly
-                                        value={op.op === 'factor' && op.factor ? op.factor : op.value}
-                                        style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: '0.85rem', padding: 0, flex: 1 }}
-                                    />
-                                    <span className="bn-step-remove" onClick={() => removeOperation(i)}>×</span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
                 {/* ── Current result — always shown ── */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <span className="bn-section-label">{t('nodes.balance.current')}</span>
@@ -184,6 +195,40 @@ export const BalanceNode = memo(function BalanceNode({ id, data, selected }: Nod
                         className={`nodrag formula-input${operations.length > 0 ? ' bn-result-field' : ''}`}
                     />
                 </div>
+
+                {/* ── Operations history ── */}
+                {operations.length > 0 && (
+                    <div className="bn-history" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span className="bn-section-label">History</span>
+                            <span 
+                                className="bn-clear-btn"
+                                onClick={clearOperations}
+                                title="Clear operation history"
+                            >
+                                Clear All
+                            </span>
+                        </div>
+                        <div className="bn-history-list">
+                            {operations.map((op, i) => (
+                                <div key={i} className="bn-step">
+                                    <span className={`bn-step-badge bn-op-${op.op}`}>
+                                        {getOperationBadge(op)}
+                                    </span>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', flex: 1, minWidth: 0 }}>
+                                        <span className="bn-step-title">
+                                            {getOperationLabel(op)}
+                                        </span>
+                                        <span className="bn-step-desc">
+                                            {getOperationPreview(op)}
+                                        </span>
+                                    </div>
+                                    <span className="bn-step-remove" onClick={() => removeOperation(i)}>×</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
 
             <style>{`
@@ -327,6 +372,49 @@ export const BalanceNode = memo(function BalanceNode({ id, data, selected }: Nod
                     user-select: none;
                 }
                 .balance-node .bn-step-remove:hover { opacity: 1; color: #ff4757; }
+
+                /* Text classes for steps */
+                .balance-node .bn-step-title {
+                    font-size: 0.72rem;
+                    font-weight: 700;
+                    color: rgba(255,255,255,0.82);
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .balance-node .bn-step-desc {
+                    font-size: 0.68rem;
+                    color: rgba(255,255,255,0.5);
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                [data-theme='light'] .balance-node .bn-step-title {
+                    color: rgba(14,47,11,0.85);
+                }
+                [data-theme='light'] .balance-node .bn-step-desc {
+                    color: rgba(14,47,11,0.55);
+                }
+
+                .balance-node .bn-clear-btn {
+                    font-size: 0.65rem;
+                    color: rgba(255,255,255,0.4);
+                    cursor: pointer;
+                    padding: 2px 4px;
+                    border-radius: 4px;
+                    transition: color 0.15s, background 0.15s;
+                }
+                .balance-node .bn-clear-btn:hover {
+                    color: #ff7855;
+                    background: rgba(255,120,85,0.1);
+                }
+                [data-theme='light'] .balance-node .bn-clear-btn {
+                    color: rgba(14,47,11,0.4);
+                }
+                [data-theme='light'] .balance-node .bn-clear-btn:hover {
+                    color: #ff3c00;
+                    background: rgba(255,60,0,0.08);
+                }
 
                 /* Result formula highlight */
                 .balance-node .bn-result-field {

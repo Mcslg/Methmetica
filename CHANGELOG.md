@@ -2,6 +2,34 @@
 
 所有對 **Methmetica** 的重大變更都將記錄在此。
 
+## [0.7.1] - 2026-04-01
+
+### ✨ 互動方程式再升級 (Interactive Equation Enhancements)
+- **BalanceNode 互動更完整**:
+    - 因式選擇與係數操作流程再整理，讓平衡方程的操作更直覺。
+    - 針對選取區塊新增更多即時建議，現在除了 `Factor` 之外，還能直接看到 **`Simplify`** 與 **`Expand`** 建議。
+- **選取動作面板強化**:
+    - `InteractiveEquation` 的選取工具列改為動態顯示可用操作，並同步顯示結果預覽。
+    - 整體面板視覺改用可切換的主題變數，讓深色與淺色模式都更穩定。
+
+### ⚙️ 計算與效能整理 (Computation & Performance)
+- **求值流程再優化**:
+    - `evaluateGraph` 的執行順序與資料流再整理，減少節點互相牽動時的重繪與錯算。
+    - `MathInput` 與 `MathField` 的 render 週期繼續拆分，降低公式編輯時的卡頓。
+- **公式服務補強**:
+    - `CalculationService` 持續擴充，讓節點之間的公式處理與同步更穩定。
+
+### 🧩 節點與 UI 微調 (Node & UI Polish)
+- **`NodeFrame` / 吸入式節點互動優化**:
+    - `BalanceNode`、`CalculateNode`、`TextNode`、`GraphNode`、`AppendNode` 等節點持續配合新的框架與 eject 行為調整。
+    - `CalculusNode` 加入更完整的模式面板與步驟區塊，方便展示微積分相關操作。
+- **新增音效節點**:
+    - 新增 `SoundNode` 與對應面板，補上另一類可互動的節點模式。
+
+### 📦 依賴與基礎建設
+- **Tiptap 延伸套件補齊**:
+    - 新增多個 Tiptap extension，支援更完整的編輯體驗與格式控制。
+
 ## [0.7.0] - 2026-03-23
 
 ### ✨ 節點融合系統 (Node Absorption System)

@@ -36,6 +36,8 @@ interface SelectionActionState {
     side: 'lhs' | 'rhs';
     selectedLatex: string;
     factorSuggestion: FactorSuggestion | null;
+    expandResult: string | null;
+    simplifyResult: string | null;
 }
 
 // ─── Pure char-scanner ────────────────────────────────────────────────────────
@@ -255,6 +257,32 @@ function detectFactorSuggestion(terms: Term[]): FactorSuggestion | null {
     }
 }
 
+function detectExpandSuggestion(latex: string): string | null {
+    const ce = getMathEngine();
+    try {
+        const expr = ce.parse(latex);
+        const simplified = expr.simplify().latex || expr.simplify().toString();
+        const head = Array.isArray(expr.json) ? expr.json[0] : null;
+        if (head !== 'Multiply') return null;
+        if (!simplified || simplified === latex.trim()) return null;
+        return simplified;
+    } catch {
+        return null;
+    }
+}
+
+function detectSimplifySuggestion(latex: string): string | null {
+    const ce = getMathEngine();
+    try {
+        const simplifiedExpr = ce.parse(latex).simplify();
+        const simplified = simplifiedExpr.latex || simplifiedExpr.toString();
+        if (!simplified || simplified === latex.trim()) return null;
+        return simplified;
+    } catch {
+        return null;
+    }
+}
+
 // ─── Drag ghost – mounted once, moved via ref (zero React renders on move) ───
 
 interface GhostState {
@@ -304,7 +332,7 @@ const DragGhost = React.forwardRef<GhostHandle, { _?: never }>((_props, ref) => 
                 position: 'fixed',
                 left: 0,
                 top: 0,
-                zIndex: 999999,
+                zIndex: 10000000,
                 pointerEvents: 'none',
                 willChange: 'transform',
                 alignItems: 'center',
@@ -381,7 +409,7 @@ const TermActionBar: React.FC<{
 
     const panelW = 60 + actions.length * 82;
     let left = rect.left + rect.width / 2 - panelW / 2;
-    let top  = rect.top - 56;
+    let top = rect.top - 56;
     left = Math.max(8, Math.min(left, window.innerWidth - panelW - 8));
     if (top < 8) top = rect.bottom + 8;
 
@@ -398,10 +426,10 @@ const TermActionBar: React.FC<{
                 alignItems: 'stretch',
                 gap: '2px',
                 padding: '5px',
-                background: 'rgba(12, 16, 22, 0.92)',
-                border: '1px solid rgba(255,255,255,0.1)',
+                background: 'var(--ieq-action-bg)',
+                border: '1px solid var(--ieq-action-border)',
                 borderRadius: '14px',
-                boxShadow: '0 12px 40px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06)',
+                boxShadow: '0 12px 40px var(--ieq-action-shadow)',
                 backdropFilter: 'blur(14px)',
                 WebkitBackdropFilter: 'blur(14px)',
                 pointerEvents: 'all',
@@ -416,7 +444,7 @@ const TermActionBar: React.FC<{
                     style={{
                         background: `${action.color}12`,
                         border: `1px solid ${action.color}28`,
-                        color: 'rgba(255,255,255,0.75)',
+                        color: 'var(--ieq-action-text)',
                         borderRadius: '10px',
                         padding: '5px 10px',
                         fontSize: '0.72rem',
@@ -438,7 +466,7 @@ const TermActionBar: React.FC<{
                     onMouseLeave={e => {
                         e.currentTarget.style.background = `${action.color}12`;
                         e.currentTarget.style.borderColor = `${action.color}28`;
-                        e.currentTarget.style.color = 'rgba(255,255,255,0.75)';
+                        e.currentTarget.style.color = 'var(--ieq-action-text)';
                     }}
                 >
                     <span>{action.label}</span>
@@ -456,15 +484,56 @@ const SelectionActionBar: React.FC<{
     info: SelectionActionState | null;
     onGroup: () => void;
     onFactor: () => void;
+    onExpand: () => void;
+    onSimplify: () => void;
     onClear: () => void;
-}> = ({ info, onGroup, onFactor, onClear }) => {
+}> = ({ info, onGroup, onFactor, onExpand, onSimplify, onClear }) => {
     if (!info) return null;
 
-    const panelW = info.factorSuggestion ? 310 : 200;
+    const actionCount = 1
+        + (info.simplifyResult ? 1 : 0)
+        + (info.expandResult ? 1 : 0)
+        + (info.factorSuggestion ? 1 : 0)
+        + 1;
+    const panelW = Math.max(200, actionCount * 110);
     let left = info.rect.left + info.rect.width / 2 - panelW / 2;
     let top = info.rect.bottom + 10;
     left = Math.max(8, Math.min(left, window.innerWidth - panelW - 8));
     if (top > window.innerHeight - 80) top = info.rect.top - 56;
+
+    const renderActionButton = (
+        label: string,
+        preview: string,
+        onClick: () => void,
+        styles: { background: string; border: string; color: string }
+    ) => (
+        <button
+            onClick={onClick}
+            title={preview}
+            style={{
+                background: styles.background,
+                border: styles.border,
+                color: styles.color,
+                borderRadius: '10px',
+                padding: '8px 12px',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                gap: '3px',
+                minWidth: '88px',
+                textAlign: 'left',
+            }}
+        >
+            <span>{label}</span>
+            <span style={{ fontSize: '0.64rem', fontWeight: 500, opacity: 0.78, maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {preview}
+            </span>
+        </button>
+    );
 
     return createPortal(
         <div
@@ -477,48 +546,59 @@ const SelectionActionBar: React.FC<{
                 alignItems: 'center',
                 gap: '8px',
                 padding: '8px 10px',
-                background: 'rgba(12, 16, 22, 0.95)',
-                border: '1px solid rgba(255,255,255,0.1)',
+                background: 'var(--ieq-action-bg)',
+                border: '1px solid var(--ieq-action-border)',
                 borderRadius: '14px',
-                boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
+                boxShadow: '0 12px 40px var(--ieq-action-shadow)',
                 backdropFilter: 'blur(14px)',
                 WebkitBackdropFilter: 'blur(14px)',
             }}
         >
-            <button
-                onClick={onGroup}
-                style={{
+            {renderActionButton(
+                'Group',
+                `(${info.selectedLatex})`,
+                onGroup,
+                {
                     background: 'rgba(79,172,254,0.12)',
                     border: '1px solid rgba(79,172,254,0.28)',
                     color: '#7ac4ff',
-                    borderRadius: '10px',
-                    padding: '8px 12px',
-                    fontSize: '0.75rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                }}
-            >
-                Group
-            </button>
+                }
+            )}
+            {info.simplifyResult && (
+                renderActionButton(
+                    'Simplify',
+                    info.simplifyResult,
+                    onSimplify,
+                    {
+                        background: 'rgba(196,156,255,0.14)',
+                        border: '1px solid rgba(196,156,255,0.35)',
+                        color: '#d0adff',
+                    }
+                )
+            )}
+            {info.expandResult && (
+                renderActionButton(
+                    'Expand',
+                    info.expandResult,
+                    onExpand,
+                    {
+                        background: 'rgba(255,184,77,0.14)',
+                        border: '1px solid rgba(255,184,77,0.35)',
+                        color: '#ffc76b',
+                    }
+                )
+            )}
             {info.factorSuggestion ? (
-                <button
-                    onClick={onFactor}
-                    style={{
+                renderActionButton(
+                    `Factor ${info.factorSuggestion.factor}`,
+                    `${info.factorSuggestion.factor}(${info.factorSuggestion.remainder})`,
+                    onFactor,
+                    {
                         background: 'rgba(74,222,128,0.14)',
                         border: '1px solid rgba(74,222,128,0.35)',
                         color: '#7cf0a3',
-                        borderRadius: '10px',
-                        padding: '8px 12px',
-                        fontSize: '0.75rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                    }}
-                    title={`${info.factorSuggestion.factor}\\left(${info.factorSuggestion.remainder}\\right)`}
-                >
-                    Factor Out {info.factorSuggestion.factor}
-                </button>
+                    }
+                )
             ) : (
                 <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.45)', padding: '0 4px' }}>
                     No common factor
@@ -620,6 +700,35 @@ export const InteractiveEquation: React.FC<InteractiveEquationProps> = memo(({ f
     } | null>(null);
     const [selectionAction, setSelectionAction] = useState<SelectionActionState | null>(null);
 
+    // ── Portal Hover Zoom ──────────────────────────────────────────────────
+    const [portalParams, setPortalParams] = useState<{ left: number, top: number, width: number, height: number } | null>(null);
+    const expandTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const surfaceRef = useRef<HTMLDivElement>(null);
+    const isHoveringRef = useRef(false);
+
+    const handleSurfaceEnter = useCallback(() => {
+        isHoveringRef.current = true;
+        if (expandTimer.current) clearTimeout(expandTimer.current);
+        if (dragRef.current || selection?.active) return;
+
+        expandTimer.current = setTimeout(() => {
+            const rect = surfaceRef.current?.getBoundingClientRect();
+            if (rect) {
+                setPortalParams({ left: rect.left, top: rect.top, width: rect.width, height: rect.height });
+            }
+        }, 120);
+    }, [selection?.active]);
+
+    const handleSurfaceLeave = useCallback(() => {
+        isHoveringRef.current = false;
+        if (expandTimer.current) clearTimeout(expandTimer.current);
+        expandTimer.current = setTimeout(() => {
+            if (!dragRef.current && !selection?.active) {
+                setPortalParams(null);
+            }
+        }, 100);
+    }, [selection?.active]);
+
     // ── Pointer handlers ───────────────────────────────────────────────────
 
     const handleTermPointerDown = useCallback((
@@ -703,6 +812,7 @@ export const InteractiveEquation: React.FC<InteractiveEquationProps> = memo(({ f
         }
 
         dragRef.current = null;
+        if (!isHoveringRef.current) setPortalParams(null); // safely close portal on release if pointer left
     }, [onApplyOperation]);
 
     // ── Background pointer (lasso) ─────────────────────────────────────────
@@ -742,11 +852,11 @@ export const InteractiveEquation: React.FC<InteractiveEquationProps> = memo(({ f
         if (!selection) return;
         (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
 
-        if (selection.selectedIds.size > 1) {
+        if (selection.selectedIds.size > 0) {
             const allTerms = [...(parsedData?.lhs ?? []), ...(parsedData?.rhs ?? [])];
             const selected = allTerms.filter(t => selection.selectedIds.has(t.id));
             const sides = new Set(selected.map(t => t.side));
-            if (selected.length > 1 && sides.size === 1) {
+            if (selected.length > 0 && sides.size === 1) {
                 const side = selected[0].side;
                 const sideTerms = side === 'LHS' ? (parsedData?.lhs ?? []) : (parsedData?.rhs ?? []);
                 const selectedIndexes = sideTerms
@@ -763,11 +873,14 @@ export const InteractiveEquation: React.FC<InteractiveEquationProps> = memo(({ f
                         side: side === 'LHS' ? 'lhs' : 'rhs',
                         selectedLatex: combined,
                         factorSuggestion: detectFactorSuggestion(contiguousTerms),
+                        expandResult: contiguousTerms.length === 1 ? detectExpandSuggestion(combined) : null,
+                        simplifyResult: detectSimplifySuggestion(combined),
                     } : null);
                 }
             }
         }
         setSelection(null);
+        if (!isHoveringRef.current) setPortalParams(null); // safely close portal on lasso finish if pointer left
     }, [selection, parsedData]);
 
     const applySelectionGrouping = useCallback(() => {
@@ -788,6 +901,24 @@ export const InteractiveEquation: React.FC<InteractiveEquationProps> = memo(({ f
         setSelectionAction(null);
     }, [selectionAction, onApplyOperation]);
 
+    const applySelectionExpand = useCallback(() => {
+        if (!selectionAction?.expandResult) return;
+        onApplyOperation('expand', selectionAction.selectedLatex, {
+            targetSide: selectionAction.side,
+            result: selectionAction.expandResult,
+        });
+        setSelectionAction(null);
+    }, [selectionAction, onApplyOperation]);
+
+    const applySelectionSimplify = useCallback(() => {
+        if (!selectionAction?.simplifyResult) return;
+        onApplyOperation('simplify', selectionAction.selectedLatex, {
+            targetSide: selectionAction.side,
+            result: selectionAction.simplifyResult,
+        });
+        setSelectionAction(null);
+    }, [selectionAction, onApplyOperation]);
+
     // ── Render term ────────────────────────────────────────────────────────
 
     const renderTerm = (term: Term, index: number) => {
@@ -798,42 +929,42 @@ export const InteractiveEquation: React.FC<InteractiveEquationProps> = memo(({ f
         const termBaseStyle: React.CSSProperties = {
             display: 'flex',
             alignItems: 'stretch',
-            borderRadius: '10px',
+            borderRadius: '8px',
             transition: 'opacity 0.15s, box-shadow 0.15s, transform 0.15s',
             opacity: isDragging ? 0.25 : 1,
             touchAction: 'none',
             boxShadow: isSelected
                 ? '0 0 0 2px var(--accent-bright), 0 4px 16px rgba(74,222,128,0.25)'
-                : '0 2px 8px rgba(0,0,0,0.2)',
+                : '0 2px 8px var(--ieq-pill-shadow)',
         };
 
         const pillStyle = (part: 'single' | 'left' | 'right'): React.CSSProperties => ({
-            padding: '5px 12px',
+            padding: '3px 3px',
             cursor: 'grab',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             background: isSelected
-                ? 'rgba(74, 222, 128, 0.18)'
-                : 'rgba(255,255,255,0.07)',
-            border: '1px solid rgba(255,255,255,0.12)',
-            borderRadius: part === 'single' ? '10px'
-                : part === 'left' ? '10px 0 0 10px'
-                    : '0 10px 10px 0',
-            borderRight: part === 'left' ? '1px solid rgba(255,255,255,0.04)' : undefined,
+                ? 'var(--ieq-pill-bg-selected)'
+                : 'var(--ieq-pill-bg)',
+            border: '1px solid var(--ieq-pill-border)',
+            borderRadius: part === 'single' ? '8px'
+                : part === 'left' ? '8px 0 0 8px'
+                    : '0 8px 8px 0',
+            borderRight: part === 'left' ? '1px solid var(--ieq-pill-border-inner)' : undefined,
             borderLeft: part === 'right' ? 'none' : undefined,
             transition: 'background 0.15s',
-            minWidth: '28px',
+            minWidth: '20px',
         });
 
         return (
             <div key={term.id} style={{ display: 'flex', alignItems: 'center' }}>
                 {(index > 0 || term.sign === '-') && (
                     <span style={{
-                        margin: '0 6px',
-                        fontSize: '1.3rem',
+                        margin: '0 4px',
+                        fontSize: '1.05rem',
                         fontWeight: 600,
-                        color: term.sign === '-' ? 'rgba(255,120,80,0.9)' : 'rgba(255,255,255,0.6)',
+                        color: term.sign === '-' ? 'var(--ieq-sign-minus)' : 'var(--ieq-sign-plus)',
                         userSelect: 'none',
                         transition: 'color 0.15s',
                     }}>
@@ -855,7 +986,7 @@ export const InteractiveEquation: React.FC<InteractiveEquationProps> = memo(({ f
                                 onPointerMove={handleTermPointerMove}
                                 onPointerUp={handleTermPointerUp}
                             >
-                                <MathInput readOnly value={term.coefficient} style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: '1.1rem', padding: 0 }} />
+                                <MathInput readOnly value={term.coefficient} style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: '0.92rem', padding: 0 }} />
                             </div>
                             <div
                                 style={pillStyle('right')}
@@ -863,7 +994,7 @@ export const InteractiveEquation: React.FC<InteractiveEquationProps> = memo(({ f
                                 onPointerMove={handleTermPointerMove}
                                 onPointerUp={handleTermPointerUp}
                             >
-                                <MathInput readOnly value={term.variable} style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: '1.1rem', padding: 0 }} />
+                                <MathInput readOnly value={term.variable} style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: '0.92rem', padding: 0 }} />
                             </div>
                         </>
                     ) : (
@@ -873,7 +1004,7 @@ export const InteractiveEquation: React.FC<InteractiveEquationProps> = memo(({ f
                             onPointerMove={handleTermPointerMove}
                             onPointerUp={handleTermPointerUp}
                         >
-                            <MathInput readOnly value={term.latex} style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: '1.1rem', padding: 0 }} />
+                            <MathInput readOnly value={term.latex} style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: '0.92rem', padding: 0 }} />
                         </div>
                     )}
                 </div>
@@ -889,18 +1020,18 @@ export const InteractiveEquation: React.FC<InteractiveEquationProps> = memo(({ f
             display: 'flex',
             alignItems: 'center',
             flexWrap: 'wrap',
-            gap: '4px',
-            padding: '12px 10px',
+            gap: '2px',
+            padding: '8px 6px',
             borderRadius: '10px',
             border: isTarget
-                ? '2px dashed rgba(79, 172, 254, 0.7)'
+                ? '2px dashed var(--ieq-drop-border)'
                 : '2px solid transparent',
             background: isTarget
-                ? 'rgba(79, 172, 254, 0.06)'
+                ? 'var(--ieq-drop-bg)'
                 : 'transparent',
             transition: 'all 0.2s ease',
-            minHeight: '52px',
-            minWidth: '60px',
+            minHeight: '42px',
+            minWidth: '40px',
             flex: 1,
         };
     };
@@ -915,7 +1046,7 @@ export const InteractiveEquation: React.FC<InteractiveEquationProps> = memo(({ f
             right: 0,
             textAlign: 'center',
             fontSize: '0.6rem',
-            color: 'rgba(255,255,255,0.2)',
+            color: 'var(--ieq-hint)',
             pointerEvents: 'none',
             letterSpacing: '0.04em',
             userSelect: 'none',
@@ -933,21 +1064,60 @@ export const InteractiveEquation: React.FC<InteractiveEquationProps> = memo(({ f
                 fontSize: '0.75rem',
                 padding: '20px',
                 textAlign: 'center',
-                background: 'rgba(0,0,0,0.2)',
+                background: 'var(--ieq-surface-bg)',
                 borderRadius: '12px',
-                border: '1px dashed rgba(255,255,255,0.1)',
-                color: 'rgba(255,255,255,0.4)',
+                border: '1px dashed var(--ieq-surface-border)',
+                color: 'var(--ieq-hint)',
             }}>
                 {t('nodes.balance.error_parsing')}
             </div>
         );
     }
 
+    const surfaceContent = (
+        <>
+            {/* LHS */}
+            <div className="ieq-drop-zone" style={dropZoneStyle('LHS')}>
+                {parsedData.lhs.map((t, i) => renderTerm(t, i))}
+                {parsedData.lhs.length === 0 && (
+                    <span style={{ opacity: 0.2, fontSize: '1.2rem' }}>0</span>
+                )}
+            </div>
+
+            {/* Equals sign */}
+            <div style={{
+                fontSize: '1.25rem',
+                fontWeight: 700,
+                color: 'var(--accent-bright)',
+                padding: '0 4px',
+                userSelect: 'none',
+                flexShrink: 0,
+                opacity: 0.9,
+                textShadow: '0 0 12px rgba(74,222,128,0.4)',
+            }}>
+                =
+            </div>
+
+            {/* RHS */}
+            <div className="ieq-drop-zone" style={dropZoneStyle('RHS')}>
+                {parsedData.rhs.map((t, i) => renderTerm(t, i))}
+                {parsedData.rhs.length === 0 && (
+                    <span style={{ opacity: 0.2, fontSize: '1.2rem' }}>0</span>
+                )}
+            </div>
+
+            <HintLine />
+        </>
+    );
+
     return (
         <>
-            {/* ── Main equation surface ── */}
+            {/* ── Main equation surface (Inline) ── */}
             <div
-                className="nodrag ieq-surface"
+                ref={surfaceRef}
+                className="nodrag ieq-surface ieq-inline-surface"
+                onPointerEnter={handleSurfaceEnter}
+                onPointerLeave={handleSurfaceLeave}
                 onPointerDown={handleBgPointerDown}
                 onPointerMove={handleBgPointerMove}
                 onPointerUp={handleBgPointerUp}
@@ -956,47 +1126,53 @@ export const InteractiveEquation: React.FC<InteractiveEquationProps> = memo(({ f
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0',
-                    background: 'rgba(0,0,0,0.18)',
+                    background: 'var(--ieq-surface-bg)',
                     borderRadius: '14px',
-                    border: '1px solid rgba(255,255,255,0.07)',
-                    minHeight: '72px',
+                    border: '1px solid var(--ieq-surface-border)',
+                    minHeight: '58px',
                     overflow: 'visible',
                     touchAction: 'none',
-                    paddingBottom: '20px',
+                    paddingBottom: '18px',
+                    opacity: portalParams ? 0 : 1, // Hide inline when portal active
                 }}
             >
-                {/* LHS */}
-                <div className="ieq-drop-zone" style={dropZoneStyle('LHS')}>
-                    {parsedData.lhs.map((t, i) => renderTerm(t, i))}
-                    {parsedData.lhs.length === 0 && (
-                        <span style={{ opacity: 0.2, fontSize: '1.2rem' }}>0</span>
-                    )}
-                </div>
-
-                {/* Equals sign */}
-                <div style={{
-                    fontSize: '1.6rem',
-                    fontWeight: 700,
-                    color: 'var(--accent-bright)',
-                    padding: '0 6px',
-                    userSelect: 'none',
-                    flexShrink: 0,
-                    opacity: 0.9,
-                    textShadow: '0 0 12px rgba(74,222,128,0.4)',
-                }}>
-                    =
-                </div>
-
-                {/* RHS */}
-                <div className="ieq-drop-zone" style={dropZoneStyle('RHS')}>
-                    {parsedData.rhs.map((t, i) => renderTerm(t, i))}
-                    {parsedData.rhs.length === 0 && (
-                        <span style={{ opacity: 0.2, fontSize: '1.2rem' }}>0</span>
-                    )}
-                </div>
-
-                <HintLine />
+                {surfaceContent}
             </div>
+
+            {/* ── Portal Equation Surface (Zoomed) ── */}
+            {portalParams && createPortal(
+                <div
+                    className="nodrag ieq-surface"
+                    onPointerEnter={handleSurfaceEnter}
+                    onPointerLeave={handleSurfaceLeave}
+                    onPointerDown={handleBgPointerDown}
+                    onPointerMove={handleBgPointerMove}
+                    onPointerUp={handleBgPointerUp}
+                    style={{
+                        position: 'fixed',
+                        left: portalParams.left,
+                        top: portalParams.top,
+                        width: portalParams.width,
+                        // Height is deliberately omitted to allow flex wrap content to grow vertically
+                        zIndex: 9999990,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0',
+                        background: 'var(--ieq-portal-bg)',
+                        borderRadius: '14px',
+                        border: '1px solid var(--ieq-portal-border)',
+                        minHeight: '58px',
+                        touchAction: 'none',
+                        paddingBottom: '18px',
+                        boxShadow: '0 30px 80px var(--ieq-portal-shadow-out), inset 0 1px 0 var(--ieq-portal-shadow-in)',
+                        transformOrigin: 'center center',
+                        animation: 'ieq-portal-zoom 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+                    }}
+                >
+                    {surfaceContent}
+                </div>,
+                document.body
+            )}
 
             {/* ── Lasso overlay ── */}
             {selection?.active && createPortal(
@@ -1010,7 +1186,7 @@ export const InteractiveEquation: React.FC<InteractiveEquationProps> = memo(({ f
                     border: '1.5px dashed rgba(74, 222, 128, 0.5)',
                     borderRadius: '4px',
                     pointerEvents: 'none',
-                    zIndex: 1000000,
+                    zIndex: 9999999,
                 }} />,
                 document.body
             )}
@@ -1022,6 +1198,8 @@ export const InteractiveEquation: React.FC<InteractiveEquationProps> = memo(({ f
                 info={selectionAction}
                 onGroup={applySelectionGrouping}
                 onFactor={applySelectionFactor}
+                onExpand={applySelectionExpand}
+                onSimplify={applySelectionSimplify}
                 onClear={() => setSelectionAction(null)}
             />
 
@@ -1034,15 +1212,61 @@ export const InteractiveEquation: React.FC<InteractiveEquationProps> = memo(({ f
             />
 
             <style>{`
+                :root {
+                    --ieq-surface-bg: rgba(0,0,0,0.18);
+                    --ieq-surface-border: rgba(255,255,255,0.07);
+                    --ieq-portal-bg: #151921;
+                    --ieq-portal-border: rgba(255,255,255,0.15);
+                    --ieq-portal-shadow-out: rgba(0,0,0,0.6);
+                    --ieq-portal-shadow-in: rgba(255,255,255,0.05);
+                    --ieq-pill-bg: rgba(255,255,255,0.07);
+                    --ieq-pill-border: rgba(255,255,255,0.12);
+                    --ieq-pill-border-inner: rgba(255,255,255,0.04);
+                    --ieq-pill-bg-selected: rgba(74, 222, 128, 0.18);
+                    --ieq-pill-hover: rgba(255,255,255,0.11);
+                    --ieq-pill-shadow: rgba(0,0,0,0.2);
+                    --ieq-sign-plus: rgba(255,255,255,0.6);
+                    --ieq-sign-minus: rgba(255,120,80,0.9);
+                    --ieq-drop-bg: rgba(79, 172, 254, 0.06);
+                    --ieq-drop-border: rgba(79, 172, 254, 0.7);
+                    --ieq-hint: rgba(255,255,255,0.2);
+                    --ieq-action-bg: rgba(20, 24, 30, 0.95);
+                    --ieq-action-border: rgba(255,255,255,0.12);
+                    --ieq-action-shadow: rgba(0,0,0,0.5);
+                    --ieq-action-text: rgba(255,255,255,0.75);
+                }
+                [data-theme='light'] {
+                    --ieq-surface-bg: rgba(14,47,11,0.04);
+                    --ieq-surface-border: rgba(14,47,11,0.08);
+                    --ieq-portal-bg: #f5f7f9;
+                    --ieq-portal-border: rgba(14,47,11,0.15);
+                    --ieq-portal-shadow-out: rgba(0,0,0,0.15);
+                    --ieq-portal-shadow-in: rgba(255,255,255,0.8);
+                    --ieq-pill-bg: rgba(14,47,11,0.05);
+                    --ieq-pill-border: rgba(14,47,11,0.1);
+                    --ieq-pill-border-inner: rgba(14,47,11,0.04);
+                    --ieq-pill-bg-selected: rgba(74, 222, 128, 0.25);
+                    --ieq-pill-hover: rgba(14,47,11,0.08);
+                    --ieq-pill-shadow: rgba(14,47,11,0.15);
+                    --ieq-sign-plus: rgba(14,47,11,0.4);
+                    --ieq-sign-minus: rgba(255,120,80,0.9);
+                    --ieq-drop-bg: rgba(79, 172, 254, 0.08);
+                    --ieq-drop-border: rgba(79, 172, 254, 0.7);
+                    --ieq-hint: rgba(14,47,11,0.25);
+                    --ieq-action-bg: rgba(255, 255, 255, 0.95);
+                    --ieq-action-border: rgba(14,47,11,0.15);
+                    --ieq-action-shadow: rgba(0,0,0,0.2);
+                    --ieq-action-text: rgba(14,47,11,0.8);
+                }
                 .ieq-term:hover {
-                    box-shadow: 0 6px 20px rgba(0,0,0,0.35) !important;
+                    box-shadow: 0 6px 20px var(--ieq-pill-shadow) !important;
                     transform: translateY(-2px);
                 }
                 .ieq-term:active {
                     cursor: grabbing !important;
                 }
                 .ieq-surface > .ieq-drop-zone > div > .ieq-term:hover > div {
-                    background: rgba(255,255,255,0.11) !important;
+                    background: var(--ieq-pill-hover) !important;
                 }
                 @keyframes ieq-ghost-pop {
                     from { transform: scale(0.8); opacity: 0; }
@@ -1051,6 +1275,10 @@ export const InteractiveEquation: React.FC<InteractiveEquationProps> = memo(({ f
                 @keyframes ieq-bar-in {
                     from { opacity: 0; transform: translateY(6px) scale(0.94); }
                     to   { opacity: 1; transform: translateY(0) scale(1); }
+                }
+                @keyframes ieq-portal-zoom {
+                    from { transform: scale(1); opacity: 0.8; }
+                    to   { transform: scale(1.5); opacity: 1; }
                 }
             `}</style>
         </>

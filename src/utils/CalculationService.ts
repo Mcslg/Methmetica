@@ -108,6 +108,38 @@ export class CalculationService {
                     lhs = factorize(lhs);
                     rhs = factorize(rhs);
                 }
+            } else if (op.op === 'expand' && op.value && op.result) {
+                const expand = (s: string) => {
+                    const escapeRegex = (value: string) => value.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    const regex = new RegExp(escapeRegex(op.value).replace(/\s+/g, '\\s*'));
+                    const match = s.match(regex);
+                    if (!match || match.index === undefined) return s;
+
+                    return `${s.slice(0, match.index)}${op.result}${s.slice(match.index + match[0].length)}`;
+                };
+
+                if (op.targetSide === 'lhs') lhs = expand(lhs);
+                else if (op.targetSide === 'rhs') rhs = expand(rhs);
+                else {
+                    lhs = expand(lhs);
+                    rhs = expand(rhs);
+                }
+            } else if (op.op === 'simplify' && op.value && op.result) {
+                const simplifySelection = (s: string) => {
+                    const escapeRegex = (value: string) => value.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    const regex = new RegExp(escapeRegex(op.value).replace(/\s+/g, '\\s*'));
+                    const match = s.match(regex);
+                    if (!match || match.index === undefined) return s;
+
+                    return `${s.slice(0, match.index)}${op.result}${s.slice(match.index + match[0].length)}`;
+                };
+
+                if (op.targetSide === 'lhs') lhs = simplifySelection(lhs);
+                else if (op.targetSide === 'rhs') rhs = simplifySelection(rhs);
+                else {
+                    lhs = simplifySelection(lhs);
+                    rhs = simplifySelection(rhs);
+                }
             }
         }
 
