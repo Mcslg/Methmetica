@@ -5,6 +5,7 @@ export const zhTW = {
     node_actions: "節點操作",
     duplicate: "複製節點",
     delete: "刪除節點",
+    delete_confirm: "確定要刪除",
     cancel: "取消",
     save: "儲存",
     invalid_file: "專案檔案格式錯誤。",
@@ -17,6 +18,13 @@ export const zhTW = {
     shift_right_click: "Shift + 右鍵",
   },
   categories: {
+    logic: "邏輯",
+    math: "數學",
+    input: "輸入",
+    output: "輸出",
+    system: "系統",
+    community: "社群",
+    core: "核心",
     arithmetic: "算術",
     variable: "變數",
     function: "函數",
@@ -24,10 +32,41 @@ export const zhTW = {
     geometry: "幾何",
     visuals: "視覺",
     interaction: "互動",
-    logic: "邏輯",
     text: "文字",
   },
+  sidebar: {
+    title: "元件庫",
+    project: "專案",
+    system: "系統",
+    nodes_count: "節點數",
+    edges_count: "連接數",
+    save_export: "儲存 / 匯出",
+    load_import: "讀取 / 匯入",
+    theme_toggle: "切換主題",
+    theme_toggle_light: "淺色模式",
+    theme_toggle_dark: "深色模式",
+    lang_toggle: "語言切換",
+    hold_to_clear: "按住以清除",
+    clear_all: "清除課程",
+    drop_to_delete: "放開以刪除",
+    show_more: "顯示更多...",
+    collapse: "收合",
+    update_cloud: "同步至雲端",
+    save_cloud: "儲存至雲端",
+    syncing: "同步中...",
+    unsaved_changes: "尚有未儲存變更"
+  },
   nodes: {
+    project: {
+      title: "專案資訊",
+      name_label: "工作流名稱",
+      icon_label: "圖示",
+      view_label: "聚焦視角",
+      unsaved: "未同步至雲端",
+      desc_label: "專案描述",
+      desc_placeholder: "寫下關於這個工作流的細節...",
+      last_sync: "最後同步"
+    },
     balance: {
       title: "等量公理",
       original: "原始方程式",
@@ -68,23 +107,5 @@ export const zhTW = {
       variable: "變數",
       approach: "趨近於"
     }
-  },
-  sidebar: {
-    title: "元件庫",
-    project: "專案",
-    system: "系統",
-    nodes_count: "節點數",
-    edges_count: "連接數",
-    save_export: "儲存 / 匯出",
-    load_import: "讀取 / 匯入",
-    theme_toggle: "切換主題",
-    theme_toggle_light: "淺色模式",
-    theme_toggle_dark: "深色模式",
-    lang_toggle: "語言切換",
-    hold_to_clear: "按住以清除",
-    clear_all: "清除課程",
-    drop_to_delete: "放開以刪除",
-    show_more: "顯示更多...",
-    collapse: "收合"
   }
 };

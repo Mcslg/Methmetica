@@ -5,7 +5,6 @@ import { EditorContent, useEditor, NodeViewWrapper, ReactNodeViewRenderer, type 
 import { BubbleMenu, FloatingMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown as TiptapMarkdown } from 'tiptap-markdown';
-import { Underline } from '@tiptap/extension-underline';
 import { Highlight } from '@tiptap/extension-highlight';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
@@ -1051,7 +1050,6 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                 tightLists: true,
                 linkify: false,
             }),
-            Underline,
             TextStyle,
             Color,
             Highlight.configure({ multicolor: true }),

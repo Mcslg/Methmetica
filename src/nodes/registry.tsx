@@ -15,7 +15,11 @@ import { SliderNode } from './SliderNode';
 import { BalanceNode } from './BalanceNode';
 import { SolveNode } from './SolveNode';
 import { SoundNode } from './SoundNode';
+import { ProjectNode } from './ProjectNode';
+import { CommunityTemplateNode } from './CommunityTemplateNode';
+import { WorkflowLinkNode } from './WorkflowLinkNode';
 import { CalculationService } from '../utils/CalculationService';
+import type { CommunityNodeTemplate } from '../community/types';
 import {
     dataNodeHandles,
     toolNodeHandles,
@@ -175,6 +179,33 @@ export const nodeRegistry: NodeDefinition[] = [
         metadata: { label: 'Number', desc: 'Constant value', category: 'Math', icon: <Icons.Number />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 120, height: 80 },
         defaultHandles: dataNodeHandles
+    },
+    {
+        type: 'projectNode',
+        component: ProjectNode,
+        metadata: { label: 'Project Metadata', desc: 'Root node for project Info', category: 'System', icon: <Icons.Calculate />, color: 'var(--accent-bright)', hidden: true },
+        defaultSize: { width: 300, height: 80 },
+        defaultHandles: []
+    },
+    {
+        type: 'workflowLinkNode',
+        component: WorkflowLinkNode,
+        metadata: { label: 'Workflow Link', desc: 'Open another workflow', category: 'Community', icon: <Icons.ExternalLink />, color: '#f59e0b' },
+        defaultSize: { width: 280, height: 180 },
+        defaultHandles: [
+            { id: 'h-in', type: 'input', position: 'left', offset: 42, label: 'ref' },
+            { id: 'h-out', type: 'output', position: 'right', offset: 42, label: 'jump' },
+        ]
+    },
+    {
+        type: 'communityTemplateNode',
+        component: CommunityTemplateNode,
+        metadata: { label: 'Community Block', desc: 'Reusable template node', category: 'Community', icon: <Icons.Grid />, color: '#60a5fa', hidden: true },
+        defaultSize: { width: 320, height: 240 },
+        defaultHandles: [
+            { id: 'h-in', type: 'input', position: 'left', offset: 42, label: 'in' },
+            { id: 'h-out', type: 'output', position: 'right', offset: 42, label: 'out' },
+        ]
     }
 ];
 
@@ -192,3 +223,32 @@ export const nodeLibrary = nodeRegistry
         type: n.type,
         ...n.metadata
     }));
+
+export type CatalogEntry = {
+    type: string;
+    templateId?: string;
+    label: string;
+    desc: string;
+    category: string;
+    icon: React.ReactNode;
+    color: string;
+    hidden?: boolean;
+};
+
+export const buildNodeCatalog = (customTemplates: CommunityNodeTemplate[]): CatalogEntry[] => {
+    const communityEntries: CatalogEntry[] = customTemplates.map(template => ({
+        type: 'communityTemplateNode',
+        templateId: template.id,
+        label: template.title,
+        desc: template.summary,
+        category: template.source === 'core' ? 'Core' : 'Community',
+        icon: <Icons.Grid />,
+        color: template.accent,
+        hidden: template.discovery === 'library-and-search' ? false : true,
+    }));
+
+    return [
+        ...nodeLibrary.map(item => ({ ...item, hidden: false } as CatalogEntry)),
+        ...communityEntries,
+    ];
+};

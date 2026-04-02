@@ -49,6 +49,12 @@ export const Icons = {
       <path d="m21 21-4.3-4.3" />
     </svg>
   ),
+  Search: (props?: any) => (
+    <svg {...iconProps} {...props}>
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </svg>
+  ),
   Slider: (props?: any) => (
     <svg {...iconProps} {...props}>
       <line x1="4" y1="21" x2="4" y2="14" />
@@ -198,6 +204,24 @@ export const Icons = {
       <path d="M11 5L6 9H2V15H6L11 19V5Z" />
       <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
       <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+    </svg>
+  ),
+  Collapse: (props?: any) => (
+    <svg {...iconProps} {...props}>
+      <path d="m3 19 6-6M15 5l6 6M5 15l-2 4h4" />
+      <path d="M19 9l2-4h-4" />
+    </svg>
+  ),
+  Check: (props?: any) => (
+    <svg {...iconProps} {...props}>
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  ),
+  Package: (props?: any) => (
+    <svg {...iconProps} {...props}>
+      <path d="M3 7.5 12 3l9 4.5-9 4.5L3 7.5Z" />
+      <path d="M3 7.5v9L12 21l9-4.5v-9" />
+      <path d="M12 12v9" />
     </svg>
   )
 };

@@ -5,6 +5,7 @@ export const en = {
     node_actions: "Node Actions",
     duplicate: "Duplicate Node",
     delete: "Delete Node",
+    delete_confirm: "Are you sure you want to delete",
     cancel: "Cancel",
     save: "Save",
     invalid_file: "Invalid project file format.",
@@ -17,6 +18,13 @@ export const en = {
     shift_right_click: "Shift + Right click",
   },
   categories: {
+    logic: "Logic",
+    math: "Math",
+    input: "Input",
+    output: "Output",
+    system: "System",
+    community: "Community",
+    core: "Core",
     arithmetic: "Arithmetic",
     variable: "Variable",
     function: "Function",
@@ -24,10 +32,41 @@ export const en = {
     geometry: "Geometry",
     visuals: "Visuals",
     interaction: "Interaction",
-    logic: "Logic",
     text: "Text",
   },
+  sidebar: {
+    title: "Library",
+    project: "Project",
+    system: "System",
+    nodes_count: "Nodes",
+    edges_count: "Edges",
+    save_export: "Save / Export",
+    load_import: "Load / Import",
+    theme_toggle: "Toggle Theme",
+    theme_toggle_light: "Light Mode",
+    theme_toggle_dark: "Dark Mode",
+    lang_toggle: "Switch Language",
+    hold_to_clear: "Hold to Clear",
+    clear_all: "Clear All",
+    drop_to_delete: "Drop to Delete",
+    show_more: "Show More...",
+    collapse: "Collapse",
+    update_cloud: "Sync to Cloud",
+    save_cloud: "Save to Cloud",
+    syncing: "Syncing...",
+    unsaved_changes: "Unsaved Changes"
+  },
   nodes: {
+    project: {
+      title: "Project Metadata",
+      name_label: "Workflow Name",
+      icon_label: "Icon",
+      view_label: "Focus Area",
+      unsaved: "Local Session",
+      desc_label: "Description",
+      desc_placeholder: "Details about this workflow...",
+      last_sync: "Last Sync"
+    },
     balance: {
       title: "Balance",
       original: "Original Equation",
@@ -68,23 +107,5 @@ export const en = {
       variable: "VARIABLE",
       approach: "APPROACHES"
     }
-  },
-  sidebar: {
-    title: "Library",
-    project: "Project",
-    system: "System",
-    nodes_count: "Nodes",
-    edges_count: "Edges",
-    save_export: "Save / Export",
-    load_import: "Load / Import",
-    theme_toggle: "Toggle Theme",
-    theme_toggle_light: "Light Mode",
-    theme_toggle_dark: "Dark Mode",
-    lang_toggle: "Switch Language",
-    hold_to_clear: "Hold to Clear",
-    clear_all: "Clear All",
-    drop_to_delete: "Drop to Delete",
-    show_more: "Show More...",
-    collapse: "Collapse"
   }
 };

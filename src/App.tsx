@@ -5,16 +5,18 @@ import { useShallow } from 'zustand/react/shallow';
 import '@xyflow/react/dist/style.css';
 
 import useStore from './store/useStore';
-import { nodeTypes, nodeLibrary, getNodeDefinition } from './nodes/registry';
+import { nodeTypes, getNodeDefinition, buildNodeCatalog } from './nodes/registry';
 import { Sidebar } from './components/Sidebar';
 import { FloatingPalette } from './components/FloatingPalette';
 import { Icons } from './components/Icons';
+import { Dashboard } from './components/Dashboard';
 import { DebugOverlay, countRender } from './components/DebugOverlay';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
+import { AuthBootstrap } from './components/AuthBootstrap';
 
 function Flow() {
   const { t } = useLanguage();
-  const { 
+    const { 
     nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, addNodes, removeNode, 
     handleProximitySnap, updateMergeHint, setAltPressed, setCtrlPressed, theme, 
     isSidebarOpen, setDeletingHover, draggingEjectPos, hoveredNodeId, 
@@ -44,6 +46,7 @@ function Flow() {
     redo: state.redo,
     takeSnapshot: state.takeSnapshot
   })));
+  const communityTemplates = useStore(state => state.communityTemplates);
   const mergeHint = useStore(state => state.mergeHint);
   const { screenToFlowPosition, flowToScreenPosition } = useReactFlow();
   const [paneMenu, setPaneMenu] = useState<{ x: number, y: number, screenX: number, screenY: number } | null>(null);
@@ -172,10 +175,15 @@ function Flow() {
     };
   }, [radialMenu]);
 
-  const filteredLibrary = nodeLibrary.filter(item =>
-    item.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    item.desc.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredLibrary = buildNodeCatalog(communityTemplates).filter(item => {
+    const matches =
+      item.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.desc.toLowerCase().includes(searchQuery.toLowerCase());
+
+    if (!matches) return false;
+    if (!item.hidden) return true;
+    return searchQuery.trim().length > 0;
+  });
 
   const onPaneContextMenu = useCallback((e: MouseEvent | React.MouseEvent | { preventDefault: () => void, clientX: number, clientY: number, shiftKey?: boolean }) => {
     e.preventDefault();
@@ -241,9 +249,56 @@ function Flow() {
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
+  const handleAddNode = useCallback((type: string, variant?: string, customPos?: { x: number, y: number }, templateId?: string) => {
+    const posSource = customPos || (radialMenu ? { x: radialMenu.screenX, y: radialMenu.screenY } : paneMenu ? { x: paneMenu.screenX, y: paneMenu.screenY } : null);
+    if (!posSource) return;
+    const position = screenToFlowPosition({ x: posSource.x, y: posSource.y });
+    const def = getNodeDefinition(type);
+    const template = templateId ? communityTemplates.find(t => t.id === templateId) : null;
+    const handles = template ? [
+      ...template.inputs.map(input => ({
+        id: input.id,
+        type: input.type,
+        position: input.position,
+        offset: input.offset,
+        label: input.label,
+      })),
+      ...template.outputs.map(output => ({
+        id: output.id,
+        type: output.type,
+        position: output.position,
+        offset: output.offset,
+        label: output.label,
+      })),
+    ] : (def ? def.defaultHandles : []);
+    const size = template ? template.size : (def ? def.defaultSize : { width: 200, height: 120 });
+    addNode({
+      id: `${templateId || type}-${Date.now()}`,
+      type,
+      position,
+      width: size.width,
+      height: size.height,
+      style: size,
+      data: {
+        handles,
+        ...(variant ? { variant } : {}),
+        ...(type === 'rangeNode' ? { rangeDef: '0..10' } : {}),
+        ...(template ? {
+          templateId: template.id,
+          templateFields: Object.fromEntries(template.fields.map(field => [field.id, field.defaultValue || ''])),
+          templateSummary: template.summary,
+          templateBestAlgorithm: template.bestAlgorithm,
+          templateAlternatives: template.alternativeAlgorithms,
+          templateRelatedWorkflowIds: template.relatedWorkflowIds,
+        } : {}),
+      }
+    } as any);
+    setPaneMenu(null); setRadialMenu(null);
+  }, [addNode, communityTemplates, paneMenu, radialMenu, screenToFlowPosition]);
+
   const onDrop = useCallback((event: React.DragEvent) => {
       event.preventDefault();
-      const type = event.dataTransfer.getData('application/reactflow');
+      const raw = event.dataTransfer.getData('application/reactflow');
       const ejectDataStr = event.dataTransfer.getData('application/reactflow-eject');
       if (ejectDataStr) {
         try {
@@ -253,25 +308,22 @@ function Flow() {
           return;
         } catch (e) { console.error('Failed to parse eject data', e); }
       }
-      if (type) handleAddNode(type, undefined, { x: event.clientX, y: event.clientY });
-    }, [screenToFlowPosition, addNode]);
-
-  const handleAddNode = (type: string, variant?: string, customPos?: { x: number, y: number }) => {
-    const posSource = customPos || (radialMenu ? { x: radialMenu.screenX, y: radialMenu.screenY } : paneMenu ? { x: paneMenu.screenX, y: paneMenu.screenY } : null);
-    if (!posSource) return;
-    const position = screenToFlowPosition({ x: posSource.x, y: posSource.y });
-    const def = getNodeDefinition(type);
-    const handles = def ? def.defaultHandles : [];
-    const size = def ? def.defaultSize : { width: 200, height: 120 };
-    addNode({ id: `${type}-${Date.now()}`, type, position, style: size, data: { handles, ...(variant ? { variant } : {}), ...(type === 'rangeNode' ? { rangeDef: '0..10' } : {}) } } as any);
-    setPaneMenu(null); setRadialMenu(null);
-  };
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          handleAddNode(parsed.type, undefined, { x: event.clientX, y: event.clientY }, parsed.templateId);
+        } catch {
+          handleAddNode(raw, undefined, { x: event.clientX, y: event.clientY });
+        }
+      }
+    }, [handleAddNode]);
 
   useEffect(() => {
     const handleAddAtCenter = (e: any) => {
       const type = e.detail.type;
+      const templateId = e.detail.templateId;
       const { x, y } = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-      handleAddNode(type, undefined, { x, y });
+      handleAddNode(type, undefined, { x, y }, templateId);
     };
     window.addEventListener('add-node-at-center', handleAddAtCenter);
     return () => window.removeEventListener('add-node-at-center', handleAddAtCenter);
@@ -554,11 +606,17 @@ function Flow() {
 }
 
 function App() {
+  const currentView = useStore(state => state.currentView);
   return (
     <LanguageProvider>
-      <ReactFlowProvider>
-        <Flow />
-      </ReactFlowProvider>
+      <AuthBootstrap />
+      {currentView === 'home' ? (
+        <Dashboard />
+      ) : (
+        <ReactFlowProvider>
+          <Flow />
+        </ReactFlowProvider>
+      )}
     </LanguageProvider>
   );
 }

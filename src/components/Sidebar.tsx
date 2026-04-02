@@ -5,16 +5,24 @@ import { Icons } from './Icons';
 import TitleLogo from '../assets/Title.svg';
 import TitleDarkLogo from '../assets/Title_dark.svg';
 import { useLanguage } from '../contexts/LanguageContext';
+import * as driveService from '../utils/googleDriveService';
 
 export function Sidebar() {
     const { t, language, setLanguage } = useLanguage();
-    const { nodes, edges, setGraph, theme, setTheme, isSidebarOpen, setSidebarOpen, isDeletingHover, isPaletteFloating, setPaletteFloating } = useStore();
+    const { 
+        nodes, edges, setGraph, theme, setTheme, isSidebarOpen, setSidebarOpen, 
+        isDeletingHover, isPaletteFloating, setPaletteFloating, setCurrentView,
+        user, driveConnected, activeFileId, setActiveFileId
+    } = useStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [holdProgress, setHoldProgress] = React.useState(0);
+    const [isSyncing, setIsSyncing] = React.useState(false);
+    const [syncStatus, setSyncStatus] = React.useState<'idle' | 'success' | 'error'>('idle');
     const holdTimerRef = useRef<any>(null);
 
-    const onDragStart = (event: React.DragEvent, nodeType: string) => {
-        event.dataTransfer.setData('application/reactflow', nodeType);
+    const onDragStart = (event: React.DragEvent, nodeType: string, templateId?: string) => {
+        const payload = templateId ? JSON.stringify({ type: nodeType, templateId }) : nodeType;
+        event.dataTransfer.setData('application/reactflow', payload);
         event.dataTransfer.effectAllowed = 'move';
     };
 
@@ -66,6 +74,43 @@ export function Sidebar() {
         }, 20);
     };
 
+    const handleCloudSave = async () => {
+        if (!user || !driveConnected) return;
+        setIsSyncing(true);
+        setSyncStatus('idle');
+        try {
+            // Find workflow name from the project node
+            const projectRoot = nodes.find(n => n.type === 'projectNode');
+            const name = projectRoot?.data?.label || 'Untitled Workflow';
+            
+            const fileId = await driveService.saveWorkflow(name, { nodes, edges }, activeFileId || undefined);
+            setActiveFileId(fileId);
+            
+            // Subtle success feedback
+            setSyncStatus('success');
+            setTimeout(() => setSyncStatus('idle'), 3000);
+        } catch (err) {
+            console.error("Cloud save failed", err);
+            setSyncStatus('error');
+            setTimeout(() => setSyncStatus('idle'), 3000);
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
+    const handleBackToHome = () => {
+        const hasWork = nodes.length > 1 || edges.length > 0;
+        const isSaved = activeFileId !== null;
+        
+        if (hasWork && !isSaved && !user) {
+            if (!confirm(t('common.unsaved_warning') || "You are not logged in and your work isn't saved to cloud. Exit anyway?")) return;
+        } else if (hasWork && !isSaved && user) {
+            if (!confirm(t('common.unsaved_warning') || "You have unsaved changes. Exit to Dashboard?")) return;
+        }
+        
+        setCurrentView('home');
+    };
+
     const stopHold = () => {
         if (holdTimerRef.current) clearInterval(holdTimerRef.current);
         setHoldProgress(0);
@@ -74,7 +119,11 @@ export function Sidebar() {
     return (
         <div className={`sidebar-container ${isSidebarOpen ? 'open' : 'closed'}`}>
             <div className="sidebar-drawer">
-                <div className="sidebar-header">
+                <div 
+                    className="sidebar-header clickable" 
+                    onClick={handleBackToHome}
+                    title={t('common.goto_home') || "Go to Dashboard"}
+                >
                     <img
                         src={theme === 'dark' ? TitleDarkLogo : TitleLogo}
                         alt="methmatica"
@@ -101,6 +150,27 @@ export function Sidebar() {
 
                 <div className="sidebar-section">
                     <label>{t('sidebar.project')}</label>
+                    {user && driveConnected && (
+                        <button 
+                            className={`sidebar-btn cloud ${syncStatus !== 'idle' ? syncStatus : ''}`} 
+                            onClick={handleCloudSave} 
+                            disabled={isSyncing}
+                        >
+                            {isSyncing ? (
+                                <div className="spinner-small" />
+                            ) : syncStatus === 'success' ? (
+                                <Icons.Check />
+                            ) : syncStatus === 'error' ? (
+                                <Icons.Clear />
+                            ) : (
+                                <Icons.Languages />
+                            )} 
+                            {syncStatus === 'success' ? 
+                                (t('sidebar.synced') || 'Saved!') : 
+                                (activeFileId ? (t('sidebar.update_cloud') || 'Sync to Cloud') : (t('sidebar.save_cloud') || 'Save to Cloud'))
+                            }
+                        </button>
+                    )}
                     <button className="sidebar-btn" onClick={handleSave}>
                         <Icons.Save /> {t('sidebar.save_export')}
                     </button>
@@ -208,7 +278,18 @@ export function Sidebar() {
                     display: flex;
                     flex-direction: column;
                     align-items: flex-start;
-                    pointer-events: none;
+                }
+                .sidebar-header.clickable {
+                    cursor: pointer;
+                    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.2s;
+                    pointer-events: auto;
+                }
+                .sidebar-header.clickable:hover {
+                    transform: scale(1.05) translateX(4px);
+                    opacity: 0.8;
+                }
+                .sidebar-header.clickable:active {
+                    transform: scale(0.95);
                 }
                 .sidebar-header p {
                     margin: 4px 0 0 0;
@@ -419,6 +500,35 @@ export function Sidebar() {
                     from { opacity: 0; }
                     to { opacity: 1; }
                 }
+                .sidebar-btn.cloud {
+                    background: var(--accent-light);
+                    border-color: var(--accent);
+                    color: var(--accent-bright);
+                    margin-bottom: 4px;
+                }
+                .sidebar-btn.cloud:hover:not(:disabled) {
+                    background: var(--accent);
+                    color: #fff;
+                }
+                .sidebar-btn.cloud.success {
+                    background: #059669;
+                    border-color: #10b981;
+                    color: white;
+                }
+                .sidebar-btn.cloud.error {
+                    background: #dc2626;
+                    border-color: #ef4444;
+                    color: white;
+                }
+                .spinner-small {
+                    width: 14px;
+                    height: 14px;
+                    border: 2px solid rgba(74, 222, 128, 0.2);
+                    border-top-color: var(--accent-bright);
+                    border-radius: 50%;
+                    animation: spin 0.8s linear infinite;
+                }
+                @keyframes spin { to { transform: rotate(360deg); } }
             `}</style>
         </div>
     );

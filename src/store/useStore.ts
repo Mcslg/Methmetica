@@ -3,6 +3,9 @@ import { persist } from 'zustand/middleware';
 import { type Edge } from '@xyflow/react';
 import { getNodeDefinition } from '../nodes/registry';
 import { canMerge, MergeRules, type ProxyableType } from '../config/mergeRegistry';
+import { defaultCommunityTemplates } from '../community/catalog';
+import type { CommunityNodeTemplate, WorkflowVisibility } from '../community/types';
+import type { AppUser, AuthStatus } from '../integrations/supabase/types';
 import {
     type Connection,
     type EdgeChange,
@@ -64,6 +67,21 @@ export type NodeData = {
     inputSignature?: string; // A signature combining all incoming variable edge values to trigger calculation hooks
     inputs?: Record<string, string>; // Multi-input support (handleId -> value)
     limitPoint?: string; // For CalculusNode limit target (e.g. x -> a)
+    description?: string; // For ProjectNode metadata
+    tags?: string[]; // Shared workflow/tag metadata for builder root
+    templateId?: string; // For reusable community template nodes
+    templateFields?: Record<string, string>;
+    templateSummary?: string;
+    templateBestAlgorithm?: string;
+    templateAlternatives?: string[];
+    templateRelatedWorkflowIds?: string[];
+    targetWorkflowId?: string;
+    targetWorkflowTitle?: string;
+    callout?: string;
+    builderDraft?: CommunityNodeTemplate;
+    publishStatus?: string;
+    supabaseWorkflowId?: string;
+    visibility?: WorkflowVisibility;
 };
 
 export type AppNode = Node<NodeData>;
@@ -126,10 +144,37 @@ export type AppState = {
     takeSnapshot: (force?: boolean) => void;
     undo: () => void;
     redo: () => void;
+    currentView: 'home' | 'editor';
+    setCurrentView: (view: 'home' | 'editor') => void;
+
+    // [CLOUD] Google Drive Integration
+    user: AppUser | null;
+    authStatus: AuthStatus;
+    driveConnected: boolean;
+    activeFileId: string | null;
+    workflowList: any[];
+    isLoadingWorkflows: boolean;
+    communityTemplates: CommunityNodeTemplate[];
+    setUser: (user: AppUser | null) => void;
+    setAuthStatus: (status: AuthStatus) => void;
+    setDriveConnected: (connected: boolean) => void;
+    setActiveFileId: (id: string | null) => void;
+    setWorkflowList: (list: any[]) => void;
+    setLoadingWorkflows: (loading: boolean) => void;
+    setCommunityTemplates: (templates: CommunityNodeTemplate[]) => void;
+    upsertCommunityTemplate: (template: CommunityNodeTemplate) => void;
 };
 
 // Initial setup nodes
-const initialNodes: AppNode[] = [];
+const initialNodes: AppNode[] = [
+    {
+        id: 'project-root',
+        type: 'projectNode',
+        position: { x: -400, y: -200 },
+        data: { label: 'My Amazing Workflow', description: '', tags: [], visibility: 'private' },
+        deletable: false,
+    }
+];
 
 const useStore = create<AppState>()(
     persist(
@@ -138,7 +183,30 @@ const useStore = create<AppState>()(
             edges: [],
             theme: 'dark',
             setTheme: (theme) => set({ theme }),
+            currentView: 'editor', // Default to editor for now to not break existing flow
+            setCurrentView: (currentView) => set({ currentView }),
             isSidebarOpen: true,
+
+            // [CLOUD]
+            user: null,
+            authStatus: 'idle',
+            driveConnected: false,
+            activeFileId: null,
+            workflowList: [],
+            isLoadingWorkflows: false,
+            communityTemplates: defaultCommunityTemplates,
+            setUser: (user) => set({ user }),
+            setAuthStatus: (authStatus) => set({ authStatus }),
+            setDriveConnected: (driveConnected) => set({ driveConnected }),
+            setActiveFileId: (activeFileId) => set({ activeFileId }),
+            setWorkflowList: (workflowList) => set({ workflowList }),
+            setLoadingWorkflows: (isLoadingWorkflows) => set({ isLoadingWorkflows }),
+            setCommunityTemplates: (communityTemplates) => set({ communityTemplates }),
+            upsertCommunityTemplate: (template) => set((state) => {
+                const next = state.communityTemplates.filter(item => item.id !== template.id);
+                return { communityTemplates: [template, ...next] };
+            }),
+
             setSidebarOpen: (isSidebarOpen) => set({ isSidebarOpen }),
             isDeletingHover: false,
             setDeletingHover: (isDeletingHover) => set({ isDeletingHover }),
@@ -431,11 +499,31 @@ const useStore = create<AppState>()(
                 if (nodes.length > 0 || edges.length > 0) {
                     get().takeSnapshot(); // Snapshot BEFORE clear-all or massive change
                 }
-                set({ nodes, edges });
-                // If it's a clear-all action (empty nodes and edges), we should clear globalVars too
-                if (nodes.length === 0 && edges.length === 0) {
-                    set({ globalVars: {} });
+                
+                // Ensure project-root exists
+                const hasRoot = nodes.some(n => n.type === 'projectNode');
+                let finalNodes = nodes;
+                
+                if (!hasRoot && (nodes.length > 0 || edges.length > 0)) {
+                    finalNodes = [
+                        {
+                            id: 'project-root',
+                            type: 'projectNode',
+                            position: { x: -100, y: -100 },
+                            data: { label: 'My Amazing Workflow', description: '', tags: [], visibility: 'private' },
+                            deletable: false,
+                        },
+                        ...nodes
+                    ];
+                } else if (nodes.length === 0 && edges.length === 0) {
+                    // If it's a clear-all action, restore the root node
+                    finalNodes = initialNodes;
+                    set({ globalVars: {}, activeFileId: null });
                 }
+
+                set({ nodes: finalNodes, edges });
+                // Defer evaluation
+                setTimeout(() => get().evaluateGraph(), 50);
             },
 
             isAltPressed: false,
@@ -996,6 +1084,12 @@ const useStore = create<AppState>()(
           theme: state.theme,
           isSidebarOpen: state.isSidebarOpen,
           globalVars: state.globalVars,
+          currentView: state.currentView,
+          user: state.user,
+          authStatus: state.authStatus,
+          driveConnected: state.driveConnected,
+          activeFileId: state.activeFileId,
+          communityTemplates: state.communityTemplates,
       }),
   }
 )

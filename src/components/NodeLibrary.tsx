@@ -3,7 +3,7 @@ import { nodeLibrary } from '../nodes/registry';
 import { useLanguage } from '../contexts/LanguageContext';
 
 interface NodeLibraryProps {
-    onDragStart: (event: React.DragEvent, nodeType: string) => void;
+    onDragStart: (event: React.DragEvent, nodeType: string, templateId?: string) => void;
     layout?: 'sidebar' | 'float';
 }
 
