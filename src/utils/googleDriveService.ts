@@ -2,8 +2,8 @@
  * Google Drive Service for Methmetica (Serverless)
  */
 
-const CLIENT_ID = '139958721937-dlb3a6j0m5rcenpia9ctdtuhsqbmp4lr.apps.googleusercontent.com';
-const API_KEY = 'AIzaSyD4tWbKvE3BuIjYpcKuEIJUWbBRRldxpps';
+const CLIENT_ID = import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID;
+const API_KEY = import.meta.env.VITE_GOOGLE_DRIVE_API_KEY;
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
 const WORKFLOW_APP_TYPE = 'methmetica-workflow';
@@ -28,6 +28,10 @@ export type WorkflowFile = {
 
 // Initialize GAPI
 export async function initGapi() {
+  if (!API_KEY) {
+    throw new Error('VITE_GOOGLE_DRIVE_API_KEY is missing.');
+  }
+
   return new Promise<void>((resolve) => {
     const script = document.createElement('script');
     script.src = 'https://apis.google.com/js/api.js';
@@ -46,6 +50,10 @@ export async function initGapi() {
 
 // Initialize GIS (Google Identity Services)
 export async function initGis(loginHint?: string) {
+  if (!CLIENT_ID) {
+    throw new Error('VITE_GOOGLE_DRIVE_CLIENT_ID is missing.');
+  }
+
   return new Promise<void>((resolve) => {
     const script = document.createElement('script');
     script.src = 'https://accounts.google.com/gsi/client';
