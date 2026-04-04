@@ -8,7 +8,8 @@ import type {
 } from '../../community/types';
 import type { AppNode } from '../../store/useStore';
 import type { AppUser } from './types';
-import { supabase } from './client';
+import { isSupabaseConfigured, supabase } from './client';
+import { withSupabaseTimeout } from './utils';
 
 type WorkflowStatus = 'draft' | 'published' | 'archived';
 
@@ -51,7 +52,6 @@ type WorkflowRow = {
 };
 
 const FALLBACK_AUTHOR = 'Methmatica Community';
-
 const slugify = (value: string) =>
   value
     .toLowerCase()
@@ -109,13 +109,16 @@ const rowToBlueprint = (row: WorkflowRow): WorkflowBlueprint => ({
 export async function listPublicWorkflows() {
   if (!supabase) return [];
 
-  const { data, error } = await supabase
-    .from('workflows')
-    .select('id, owner_id, slug, title, description, tags, visibility, status, workflow_json, published_at, updated_at, created_at')
-    .in('visibility', ['public', 'core'])
-    .eq('status', 'published')
-    .order('published_at', { ascending: false, nullsFirst: false })
-    .order('updated_at', { ascending: false });
+  const { data, error } = await withSupabaseTimeout(
+    supabase
+      .from('workflows')
+      .select('id, owner_id, slug, title, description, tags, visibility, status, workflow_json, published_at, updated_at, created_at')
+      .in('visibility', ['public', 'core'])
+      .eq('status', 'published')
+      .order('published_at', { ascending: false, nullsFirst: false })
+      .order('updated_at', { ascending: false }),
+    'Loading public workflows'
+  );
 
   if (error) throw error;
   return ((data ?? []) as WorkflowRow[]).map(rowToCard);
@@ -124,11 +127,14 @@ export async function listPublicWorkflows() {
 export async function getWorkflowBlueprintFromSupabase(workflowId: string) {
   if (!supabase) return null;
 
-  const { data, error } = await supabase
-    .from('workflows')
-    .select('id, owner_id, slug, title, description, tags, visibility, status, workflow_json, published_at, updated_at, created_at')
-    .eq('id', workflowId)
-    .maybeSingle();
+  const { data, error } = await withSupabaseTimeout(
+    supabase
+      .from('workflows')
+      .select('id, owner_id, slug, title, description, tags, visibility, status, workflow_json, published_at, updated_at, created_at')
+      .eq('id', workflowId)
+      .maybeSingle(),
+    'Opening workflow'
+  );
 
   if (error) throw error;
   if (!data) return null;
@@ -181,7 +187,67 @@ export async function publishWorkflowToSupabase(payload: WorkflowPayload) {
         .select('id, owner_id, slug, title, description, tags, visibility, status, workflow_json, published_at, updated_at, created_at')
         .single();
 
-  const { data, error } = await query;
+  const { data, error } = await withSupabaseTimeout(query, 'Publishing workflow');
   if (error) throw error;
   return rowToBlueprint(data as WorkflowRow);
+}
+
+export async function runSupabaseHealthCheck() {
+  const storageKeyPrefix = 'sb-';
+  const authTokenSuffix = '-auth-token';
+  const storedSessionKey = typeof window !== 'undefined'
+    ? Object.keys(window.localStorage).find((key) => key.startsWith(storageKeyPrefix) && key.endsWith(authTokenSuffix)) || null
+    : null;
+
+  if (!supabase || !isSupabaseConfigured) {
+    return {
+      configured: false,
+      storedSession: false,
+      authApiReachable: false,
+      workflowsReachable: false,
+      message: 'Supabase envs are missing.',
+    };
+  }
+
+  try {
+    const {
+      data: sessionData,
+      error: sessionError,
+    } = await withSupabaseTimeout(
+      supabase.auth.getSession(),
+      'Checking auth session'
+    );
+
+    const authApiReachable = !sessionError;
+
+    const { error: workflowError } = await withSupabaseTimeout(
+      supabase
+        .from('workflows')
+        .select('id', { count: 'exact', head: true }),
+      'Checking workflows table'
+    );
+
+    const workflowsReachable = !workflowError;
+
+    return {
+      configured: true,
+      storedSession: Boolean(storedSessionKey),
+      authApiReachable,
+      workflowsReachable,
+      sessionUserId: sessionData.session?.user?.id ?? null,
+      storedSessionKey,
+      message: workflowError?.message || sessionError?.message || 'Supabase session and workflows table are ready.',
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Supabase health check failed.';
+    return {
+      configured: true,
+      storedSession: Boolean(storedSessionKey),
+      authApiReachable: false,
+      workflowsReachable: false,
+      sessionUserId: null,
+      storedSessionKey,
+      message,
+    };
+  }
 }

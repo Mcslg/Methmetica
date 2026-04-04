@@ -1,11 +1,12 @@
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from './client';
-import type { AppProfile, AppUser } from './types';
+import type { AppProfile, AppRole, AppUser } from './types';
+import { withSupabaseTimeout } from './utils';
 
 const makeFallbackAvatar = (name: string) =>
   `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'User')}&background=0f766e&color=fff&bold=true`;
 
-const profileToAppUser = (user: User, profile: AppProfile | null): AppUser => {
+export const profileToAppUser = (user: User, profile: AppProfile | null): AppUser => {
   const name =
     profile?.display_name ||
     user.user_metadata?.full_name ||
@@ -50,50 +51,52 @@ export async function getCurrentSession(): Promise<Session | null> {
   return data.session;
 }
 
-export async function ensureProfile(user: User): Promise<AppProfile | null> {
-  if (!supabase) return null;
-
-  const { data: existing, error: fetchError } = await supabase
-    .from('profiles')
-    .select('id, email, display_name, avatar_url, role, created_at, updated_at')
-    .eq('id', user.id)
-    .maybeSingle();
-
-  if (fetchError) throw fetchError;
-  if (existing) return existing as AppProfile;
-
-  const payload = {
-    id: user.id,
-    email: user.email || '',
-    display_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'User',
-    avatar_url: user.user_metadata?.avatar_url || null,
-    role: 'user',
-  };
-
-  const { data: created, error: insertError } = await supabase
-    .from('profiles')
-    .insert(payload)
-    .select('id, email, display_name, avatar_url, role, created_at, updated_at')
-    .single();
-
-  if (insertError) throw insertError;
-  return created as AppProfile;
-}
-
 export async function buildAppUserFromSession(session: Session | null): Promise<AppUser | null> {
   if (!session?.user) return null;
-  const profile = await ensureProfile(session.user);
-  return profileToAppUser(session.user, profile);
+  return profileToAppUser(session.user, null);
+}
+
+export async function getUserRole(userId: string): Promise<AppRole> {
+  if (!supabase) return 'user';
+
+  try {
+    const { data, error } = await withSupabaseTimeout(
+      supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', userId)
+        .maybeSingle(),
+      'Loading user role'
+    );
+
+    if (error) {
+      throw error;
+    }
+
+    return (data?.role as AppRole | undefined) || 'user';
+    } catch (error) {
+      console.warn('[auth] getUserRole fallback to user:', error);
+      return 'user';
+    }
 }
 
 export function onAuthStateChange(callback: (user: AppUser | null) => Promise<void> | void) {
   if (!supabase || !isSupabaseConfigured) {
-    return { unsubscribe() {} };
+    return { unsubscribe() { } };
   }
 
-  const { data } = supabase.auth.onAuthStateChange(async (_event, session) => {
-    const appUser = await buildAppUserFromSession(session);
-    await callback(appUser);
+  const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
+    try {
+      const appUser = await buildAppUserFromSession(session);
+      await callback(appUser);
+    } catch (error) {
+      console.error('[auth] onAuthStateChange error:', event, error);
+
+      if (event === 'INITIAL_SESSION' && session?.user) {
+        const fallbackUser = profileToAppUser(session.user, null);
+        await callback(fallbackUser);
+      }
+    }
   });
 
   return {
@@ -102,4 +105,3 @@ export function onAuthStateChange(callback: (user: AppUser | null) => Promise<vo
     },
   };
 }
-

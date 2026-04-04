@@ -8,7 +8,11 @@ import { getCommunityWorkflowBlueprint, publicCommunityWorkflows } from '../comm
 import type { CommunityWorkflowCard } from '../community/types';
 import { isSupabaseConfigured } from '../integrations/supabase/client';
 import { signInWithGoogle, signOutSupabase } from '../integrations/supabase/auth';
-import { getWorkflowBlueprintFromSupabase, listPublicWorkflows } from '../integrations/supabase/workflows';
+import {
+  getWorkflowBlueprintFromSupabase,
+  listPublicWorkflows,
+  runSupabaseHealthCheck,
+} from '../integrations/supabase/workflows';
 
 type DashboardTab = 'community' | 'private';
 
@@ -34,6 +38,16 @@ export function Dashboard() {
   const [activeTab, setActiveTab] = useState<DashboardTab>('private');
   const [publicWorkflows, setPublicWorkflows] = useState<CommunityWorkflowCard[]>(publicCommunityWorkflows);
   const [isLoadingPublicWorkflows, setIsLoadingPublicWorkflows] = useState(false);
+  const [publicWorkflowError, setPublicWorkflowError] = useState<string | null>(null);
+  const [supabaseHealth, setSupabaseHealth] = useState<{
+    configured: boolean;
+    storedSession: boolean;
+    authApiReachable: boolean;
+    workflowsReachable: boolean;
+    message: string;
+    sessionUserId?: string | null;
+    storedSessionKey?: string | null;
+  } | null>(null);
 
   useEffect(() => {
     async function init() {
@@ -90,10 +104,12 @@ export function Dashboard() {
     async function loadPublicWorkflows() {
       if (!isSupabaseConfigured) {
         setPublicWorkflows(publicCommunityWorkflows);
+        setPublicWorkflowError(null);
         return;
       }
 
       setIsLoadingPublicWorkflows(true);
+      setPublicWorkflowError(null);
       try {
         const workflows = await listPublicWorkflows();
         if (!isCancelled) {
@@ -103,6 +119,7 @@ export function Dashboard() {
         console.error('Failed to load public workflows', err);
         if (!isCancelled) {
           setPublicWorkflows(publicCommunityWorkflows);
+          setPublicWorkflowError(err instanceof Error ? err.message : 'Failed to load public workflows');
         }
       } finally {
         if (!isCancelled) {
@@ -112,6 +129,23 @@ export function Dashboard() {
     }
 
     loadPublicWorkflows();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function checkSupabase() {
+      const result = await runSupabaseHealthCheck();
+      if (!isCancelled) {
+        setSupabaseHealth(result);
+      }
+    }
+
+    checkSupabase();
 
     return () => {
       isCancelled = true;
@@ -303,6 +337,34 @@ export function Dashboard() {
           </div>
         </section>
 
+        {import.meta.env.DEV && (
+          <section className="supabase-health-panel">
+            <div className={`health-chip ${supabaseHealth?.configured ? 'ok' : 'warn'}`}>
+              <span>Supabase config</span>
+              <strong>{supabaseHealth?.configured ? 'ready' : 'missing'}</strong>
+            </div>
+            <div className={`health-chip ${supabaseHealth?.storedSession ? 'ok' : 'warn'}`}>
+              <span>Stored session</span>
+              <strong>{supabaseHealth?.storedSession ? 'present' : 'missing'}</strong>
+            </div>
+            <div className={`health-chip ${user ? 'ok' : 'warn'}`}>
+              <span>UI user</span>
+              <strong>{user ? 'present' : 'missing'}</strong>
+            </div>
+            <div className={`health-chip ${supabaseHealth?.authApiReachable ? 'ok' : 'warn'}`}>
+              <span>Auth API</span>
+              <strong>{supabaseHealth?.authApiReachable ? 'reachable' : 'not ready'}</strong>
+            </div>
+            <div className={`health-chip ${supabaseHealth?.workflowsReachable ? 'ok' : 'warn'}`}>
+              <span>Workflows table</span>
+              <strong>{supabaseHealth?.workflowsReachable ? 'reachable' : 'not ready'}</strong>
+            </div>
+            <div className="health-message">
+              {supabaseHealth?.message || 'Checking Supabase connection...'}
+            </div>
+          </section>
+        )}
+
         <div className="dashboard-actions">
           <button className="new-workflow-btn primary" onClick={handleCreateNew}>
             <span className="plus">+</span> New Workflow
@@ -333,6 +395,21 @@ export function Dashboard() {
               <div className="loading-state" style={{ gridColumn: '1 / -1' }}>
                 <div className="spinner"></div>
                 <p>Loading public workflows...</p>
+              </div>
+            )}
+            {!isLoadingPublicWorkflows && publicWorkflowError && (
+              <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
+                <Icons.Clear size={42} style={{ opacity: 0.18, marginBottom: 12 }} />
+                <h3>Public workflows could not load</h3>
+                <p>{publicWorkflowError}</p>
+                <p>現在先顯示本地示例資料，你仍然可以繼續操作。</p>
+              </div>
+            )}
+            {!isLoadingPublicWorkflows && filteredPublicWorkflows.length === 0 && !publicWorkflowError && (
+              <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
+                <Icons.Search size={42} style={{ opacity: 0.12, marginBottom: 12 }} />
+                <h3>No public workflows yet</h3>
+                <p>第一條公開 workflow 發布後，就會出現在這裡。</p>
               </div>
             )}
             {filteredPublicWorkflows.map(workflow => (
@@ -640,6 +717,43 @@ export function Dashboard() {
           color: var(--text-sub);
           text-transform: uppercase;
           letter-spacing: 0.08em;
+        }
+        .supabase-health-panel {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 10px;
+          padding: 12px 14px;
+          border: 1px solid var(--border-node);
+          border-radius: 12px;
+          background: rgba(15, 23, 42, 0.35);
+        }
+        .health-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(148, 163, 184, 0.2);
+          font-size: 0.72rem;
+          color: var(--text-sub);
+        }
+        .health-chip strong {
+          font-size: 0.76rem;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+        }
+        .health-chip.ok strong {
+          color: #4ade80;
+        }
+        .health-chip.warn strong {
+          color: #f59e0b;
+        }
+        .health-message {
+          min-width: 240px;
+          flex: 1;
+          font-size: 0.8rem;
+          color: var(--text-sub);
         }
         .dashboard-actions {
           display: flex;

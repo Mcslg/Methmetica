@@ -22,7 +22,7 @@ export const AppendNode = memo(function AppendNode({ id, data, selected }: NodeP
             defaultLabel="Appender"
             className="append-node"
             headerExtras={
-                <button 
+                <button
                     onClick={toggleMode}
                     className="variant-toggle"
                     style={{

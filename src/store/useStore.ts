@@ -20,6 +20,9 @@ import {
 } from '@xyflow/react';
 import { incrementEvalGraph } from '../components/DebugOverlay';
 
+export const createGraphSignature = (nodes: AppNode[], edges: Edge[]) =>
+    JSON.stringify({ nodes, edges });
+
 export type HandleType = 'input' | 'output' | 'gate-in';
 
 export type CustomHandle = {
@@ -155,6 +158,7 @@ export type AppState = {
     workflowList: any[];
     isLoadingWorkflows: boolean;
     communityTemplates: CommunityNodeTemplate[];
+    savedGraphSignature: string;
     setUser: (user: AppUser | null) => void;
     setAuthStatus: (status: AuthStatus) => void;
     setDriveConnected: (connected: boolean) => void;
@@ -163,6 +167,7 @@ export type AppState = {
     setLoadingWorkflows: (loading: boolean) => void;
     setCommunityTemplates: (templates: CommunityNodeTemplate[]) => void;
     upsertCommunityTemplate: (template: CommunityNodeTemplate) => void;
+    markCurrentGraphSaved: () => void;
 };
 
 // Initial setup nodes
@@ -195,6 +200,7 @@ const useStore = create<AppState>()(
             workflowList: [],
             isLoadingWorkflows: false,
             communityTemplates: defaultCommunityTemplates,
+            savedGraphSignature: createGraphSignature(initialNodes, []),
             setUser: (user) => set({ user }),
             setAuthStatus: (authStatus) => set({ authStatus }),
             setDriveConnected: (driveConnected) => set({ driveConnected }),
@@ -206,6 +212,10 @@ const useStore = create<AppState>()(
                 const next = state.communityTemplates.filter(item => item.id !== template.id);
                 return { communityTemplates: [template, ...next] };
             }),
+            markCurrentGraphSaved: () => {
+                const { nodes, edges } = get();
+                set({ savedGraphSignature: createGraphSignature(nodes, edges) });
+            },
 
             setSidebarOpen: (isSidebarOpen) => set({ isSidebarOpen }),
             isDeletingHover: false,
@@ -521,7 +531,7 @@ const useStore = create<AppState>()(
                     set({ globalVars: {}, activeFileId: null });
                 }
 
-                set({ nodes: finalNodes, edges });
+                set({ nodes: finalNodes, edges, savedGraphSignature: createGraphSignature(finalNodes, edges) });
                 // Defer evaluation
                 setTimeout(() => get().evaluateGraph(), 50);
             },

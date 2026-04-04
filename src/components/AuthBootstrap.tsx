@@ -1,6 +1,10 @@
 import { useEffect } from 'react';
 import useStore from '../store/useStore';
-import { buildAppUserFromSession, getCurrentSession, onAuthStateChange } from '../integrations/supabase/auth';
+import {
+  buildAppUserFromSession,
+  getCurrentSession,
+  onAuthStateChange,
+} from '../integrations/supabase/auth';
 import { isSupabaseConfigured } from '../integrations/supabase/client';
 
 export function AuthBootstrap() {
@@ -9,6 +13,7 @@ export function AuthBootstrap() {
 
   useEffect(() => {
     let cancelled = false;
+    let booted = false;
 
     async function boot() {
       if (!isSupabaseConfigured) {
@@ -20,7 +25,9 @@ export function AuthBootstrap() {
       try {
         const session = await getCurrentSession();
         const appUser = await buildAppUserFromSession(session);
+
         if (cancelled) return;
+        booted = true;
         setUser(appUser);
         setAuthStatus(appUser ? 'authenticated' : 'anonymous');
       } catch (error) {
@@ -34,6 +41,12 @@ export function AuthBootstrap() {
 
     const subscription = onAuthStateChange(async (appUser) => {
       if (cancelled) return;
+      if (!booted) {
+        booted = true;
+        setUser(appUser);
+        setAuthStatus(appUser ? 'authenticated' : 'anonymous');
+        return;
+      }
       setUser(appUser);
       setAuthStatus(appUser ? 'authenticated' : 'anonymous');
     });
@@ -46,4 +59,3 @@ export function AuthBootstrap() {
 
   return null;
 }
-

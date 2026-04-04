@@ -7,6 +7,7 @@ import { CommunityNodeMaker, buildTemplateFromBlocks } from '../components/Commu
 import type { CommunityNodeTemplate, WorkflowVisibility } from '../community/types';
 import { makeInitialDraft, syncDraftWithWorkflowMetadata } from '../community/templateDraft';
 import { publishWorkflowToSupabase } from '../integrations/supabase/workflows';
+import { getUserRole } from '../integrations/supabase/auth';
 
 const parseTags = (value: string) => value
   .split(',')
@@ -15,7 +16,7 @@ const parseTags = (value: string) => value
 
 export function ProjectNode({ id, data }: { id: string; data: any }) {
   const { setViewport, getNodes } = useReactFlow();
-  const { updateNodeData, activeFileId, upsertCommunityTemplate, nodes, edges, user } = useStore();
+  const { updateNodeData, activeFileId, upsertCommunityTemplate, nodes, edges, user, setUser, markCurrentGraphSaved } = useStore();
   const { t } = useLanguage();
 
   const [localName, setLocalName] = React.useState(data.label || '');
@@ -102,6 +103,24 @@ export function ProjectNode({ id, data }: { id: string; data: any }) {
       return;
     }
 
+    let effectiveUser = user;
+
+    if (localVisibility === 'core' && !['trusted_editor', 'admin'].includes(user.role)) {
+      const fetchedRole = await getUserRole(user.id);
+      if (fetchedRole !== user.role) {
+        effectiveUser = { ...user, role: fetchedRole };
+        setUser(effectiveUser);
+      }
+
+      if (!['trusted_editor', 'admin'].includes(fetchedRole)) {
+        updateNodeData(id, {
+          ...data,
+          publishStatus: '只有 trusted_editor 或 admin 能發布 core workflow。先改成 public，或提升身份後再發布。',
+        });
+        return;
+      }
+    }
+
     setIsPublishing(true);
     const syncedDraft = syncDraftWithWorkflowMetadata(draft, {
       title: (localName || data.label || draft.title).trim() || draft.title,
@@ -142,7 +161,7 @@ export function ProjectNode({ id, data }: { id: string; data: any }) {
         visibility: localVisibility,
         nodes: publishedNodes,
         edges,
-        author: user,
+        author: effectiveUser,
       });
 
       const publishedTemplate = {
@@ -161,6 +180,7 @@ export function ProjectNode({ id, data }: { id: string; data: any }) {
         supabaseWorkflowId: blueprint.card.id,
         publishStatus: `已發布 "${publishedTemplate.title}" 到公開社群，可透過右鍵搜尋找到，也會出現在 Public Workflows。`,
       });
+      setTimeout(() => markCurrentGraphSaved(), 0);
     } catch (error) {
       console.error('Failed to publish workflow', error);
       const message = error instanceof Error ? error.message : '發布失敗';
@@ -273,6 +293,11 @@ export function ProjectNode({ id, data }: { id: string; data: any }) {
               </select>
             </label>
           </div>
+          <div className="root-visibility-hint">
+            {localVisibility === 'private' && 'Private 不會出現在公開社群。'}
+            {localVisibility === 'public' && 'Public 會出現在公開社群，任何人都可讀。'}
+            {localVisibility === 'core' && 'Core 只允許 trusted_editor / admin 發布與更新。'}
+          </div>
 
           {!builderDraft ? (
             <div className="builder-cta">
@@ -362,6 +387,12 @@ export function ProjectNode({ id, data }: { id: string; data: any }) {
           color: var(--text-main);
           padding: 12px 14px;
           font: inherit;
+        }
+        .root-visibility-hint {
+          margin-top: -4px;
+          font-size: 0.76rem;
+          color: var(--text-sub);
+          opacity: 0.9;
         }
         .project-meta {
           display: flex;

@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import useStore from '../store/useStore';
+import useStore, { createGraphSignature } from '../store/useStore';
 import { NodeLibrary } from './NodeLibrary';
 import { Icons } from './Icons';
 import TitleLogo from '../assets/Title.svg';
@@ -12,13 +12,14 @@ export function Sidebar() {
     const { 
         nodes, edges, setGraph, theme, setTheme, isSidebarOpen, setSidebarOpen, 
         isDeletingHover, isPaletteFloating, setPaletteFloating, setCurrentView,
-        user, driveConnected, activeFileId, setActiveFileId
+        user, driveConnected, activeFileId, setActiveFileId, savedGraphSignature, markCurrentGraphSaved
     } = useStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [holdProgress, setHoldProgress] = React.useState(0);
     const [isSyncing, setIsSyncing] = React.useState(false);
     const [syncStatus, setSyncStatus] = React.useState<'idle' | 'success' | 'error'>('idle');
     const holdTimerRef = useRef<any>(null);
+    const isDirty = createGraphSignature(nodes, edges) !== savedGraphSignature;
 
     const onDragStart = (event: React.DragEvent, nodeType: string, templateId?: string) => {
         const payload = templateId ? JSON.stringify({ type: nodeType, templateId }) : nodeType;
@@ -36,6 +37,7 @@ export function Sidebar() {
         a.download = `methmatica_project_${new Date().toISOString().slice(0, 10)}.json`;
         a.click();
         URL.revokeObjectURL(url);
+        markCurrentGraphSaved();
     };
 
     const handleLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -85,6 +87,7 @@ export function Sidebar() {
             
             const fileId = await driveService.saveWorkflow(name, { nodes, edges }, activeFileId || undefined);
             setActiveFileId(fileId);
+            markCurrentGraphSaved();
             
             // Subtle success feedback
             setSyncStatus('success');
@@ -99,15 +102,12 @@ export function Sidebar() {
     };
 
     const handleBackToHome = () => {
-        const hasWork = nodes.length > 1 || edges.length > 0;
-        const isSaved = activeFileId !== null;
-        
-        if (hasWork && !isSaved && !user) {
-            if (!confirm(t('common.unsaved_warning') || "You are not logged in and your work isn't saved to cloud. Exit anyway?")) return;
-        } else if (hasWork && !isSaved && user) {
-            if (!confirm(t('common.unsaved_warning') || "You have unsaved changes. Exit to Dashboard?")) return;
+        if (isDirty) {
+            const shouldLeave = window.confirm(
+                t('common.unsaved_warning') || 'You have unsaved changes. Exit to Dashboard?'
+            );
+            if (!shouldLeave) return;
         }
-        
         setCurrentView('home');
     };
 
@@ -170,6 +170,12 @@ export function Sidebar() {
                                 (activeFileId ? (t('sidebar.update_cloud') || 'Sync to Cloud') : (t('sidebar.save_cloud') || 'Save to Cloud'))
                             }
                         </button>
+                    )}
+                    {isDirty && (
+                        <div className="sidebar-unsaved-hint">
+                            <Icons.Comment />
+                            <span>Unsaved changes</span>
+                        </div>
                     )}
                     <button className="sidebar-btn" onClick={handleSave}>
                         <Icons.Save /> {t('sidebar.save_export')}
