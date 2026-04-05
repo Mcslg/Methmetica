@@ -11,6 +11,7 @@ import { SliderNode } from './SliderNode';
 import { ProjectNode } from './ProjectNode';
 import { CommunityTemplateNode } from './CommunityTemplateNode';
 import { WorkflowLinkNode } from './WorkflowLinkNode';
+import { CodeNode, executeCodeNode } from './CodeNode';
 import type { CommunityNodeTemplate } from '../community/types';
 import {
     dataNodeHandles,
@@ -24,7 +25,8 @@ import {
     forEachNodeHandles,
     graphNodeHandles,
     sliderNodeHandles,
-    soundNodeHandles
+    soundNodeHandles,
+    codeNodeHandles
 } from './handles';
 import {
     type CustomHandle,
@@ -183,6 +185,14 @@ export const nodeRegistry: NodeDefinition[] = [
         metadata: { label: 'Sound', desc: 'Synthesize sound from math', category: 'Output', icon: <Icons.Sound />, color: '#4ade80' },
         defaultSize: { width: 220, height: 160 },
         defaultHandles: soundNodeHandles
+    },
+    {
+        type: 'codeNode',
+        component: CodeNode,
+        metadata: { label: 'Code', desc: 'Run custom JavaScript logic', category: 'Logic', icon: <Icons.Code />, color: '#38bdf8' },
+        defaultSize: { width: 280, height: 240 },
+        defaultHandles: codeNodeHandles,
+        execute: executeCodeNode
     },
     {
         type: 'numberNode',

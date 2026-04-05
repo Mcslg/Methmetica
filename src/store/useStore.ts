@@ -50,6 +50,9 @@ export type TextNodePage = {
 
 export type NodeData = {
     value?: string;
+    code?: string;
+    language?: string;
+    error?: string;
     formula?: string; // For function nodes
     text?: string; // For text nodes
     pages?: TextNodePage[]; // For text node pagination
@@ -1068,7 +1071,7 @@ const useStore = create<AppState>()(
             }
 
             // Process Generic Input
-            if (node.type === 'decimalNode' || node.type === 'calculusNode' || node.type === 'gateNode' || node.type === 'balanceNode') {
+            if (node.type === 'decimalNode' || node.type === 'calculusNode' || node.type === 'gateNode' || node.type === 'balanceNode' || node.type === 'codeNode') {
                 if (valIn !== node.data.input && node.type !== 'gateNode') {
                     updatedData.input = valIn;
                     // For BalanceNode, if the root input changes, we reset the currentFormula to run through operations
@@ -1103,7 +1106,7 @@ const useStore = create<AppState>()(
             }
 
             // Build input signature to trigger downstream recalculation reliably
-            if (['calculateNode', 'solveNode', 'graphNode', 'balanceNode'].includes(node.type || '')) {
+            if (['calculateNode', 'solveNode', 'graphNode', 'balanceNode', 'codeNode'].includes(node.type || '')) {
                 const signature = explicitEdges.map(e => {
                     const source = nodeMap.get(e.source);
                     return `${e.targetHandle}=${(e.sourceHandle && source?.data.outputs?.[e.sourceHandle]) ?? source?.data.value}`;

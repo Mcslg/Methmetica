@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { ReactFlow, Background, Controls, ReactFlowProvider, useReactFlow, BackgroundVariant } from '@xyflow/react';
 import { useShallow } from 'zustand/react/shallow';
@@ -28,9 +28,65 @@ type NodeMenuEvent = PaneMenuEvent & {
 type AddNodeAtCenterEvent = CustomEvent<{ type: string; templateId?: string }>;
 type ConnectStartPayload = { nodeId: string | null; handleId: string | null; handleType: string | null };
 type TouchTargetEvent = React.TouchEvent<HTMLElement>;
+type ExplainSide = 'left' | 'right' | 'top' | 'bottom';
+type ExplainMergeOpportunity = {
+  sourceType: string;
+  side: ExplainSide;
+  title: string;
+  detail: string;
+};
+
+const EXPLAIN_SIDE_LABELS = {
+  en: { left: 'Left', right: 'Right', top: 'Top', bottom: 'Bottom' },
+  'zh-TW': { left: '左側', right: '右側', top: '上方', bottom: '下方' },
+} as const;
+
+const EXPLAIN_SIDE_ARROWS: Record<ExplainSide, string> = {
+  left: '←',
+  right: '→',
+  top: '↑',
+  bottom: '↓',
+};
+
+function getExplainMergeOpportunities(node: AppNode, language: 'en' | 'zh-TW'): ExplainMergeOpportunity[] {
+  const slots = node.data.slots || {};
+  const isZh = language === 'zh-TW';
+  const items: ExplainMergeOpportunity[] = [];
+  const add = (sourceType: string, side: ExplainSide, title: string, detail: string, enabled = true) => {
+    if (enabled) items.push({ sourceType, side, title, detail });
+  };
+
+  if (node.type === 'graphNode') {
+    add('textNode', 'left', isZh ? '合併公式側欄' : 'Merge formula sidebar', isZh ? '把 Notebook 貼到左側，變成圖形的公式輸入區。' : 'Drop a Notebook on the left edge to turn it into the graph formula sidebar.', !slots.formulaSidebar);
+    add('sliderNode', 'left', isZh ? '加入參數滑桿' : 'Attach parameter slider', isZh ? '把 Slider 貼到左側，讓圖形用該變數控制參數。' : 'Drop a Slider on the left edge to expose its variable as a graph parameter.');
+    add('textNode', 'top', isZh ? '加入節點註解' : 'Attach note', isZh ? '把 Notebook 貼到上方，作為圖形的註解區。' : 'Drop a Notebook on the top edge to use it as a note for the graph.', !slots.comment);
+  }
+
+  if (node.type === 'textNode') {
+    add('sliderNode', 'left', isZh ? '嵌入滑桿' : 'Embed slider', isZh ? '把 Slider 貼到邊緣，直接嵌進 Notebook 文字區上方。' : 'Drop a Slider onto the Notebook edge to embed it inline above the editor.');
+    add('buttonNode', 'right', isZh ? '嵌入觸發按鈕' : 'Embed trigger button', isZh ? '把 Trigger 貼到邊緣，讓它成為 Notebook 內建按鈕。' : 'Drop a Trigger onto the Notebook edge to make it an embedded action button.');
+    add('gateNode', 'right', isZh ? '嵌入 Gate' : 'Embed gate', isZh ? '把 Gate 貼到邊緣，讓 Notebook 可以直接控制觸發通道。' : 'Drop a Gate onto the Notebook edge to embed gate control in the note.');
+    add('calculateNode', 'right', isZh ? '插入計算結果' : 'Insert calculation result', isZh ? '把 Calculate 貼到邊緣，把結果當作可引用內容插進 Notebook。' : 'Drop a Calculate node onto the edge to insert its result into the Notebook.');
+    add('balanceNode', 'right', isZh ? '插入平衡步驟' : 'Insert balance steps', isZh ? '把 Balance 貼到邊緣，把等式操作結果帶進 Notebook。' : 'Drop a Balance node onto the edge to insert equivalence steps into the Notebook.');
+    add('calculusNode', 'right', isZh ? '插入微積分步驟' : 'Insert calculus steps', isZh ? '把 Calculus 貼到邊緣，把推導或步驟嵌進 Notebook。' : 'Drop a Calculus node onto the edge to insert derivation steps into the Notebook.');
+    add('appendNode', 'bottom', isZh ? '加入追加器' : 'Attach logger', isZh ? '把 Logger 貼到底部，Notebook 會成為它的追加目標。' : 'Drop a Logger on the bottom edge to make this Notebook its append target.', !slots.appender);
+  }
+
+  if (node.type === 'calculateNode' || node.type === 'solveNode' || node.type === 'balanceNode' || node.type === 'calculusNode') {
+    add('textNode', 'right', isZh ? '掛上結果視窗' : 'Attach result panel', isZh ? '把 Notebook 貼到右側，用來顯示該節點的輸出或步驟。' : 'Drop a Notebook on the right edge to show this node’s result or steps.', !slots.resultText);
+    add('sliderNode', 'right', isZh ? '加入輸入變數' : 'Attach variable slider', isZh ? '把 Slider 貼到右側，讓它成為這個節點的內建變數。' : 'Drop a Slider on the right edge to use it as an internal variable for this node.');
+    add('textNode', 'top', isZh ? '加入節點註解' : 'Attach note', isZh ? '把 Notebook 貼到上方，作為這個節點的註解。' : 'Drop a Notebook on the top edge to use it as a note for this node.', !slots.comment);
+  }
+
+  if (node.type === 'gateNode' || node.type === 'rangeNode') {
+    add('textNode', 'top', isZh ? '加入節點註解' : 'Attach note', isZh ? '把 Notebook 貼到上方，作為這個節點的註解。' : 'Drop a Notebook on the top edge to use it as a note for this node.', !slots.comment);
+  }
+
+  return items;
+}
 
 function Flow() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
     const { 
     nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, addNodes, removeNode, 
     handleProximitySnap, updateMergeHint, setAltPressed, setCtrlPressed, theme, 
@@ -73,6 +129,7 @@ function Flow() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isShiftPressed, setIsShiftPressed] = useState(false);
   const [idleTooltip, setIdleTooltip] = useState<{ x: number, y: number } | null>(null);
+  const [isExplainMode, setIsExplainMode] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const idleTimerRef = useRef<number | null>(null);
  
@@ -81,6 +138,15 @@ function Flow() {
       if (e.key === 'Shift') setIsShiftPressed(e.type === 'keydown');
       if (e.key === 'Alt') setAltPressed(e.type === 'keydown');
       if (e.key === 'Control' || e.key === 'Meta') setCtrlPressed(e.type === 'keydown');
+      if (e.type === 'keydown' && e.key.toLowerCase() === 'm' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const target = e.target as HTMLElement | null;
+        const tagName = target?.tagName;
+        const isTypingTarget = !!target && (target.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT');
+        if (!isTypingTarget) {
+          e.preventDefault();
+          setIsExplainMode(prev => !prev);
+        }
+      }
 
       // [UNDO/REDO Shortcuts]
       if (e.type === 'keydown' && (e.metaKey || e.ctrlKey)) {
@@ -160,6 +226,43 @@ function Flow() {
     if (!item.hidden) return true;
     return searchQuery.trim().length > 0;
   });
+
+  const explainNode = useMemo(
+    () => nodes.find(node => node.id === hoveredNodeId) ?? null,
+    [hoveredNodeId, nodes]
+  );
+  const explainDefinition = explainNode ? getNodeDefinition(explainNode.type || '') : null;
+  const explainOpportunities = useMemo(
+    () => (explainNode ? getExplainMergeOpportunities(explainNode, language) : []),
+    [explainNode, language]
+  );
+  const explainSides = Array.from(new Set(explainOpportunities.map(item => item.side)));
+  const explainSideLabels = EXPLAIN_SIDE_LABELS[language];
+  const explainNodeRect = useMemo(() => {
+    if (!isExplainMode || !explainNode) return null;
+    const width = explainNode.measured?.width || explainNode.width || 200;
+    const height = explainNode.measured?.height || explainNode.height || 100;
+    const screen = flowToScreenPosition(explainNode.position);
+    return { left: screen.x, top: screen.y, width, height };
+  }, [explainNode, flowToScreenPosition, isExplainMode]);
+  const explainDescription = explainDefinition?.metadata.desc || explainNode?.data.templateSummary || '';
+  const explainTitle = explainNode?.data.label || explainDefinition?.metadata.label || explainNode?.type || '';
+  const explainCategory = explainDefinition?.metadata.category || '';
+  const explainPanelWidth = 360;
+  const explainPanelHeight = 420;
+  const explainPanelPosition = useMemo(() => {
+    if (!isExplainMode || !explainNodeRect || typeof window === 'undefined') return null;
+    const spaceLeft = explainNodeRect.left;
+    const useLeftSide = spaceLeft > explainPanelWidth + 40;
+    const left = useLeftSide
+      ? Math.max(20, explainNodeRect.left - explainPanelWidth - 24)
+      : Math.min(window.innerWidth - explainPanelWidth - 20, explainNodeRect.left + explainNodeRect.width + 24);
+    const top = Math.min(
+      Math.max(20, explainNodeRect.top - 16),
+      Math.max(20, window.innerHeight - explainPanelHeight - 20)
+    );
+    return { left, top };
+  }, [explainNodeRect, isExplainMode]);
 
   const onPaneContextMenu = useCallback((e: MouseEvent | React.MouseEvent | PaneMenuEvent) => {
     e.preventDefault();
@@ -565,6 +668,216 @@ function Flow() {
           <span><span style={{ color: '#4facfe', fontWeight: 700 }}>{t('tips.right_click')}</span> {t('tips.create_node')}</span>
           <span style={{ opacity: 0.3 }}>|</span>
           <span><span style={{ color: '#ffcc00', fontWeight: 700 }}>{t('tips.shift_right_click')}</span> {t('tips.quick_create')}</span>
+        </div>,
+        document.body
+      )}
+
+      <div
+        style={{
+          position: 'fixed',
+          right: 24,
+          top: 18,
+          zIndex: 99999,
+          pointerEvents: 'none',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '10px 14px',
+          borderRadius: 14,
+          border: `1px solid ${isExplainMode ? 'rgba(74, 222, 128, 0.45)' : 'var(--border-node)'}`,
+          background: isExplainMode ? 'rgba(20, 34, 22, 0.82)' : 'rgba(18, 18, 18, 0.62)',
+          backdropFilter: 'blur(14px)',
+          color: 'var(--text-main)',
+          boxShadow: 'var(--node-shadow)',
+        }}
+      >
+        <span style={{ fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.65 }}>
+          {language === 'zh-TW' ? '說明模式' : 'Explain Mode'}
+        </span>
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minWidth: 28,
+            height: 28,
+            borderRadius: 8,
+            background: isExplainMode ? 'rgba(74, 222, 128, 0.18)' : 'rgba(255,255,255,0.08)',
+            border: `1px solid ${isExplainMode ? 'rgba(74, 222, 128, 0.45)' : 'rgba(255,255,255,0.14)'}`,
+            fontWeight: 700,
+          }}
+        >
+          M
+        </span>
+      </div>
+
+      {isExplainMode && explainNodeRect && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            left: explainNodeRect.left - 8,
+            top: explainNodeRect.top - 8,
+            width: explainNodeRect.width + 16,
+            height: explainNodeRect.height + 16,
+            borderRadius: 24,
+            pointerEvents: 'none',
+            zIndex: 99990,
+            boxShadow: [
+              explainSides.includes('top') ? 'inset 0 4px 0 rgba(74, 222, 128, 0.95)' : '',
+              explainSides.includes('right') ? 'inset -4px 0 0 rgba(74, 222, 128, 0.95)' : '',
+              explainSides.includes('bottom') ? 'inset 0 -4px 0 rgba(74, 222, 128, 0.95)' : '',
+              explainSides.includes('left') ? 'inset 4px 0 0 rgba(74, 222, 128, 0.95)' : '',
+            ].filter(Boolean).join(', '),
+            background: 'rgba(74, 222, 128, 0.04)',
+            outline: '1px solid rgba(74, 222, 128, 0.18)',
+          }}
+        >
+          {explainSides.map((side) => {
+            const markerStyle: React.CSSProperties = {
+              position: 'absolute',
+              color: '#4ade80',
+              fontSize: '1rem',
+              fontWeight: 800,
+              textShadow: '0 0 10px rgba(74, 222, 128, 0.55)',
+            };
+            if (side === 'top') Object.assign(markerStyle, { top: -14, left: '50%', transform: 'translateX(-50%)' });
+            if (side === 'right') Object.assign(markerStyle, { right: -14, top: '50%', transform: 'translateY(-50%)' });
+            if (side === 'bottom') Object.assign(markerStyle, { bottom: -14, left: '50%', transform: 'translateX(-50%)' });
+            if (side === 'left') Object.assign(markerStyle, { left: -14, top: '50%', transform: 'translateY(-50%)' });
+            return <div key={side} style={markerStyle}>{EXPLAIN_SIDE_ARROWS[side]}</div>;
+          })}
+        </div>,
+        document.body
+      )}
+
+      {isExplainMode && explainPanelPosition && explainNode && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            left: explainPanelPosition.left,
+            top: explainPanelPosition.top,
+            width: explainPanelWidth,
+            maxHeight: explainPanelHeight,
+            overflow: 'hidden',
+            zIndex: 99995,
+            borderRadius: 24,
+            border: '1px solid rgba(255,255,255,0.08)',
+            background: 'linear-gradient(180deg, rgba(12, 16, 15, 0.96), rgba(8, 11, 10, 0.94))',
+            backdropFilter: 'blur(18px)',
+            color: 'var(--text-main)',
+            boxShadow: '0 28px 60px rgba(0,0,0,0.35)',
+            display: 'grid',
+            gridTemplateColumns: '0.95fr 1.05fr',
+          }}
+        >
+          <div style={{ padding: '20px 18px', borderRight: '1px solid rgba(255,255,255,0.07)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <div
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'rgba(255,255,255,0.06)',
+                  color: explainDefinition?.metadata.color || 'var(--text-main)',
+                }}
+              >
+                {explainDefinition?.metadata.icon || <Icons.Comment />}
+              </div>
+              <div>
+                <div style={{ fontSize: '1.05rem', fontWeight: 700 }}>{explainTitle}</div>
+                <div style={{ fontSize: '0.72rem', opacity: 0.55, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                  {explainCategory}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ fontSize: '0.9rem', lineHeight: 1.65, opacity: 0.85, marginBottom: 16 }}>
+              {explainDescription || (language === 'zh-TW' ? '這個節點目前沒有額外說明。' : 'No extra description is available for this node yet.')}
+            </div>
+
+            <div
+              style={{
+                borderRadius: 16,
+                padding: '14px 14px 12px',
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.06)',
+              }}
+            >
+              <div style={{ fontSize: '0.72rem', opacity: 0.6, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>
+                {language === 'zh-TW' ? '使用提示' : 'Quick Hint'}
+              </div>
+              <div style={{ fontSize: '0.85rem', lineHeight: 1.6 }}>
+                {language === 'zh-TW'
+                  ? '移到節點邊緣的綠色框線位置，就是可合併的方向。'
+                  : 'Green edge highlights show where another node can be merged into this one.'}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ padding: '20px 18px', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ fontSize: '0.8rem', opacity: 0.62, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                {language === 'zh-TW' ? '可合併節點' : 'Mergeable Nodes'}
+              </div>
+              <div style={{ fontSize: '0.78rem', color: '#4ade80', fontWeight: 700 }}>
+                {explainOpportunities.length}
+              </div>
+            </div>
+
+            {explainOpportunities.length > 0 ? explainOpportunities.map((item, index) => {
+              const sourceDefinition = getNodeDefinition(item.sourceType);
+              return (
+                <div
+                  key={`${item.sourceType}-${item.side}-${index}`}
+                  style={{
+                    padding: '12px 12px 11px',
+                    borderRadius: 16,
+                    marginBottom: 10,
+                    background: 'rgba(74, 222, 128, 0.05)',
+                    border: '1px solid rgba(74, 222, 128, 0.16)',
+                    borderLeft: item.side === 'left' ? '4px solid #4ade80' : '1px solid rgba(74, 222, 128, 0.16)',
+                    borderRight: item.side === 'right' ? '4px solid #4ade80' : undefined,
+                    borderTop: item.side === 'top' ? '4px solid #4ade80' : undefined,
+                    borderBottom: item.side === 'bottom' ? '4px solid #4ade80' : undefined,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                      <span style={{ color: sourceDefinition?.metadata.color || '#4ade80', display: 'inline-flex', alignItems: 'center' }}>
+                        {sourceDefinition?.metadata.icon || <Icons.Grid />}
+                      </span>
+                      <span style={{ fontWeight: 700, fontSize: '0.88rem' }}>{item.title}</span>
+                    </div>
+                    <span style={{ color: '#4ade80', fontSize: '0.76rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                      {EXPLAIN_SIDE_ARROWS[item.side]} {explainSideLabels[item.side]}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.82rem', lineHeight: 1.55, opacity: 0.82 }}>
+                    {item.detail}
+                  </div>
+                </div>
+              );
+            }) : (
+              <div
+                style={{
+                  padding: '14px',
+                  borderRadius: 16,
+                  background: 'rgba(255,255,255,0.04)',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                  fontSize: '0.84rem',
+                  lineHeight: 1.6,
+                  opacity: 0.82,
+                }}
+              >
+                {language === 'zh-TW'
+                  ? '這個節點目前沒有可說明的合併目標，或相關插槽已被占用。'
+                  : 'This node has no explainable merge targets right now, or the relevant slots are already occupied.'}
+              </div>
+            )}
+          </div>
         </div>,
         document.body
       )}

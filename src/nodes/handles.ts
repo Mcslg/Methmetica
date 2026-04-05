@@ -59,3 +59,9 @@ export const soundNodeHandles: CustomHandle[] = [
     { id: 'h-freq', type: 'input', position: 'left', offset: 50, label: 'Freq' },
     { id: 'h-vol', type: 'input', position: 'left', offset: 75, label: 'Vol' },
 ];
+
+export const codeNodeHandles: CustomHandle[] = [
+    { id: 'h-in', type: 'input', position: 'left', offset: 50, label: 'input' },
+    { id: 'h-result', type: 'output', position: 'right', offset: 35, label: 'result' },
+    { id: 'h-error', type: 'output', position: 'right', offset: 70, label: 'error' },
+];
