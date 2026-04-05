@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
-import useStore from '../store/useStore';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { type Edge } from '@xyflow/react';
+import useStore, { type AppNode, type WorkflowListItem } from '../store/useStore';
 import { Icons } from './Icons';
 import { useLanguage } from '../contexts/LanguageContext';
 import * as driveService from '../utils/googleDriveService';
@@ -61,6 +62,30 @@ export function Dashboard() {
     init();
   }, [user?.email]);
 
+  const refreshDriveUserInfo = useCallback(async (token: string) => {
+    try {
+      const resp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const userData = await resp.json();
+      setDriveConnected(Boolean(userData?.email));
+    } catch (err) {
+      console.error('Failed to refresh user info', err);
+    }
+  }, [setDriveConnected]);
+
+  const refreshFiles = useCallback(async () => {
+    setLoadingWorkflows(true);
+    try {
+      const files = await driveService.listWorkflows();
+      setWorkflowList(files);
+    } catch (err) {
+      console.error('Failed to list files', err);
+    } finally {
+      setLoadingWorkflows(false);
+    }
+  }, [setLoadingWorkflows, setWorkflowList]);
+
   useEffect(() => {
     let isCancelled = false;
 
@@ -96,7 +121,7 @@ export function Dashboard() {
     return () => {
       isCancelled = true;
     };
-  }, [user]);
+  }, [refreshDriveUserInfo, refreshFiles, setDriveConnected, setWorkflowList, user]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -152,18 +177,6 @@ export function Dashboard() {
     };
   }, [authStatus]);
 
-  const refreshDriveUserInfo = async (token: string) => {
-    try {
-      const resp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const userData = await resp.json();
-      setDriveConnected(Boolean(userData?.email));
-    } catch (err) {
-      console.error('Failed to refresh user info', err);
-    }
-  };
-
   const handleDriveLogin = async (silent: boolean | React.MouseEvent = false) => {
     if (!user) return;
     const isSilent = typeof silent === 'boolean' ? silent : false;
@@ -194,29 +207,17 @@ export function Dashboard() {
     }
   };
 
-  const refreshFiles = async () => {
-    setLoadingWorkflows(true);
-    try {
-      const files = await driveService.listWorkflows();
-      setWorkflowList(files);
-    } catch (err) {
-      console.error('Failed to list files', err);
-    } finally {
-      setLoadingWorkflows(false);
-    }
-  };
-
   const openBlueprint = async (workflowId: string) => {
     const blueprint =
       (isSupabaseConfigured ? await getWorkflowBlueprintFromSupabase(workflowId) : null) ??
       getCommunityWorkflowBlueprint(workflowId);
     if (!blueprint) return;
-    setGraph(blueprint.nodes as any, blueprint.edges as any);
+    setGraph(blueprint.nodes as AppNode[], blueprint.edges as Edge[]);
     setActiveFileId(null);
     setCurrentView('editor');
   };
 
-  const handleOpenWorkflow = async (file: any) => {
+  const handleOpenWorkflow = async (file: WorkflowListItem) => {
     try {
       const data = await driveService.loadWorkflow(file.id);
       if (data && Array.isArray(data.nodes) && Array.isArray(data.edges)) {
@@ -530,6 +531,13 @@ export function Dashboard() {
           overflow: hidden;
           font-family: var(--font-main);
         }
+        [data-theme='light'] .dashboard-root {
+          background:
+            radial-gradient(circle at top left, rgba(34, 197, 94, 0.1), transparent 30%),
+            radial-gradient(circle at top right, rgba(245, 158, 11, 0.08), transparent 24%),
+            linear-gradient(180deg, rgba(255,255,255,0.65), rgba(252,250,242,0.96)),
+            var(--bg-page);
+        }
         .dashboard-header {
           height: 72px;
           padding: 0 32px;
@@ -539,6 +547,10 @@ export function Dashboard() {
           border-bottom: 1px solid var(--border-header);
           background: rgba(255,255,255,0.02);
           backdrop-filter: blur(14px);
+        }
+        [data-theme='light'] .dashboard-header {
+          background: rgba(255,255,255,0.72);
+          box-shadow: 0 10px 32px rgba(14, 47, 11, 0.06);
         }
         .dashboard-brand {
           display: flex;
@@ -563,6 +575,10 @@ export function Dashboard() {
           background: var(--bg-sidebar);
           border: 1px solid var(--border-node);
           min-width: min(420px, 40vw);
+        }
+        [data-theme='light'] .dashboard-search {
+          background: rgba(255,255,255,0.88);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
         }
         .dashboard-search input {
           width: 100%;
@@ -610,6 +626,14 @@ export function Dashboard() {
           align-items: center;
           gap: 8px;
           font: inherit;
+        }
+        [data-theme='light'] .theme-toggle,
+        [data-theme='light'] .login-btn,
+        [data-theme='light'] .card-open-btn,
+        [data-theme='light'] .new-workflow-btn,
+        [data-theme='light'] .sidebar-btn {
+          background: rgba(255,255,255,0.9);
+          box-shadow: 0 8px 18px rgba(14, 47, 11, 0.05);
         }
         .new-workflow-btn.primary {
           background: linear-gradient(135deg, #22c55e, #16a34a);
@@ -669,6 +693,9 @@ export function Dashboard() {
           border-radius: 20px;
           box-shadow: var(--node-shadow);
         }
+        [data-theme='light'] .hero-panel {
+          background: linear-gradient(135deg, rgba(34, 197, 94, 0.08), rgba(245, 158, 11, 0.08) 55%, rgba(255,255,255,0.72));
+        }
         .hero-copy {
           max-width: 680px;
         }
@@ -708,6 +735,9 @@ export function Dashboard() {
           gap: 6px;
           align-content: start;
         }
+        [data-theme='light'] .hero-stat {
+          background: rgba(255,255,255,0.7);
+        }
         .hero-stat strong {
           font-size: 1.45rem;
           line-height: 1;
@@ -727,6 +757,9 @@ export function Dashboard() {
           border: 1px solid var(--border-node);
           border-radius: 12px;
           background: rgba(15, 23, 42, 0.35);
+        }
+        [data-theme='light'] .supabase-health-panel {
+          background: rgba(255,255,255,0.78);
         }
         .health-chip {
           display: inline-flex;
@@ -801,6 +834,12 @@ export function Dashboard() {
           gap: 12px;
           transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
+        [data-theme='light'] .workflow-card,
+        [data-theme='light'] .private-copy,
+        [data-theme='light'] .loading-state,
+        [data-theme='light'] .empty-state {
+          background: rgba(255,255,255,0.88);
+        }
         .workflow-card:hover {
           transform: translateY(-2px);
           box-shadow: var(--node-hover-shadow);
@@ -844,6 +883,10 @@ export function Dashboard() {
           letter-spacing: 0.08em;
           text-transform: uppercase;
           color: var(--text-sub);
+        }
+        [data-theme='light'] .status-pill,
+        [data-theme='light'] .card-tags span {
+          background: rgba(14, 47, 11, 0.04);
         }
         .status-pill.public {
           color: #4ade80;

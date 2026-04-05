@@ -42,10 +42,18 @@ export type BalanceOperation = {
     result?: string;
 };
 
+export type TextNodePage = {
+    id: string;
+    label: string;
+    text: string;
+};
+
 export type NodeData = {
     value?: string;
     formula?: string; // For function nodes
     text?: string; // For text nodes
+    pages?: TextNodePage[]; // For text node pagination
+    activePageId?: string; // Currently selected page on text node
     handles?: CustomHandle[];
     input?: string; // For utility nodes to receive data
     touchingEdges?: { left?: boolean, right?: boolean, top?: boolean, bottom?: boolean };
@@ -73,6 +81,7 @@ export type NodeData = {
     description?: string; // For ProjectNode metadata
     tags?: string[]; // Shared workflow/tag metadata for builder root
     templateId?: string; // For reusable community template nodes
+    templateDraft?: CommunityNodeTemplate;
     templateFields?: Record<string, string>;
     templateSummary?: string;
     templateBestAlgorithm?: string;
@@ -83,11 +92,25 @@ export type NodeData = {
     callout?: string;
     builderDraft?: CommunityNodeTemplate;
     publishStatus?: string;
+    linkedTemplateNodeId?: string;
+    builderSourceId?: string;
+    autoManagedTemplateNode?: boolean;
+    readOnlyPreview?: boolean;
     supabaseWorkflowId?: string;
     visibility?: WorkflowVisibility;
 };
 
 export type AppNode = Node<NodeData>;
+export type WorkflowListItem = {
+    id: string;
+    name: string;
+    modifiedTime: string;
+    createdTime?: string;
+    [key: string]: unknown;
+};
+type UpdateNodeDataOptions = {
+    skipGraphEval?: boolean;
+};
 
 export type AppState = {
     nodes: AppNode[];
@@ -95,7 +118,7 @@ export type AppState = {
     onNodesChange: OnNodesChange<AppNode>;
     onEdgesChange: OnEdgesChange<Edge>;
     onConnect: OnConnect;
-    updateNodeData: (nodeId: string, data: NodeData) => void;
+    updateNodeData: (nodeId: string, data: NodeData, options?: UpdateNodeDataOptions) => void;
     addHandle: (nodeId: string, handle: CustomHandle) => void;
     removeHandle: (nodeId: string, handleId: string) => void;
     updateHandle: (nodeId: string, handleId: string, patch: Partial<CustomHandle>) => void;
@@ -155,7 +178,7 @@ export type AppState = {
     authStatus: AuthStatus;
     driveConnected: boolean;
     activeFileId: string | null;
-    workflowList: any[];
+    workflowList: WorkflowListItem[];
     isLoadingWorkflows: boolean;
     communityTemplates: CommunityNodeTemplate[];
     savedGraphSignature: string;
@@ -163,7 +186,7 @@ export type AppState = {
     setAuthStatus: (status: AuthStatus) => void;
     setDriveConnected: (connected: boolean) => void;
     setActiveFileId: (id: string | null) => void;
-    setWorkflowList: (list: any[]) => void;
+    setWorkflowList: (list: WorkflowListItem[]) => void;
     setLoadingWorkflows: (loading: boolean) => void;
     setCommunityTemplates: (templates: CommunityNodeTemplate[]) => void;
     upsertCommunityTemplate: (template: CommunityNodeTemplate) => void;
@@ -588,18 +611,53 @@ const useStore = create<AppState>()(
         get().evaluateGraph();
     },
 
-    updateNodeData: (nodeId: string, dataPatch: Partial<NodeData>) => {
+    updateNodeData: (nodeId: string, dataPatch: Partial<NodeData>, options?: UpdateNodeDataOptions) => {
         const { nodes, edges } = get();
         const node = nodes.find(n => n.id === nodeId);
         if (!node) return;
 
         get().takeSnapshot(false); // Snapshot with COOLDOWN (not forced)
-        const nextData = { ...node.data, ...dataPatch };
+        let normalizedPatch = { ...dataPatch };
+
+        if (node.type === 'textNode' && (
+            normalizedPatch.text !== undefined ||
+            normalizedPatch.pages !== undefined ||
+            normalizedPatch.activePageId !== undefined
+        )) {
+            const existingPages = (normalizedPatch.pages ?? node.data.pages)?.map((page) => ({ ...page })) || [];
+            const fallbackPage: TextNodePage = {
+                id: node.data.activePageId || 'page-1',
+                label: 'Page 1',
+                text: node.data.text || ''
+            };
+            const pages = existingPages.length > 0 ? existingPages : [fallbackPage];
+            const requestedActivePageId = normalizedPatch.activePageId ?? node.data.activePageId ?? pages[0].id;
+            const activePageId = pages.some((page) => page.id === requestedActivePageId) ? requestedActivePageId : pages[0].id;
+
+            if (normalizedPatch.text !== undefined) {
+                const nextText = normalizedPatch.text ?? '';
+                const activeIndex = pages.findIndex((page) => page.id === activePageId);
+                if (activeIndex >= 0) {
+                    pages[activeIndex] = { ...pages[activeIndex], text: nextText };
+                }
+            }
+
+            const activePage = pages.find((page) => page.id === activePageId) || pages[0];
+            normalizedPatch = {
+                ...normalizedPatch,
+                pages,
+                activePageId,
+                text: activePage.text || ''
+            };
+        }
+
+        const nextData = { ...node.data, ...normalizedPatch };
+        const dataChanged = Object.keys(normalizedPatch).some((key) => nextData[key as keyof NodeData] !== node.data[key as keyof NodeData]);
 
         let nextEdges = edges;
-        if (dataPatch.handles) {
+        if (normalizedPatch.handles) {
             const oldHandles = node.data.handles || [];
-            const newHandles = dataPatch.handles;
+            const newHandles = normalizedPatch.handles;
             
             // Map old handles by type and position index for re-binding
             const oldInputHandles = oldHandles.filter(h => h.type === 'input');
@@ -631,10 +689,18 @@ const useStore = create<AppState>()(
             });
         }
 
+        if (!dataChanged && nextEdges === edges) {
+            return;
+        }
+
         set({
             nodes: nodes.map((n) => (n.id === nodeId ? { ...n, data: nextData } : n)),
             edges: nextEdges
         });
+
+        if (options?.skipGraphEval) {
+            return;
+        }
 
         // Trigger execution for nodes that should auto-run on data change
         if (node.type === 'numberNode' || node.type === 'functionNode' || node.type === 'calculateNode' || node.type === 'gateNode' || node.type === 'rangeNode') {
@@ -765,7 +831,7 @@ const useStore = create<AppState>()(
             if (node.data.slots?.resultText) {
                 const textNodeId = typeof node.data.slots.resultText === 'string' 
                     ? node.data.slots.resultText 
-                    : (node.data.slots.resultText as any).id;
+                    : node.data.slots.resultText.id;
                 get().updateNodeData(textNodeId, { text: `RESULT: ${res}` });
             }
 
@@ -815,7 +881,7 @@ const useStore = create<AppState>()(
                     const curHeight = b.height || b.measured?.height || 100;
                     const curWidth = b.width || b.measured?.width || 200;
                     
-                    let nextHeight = (b.type === 'textNode') ? curHeight : curHeight + rule.heightIncrement;
+                    const nextHeight = (b.type === 'textNode') ? curHeight : curHeight + rule.heightIncrement;
                     let nextWidth = curWidth;
 
                     // [NEW] Automatic widening for sidebars
@@ -888,7 +954,7 @@ const useStore = create<AppState>()(
         // 2. Add implicit virtual edges for formulaSidebar parsing
         nodes.forEach(n => {
             if (n.data.slots?.formulaSidebar) {
-                const sid = typeof n.data.slots.formulaSidebar === 'string' ? n.data.slots.formulaSidebar : (n.data.slots.formulaSidebar as any).id;
+                const sid = typeof n.data.slots.formulaSidebar === 'string' ? n.data.slots.formulaSidebar : n.data.slots.formulaSidebar.id;
                 if (adj.has(sid) && inDegree.has(n.id)) {
                     adj.get(sid)!.push(n.id);
                     inDegree.set(n.id, inDegree.get(n.id)! + 1);
@@ -937,7 +1003,7 @@ const useStore = create<AppState>()(
                 });
             }
 
-            let updatedData = { ...node.data };
+            const updatedData = { ...node.data };
             let isUpdated = false;
 
             // Sync inputs Record
@@ -961,7 +1027,7 @@ const useStore = create<AppState>()(
                 let formulaVal: string | undefined = undefined;
                 
                 if (node.data.slots?.formulaSidebar) {
-                    const sid = typeof node.data.slots.formulaSidebar === 'string' ? node.data.slots.formulaSidebar : (node.data.slots.formulaSidebar as any).id;
+                    const sid = typeof node.data.slots.formulaSidebar === 'string' ? node.data.slots.formulaSidebar : node.data.slots.formulaSidebar.id;
                     const sidebarNode = nodeMap.get(sid);
                     if (sidebarNode && sidebarNode.data.text) {
                         const rawText = sidebarNode.data.text;

@@ -1,8 +1,11 @@
-import useStore from '../store/useStore';
+import React from 'react';
+import { type Edge, type NodeProps } from '@xyflow/react';
+import useStore, { type AppNode } from '../store/useStore';
 import { NodeFrame } from '../components/NodeFrame';
 import { Icons } from '../components/Icons';
 import { getCommunityTemplateById, getCommunityWorkflowBlueprint } from '../community/catalog';
 import { getWorkflowBlueprintFromSupabase } from '../integrations/supabase/workflows';
+import type { CommunityNodeTemplate, TemplateBuilderBlock } from '../community/types';
 
 const openCommunityWorkflow = async (workflowId: string) => {
   const blueprint =
@@ -11,17 +14,21 @@ const openCommunityWorkflow = async (workflowId: string) => {
   if (!blueprint) return false;
 
   const store = useStore.getState();
-  store.setGraph(blueprint.nodes as any, blueprint.edges as any);
+  store.setGraph(blueprint.nodes as AppNode[], blueprint.edges as Edge[]);
   store.setActiveFileId(null);
   store.setCurrentView('editor');
   return true;
 };
 
-export function CommunityTemplateNode({ id, data, selected }: { id: string; data: any; selected?: boolean }) {
-  const updateNodeData = useStore(state => state.updateNodeData);
-  const template = useStore(state => state.communityTemplates.find(item => item.id === data.templateId)) || getCommunityTemplateById(data.templateId || '');
-  const fieldValues = data.templateFields || {};
-
+export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({ id, data, selected }: NodeProps<AppNode>) {
+  const isReadOnlyPreview = Boolean(data.readOnlyPreview);
+  const templateFromStore = useStore(
+    state => state.communityTemplates.find((item: CommunityNodeTemplate) => item.id === data.templateId) ?? null
+  );
+  const template =
+    (data.templateDraft as CommunityNodeTemplate | undefined) ??
+    templateFromStore ??
+    getCommunityTemplateById(data.templateId || '') as CommunityNodeTemplate | undefined;
   if (!template) {
     return (
       <div className="community-template-missing">
@@ -34,16 +41,6 @@ export function CommunityTemplateNode({ id, data, selected }: { id: string; data
       </div>
     );
   }
-
-  const setFieldValue = (fieldId: string, value: string) => {
-    updateNodeData(id, {
-      ...data,
-      templateFields: {
-        ...fieldValues,
-        [fieldId]: value,
-      },
-    });
-  };
 
   return (
     <NodeFrame
@@ -81,72 +78,37 @@ export function CommunityTemplateNode({ id, data, selected }: { id: string; data
           <span className="community-template-pill">v{template.version}</span>
         </div>
 
-        <div className="community-template-section">
-          <strong>最優算法</strong>
-          <p>{template.bestAlgorithm}</p>
-        </div>
-
-        {template.alternativeAlgorithms.length > 0 && (
-          <div className="community-template-section">
-            <strong>替代方法</strong>
-            <ul>
-              {template.alternativeAlgorithms.map(item => <li key={item}>{item}</li>)}
-            </ul>
-          </div>
-        )}
-
-        {template.fields.length > 0 && (
+        {template.builderBlocks.length > 0 && (
           <div className="community-template-fields">
-            {template.builderBlocks.map(block => {
-              const mappedField = template.fields.find(field => field.id === block.id);
-              const value = fieldValues[block.id] ?? mappedField?.defaultValue ?? block.content ?? '';
+            {template.builderBlocks.map((block: TemplateBuilderBlock) => {
               if (block.kind === 'input' || block.kind === 'output') {
+                return null;
+              }
+
+              if (block.kind === 'text') {
                 return (
-                  <div key={block.id} className="community-template-port">
-                    <span className="community-template-port-kind">{block.kind}</span>
-                    <strong>{block.label}</strong>
-                    <small>{block.placeholder || 'Reusable handle'}</small>
+                  <p key={block.id} className="community-template-text-block">{block.content || '尚未填入內容。'}</p>
+                );
+              }
+
+              if (block.kind === 'math') {
+                return (
+                  <div key={block.id} className="community-template-static-block math">
+                    <span className="community-template-static-label">{block.label}</span>
+                    <code>{block.content || '尚未填入公式。'}</code>
                   </div>
                 );
               }
 
               return (
-                <label key={block.id} className="community-template-field">
-                  <span>{block.label}</span>
-                  {block.kind === 'toggle' || block.kind === 'text' ? (
-                    <textarea
-                      value={value}
-                      placeholder={mappedField?.placeholder || block.placeholder}
-                      onChange={(e) => setFieldValue(block.id, e.target.value)}
-                    />
-                  ) : (
-                    <input
-                      type="text"
-                      value={value}
-                      placeholder={mappedField?.placeholder || block.placeholder}
-                      onChange={(e) => setFieldValue(block.id, e.target.value)}
-                    />
-                  )}
-                </label>
+                <details key={block.id} className="community-template-toggle" open={!isReadOnlyPreview}>
+                  <summary>{block.label}</summary>
+                  <p>{block.content || block.placeholder || '尚未填入切換內容。'}</p>
+                </details>
               );
             })}
           </div>
         )}
-
-        <div className="community-template-links">
-          {template.relatedWorkflowIds.map(workflowId => (
-            <button
-              key={workflowId}
-              className="sidebar-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                openCommunityWorkflow(workflowId);
-              }}
-            >
-              <Icons.ExternalLink /> {workflowId}
-            </button>
-          ))}
-        </div>
       </div>
 
       <style>{`
@@ -175,77 +137,47 @@ export function CommunityTemplateNode({ id, data, selected }: { id: string; data
           letter-spacing: 0.08em;
           color: var(--text-sub);
         }
-        .community-template-section strong {
-          display: block;
-          margin-bottom: 4px;
-          font-size: 0.72rem;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          color: var(--accent-bright);
-        }
-        .community-template-section p,
-        .community-template-section ul {
-          margin: 0;
-          color: var(--text-main);
-          font-size: 0.84rem;
-          line-height: 1.45;
-        }
-        .community-template-section ul {
-          padding-left: 18px;
-        }
         .community-template-fields {
           display: grid;
           gap: 10px;
         }
-        .community-template-field {
-          display: grid;
-          gap: 4px;
-          font-size: 0.72rem;
-          color: var(--text-sub);
+        .community-template-text-block {
+          margin: 0;
+          color: var(--text-main);
+          line-height: 1.6;
         }
-        .community-template-port {
+        .community-template-static-block,
+        .community-template-toggle {
           display: grid;
-          gap: 3px;
+          gap: 6px;
           padding: 10px;
-          border: 1px dashed var(--border-node);
+          border: 1px solid var(--border-node);
           border-radius: 12px;
           background: rgba(255,255,255,0.03);
         }
-        .community-template-port-kind {
-          font-size: 0.66rem;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          color: var(--accent-bright);
-        }
-        .community-template-port strong {
+        .community-template-static-block p,
+        .community-template-toggle p {
+          margin: 0;
           color: var(--text-main);
+          line-height: 1.5;
         }
-        .community-template-port small {
+        .community-template-static-label {
+          font-size: 0.72rem;
           color: var(--text-sub);
         }
-        .community-template-field input,
-        .community-template-field textarea,
-        .community-template-field select {
-          width: 100%;
-          box-sizing: border-box;
-          background: rgba(255,255,255,0.04);
-          border: 1px solid var(--border-node);
-          border-radius: 10px;
+        .community-template-static-block.math code {
+          font-family: 'IBM Plex Mono', 'SFMono-Regular', monospace;
+          font-size: 0.85rem;
           color: var(--text-main);
-          padding: 8px 10px;
-          font: inherit;
-          outline: none;
+          white-space: pre-wrap;
+          word-break: break-word;
         }
-        .community-template-field textarea {
-          min-height: 72px;
-          resize: vertical;
-        }
-        .community-template-links {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
+        .community-template-toggle summary {
+          cursor: pointer;
+          color: var(--text-main);
+          font-weight: 600;
         }
       `}</style>
     </NodeFrame>
   );
-}
+});

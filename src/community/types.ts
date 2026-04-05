@@ -80,8 +80,8 @@ export type WorkflowGraphNode = {
   id: string;
   type: string;
   position: { x: number; y: number };
-  data: Record<string, any>;
-  style?: Record<string, any>;
+  data: Record<string, unknown>;
+  style?: CSSProperties;
   width?: number;
   height?: number;
   hidden?: boolean;
@@ -102,3 +102,4 @@ export type WorkflowBlueprint = {
   nodes: WorkflowGraphNode[];
   edges: WorkflowGraphEdge[];
 };
+import type { CSSProperties } from 'react';

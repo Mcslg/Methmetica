@@ -4,7 +4,7 @@ import useStore, { type AppState, type NodeData } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
 
-export const DecimalNode = memo(function DecimalNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
+export const DecimalNode = memo(function DecimalNode({ id, data }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
 
     const handleToDecimal = (inputVal?: string) => {
@@ -50,7 +50,7 @@ export const DecimalNode = memo(function DecimalNode({ id, data, selected }: Nod
 
     return (
         <div className={`math-node op-node decimal-node ${touchingClasses}`} style={{ width: '100%', height: '100%' }}>
-            <NodeResizer minWidth={120} minHeight={80} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
+            <NodeResizer minWidth={120} minHeight={80} isVisible={false} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
             <DynamicHandles
                 nodeId={id}
                 handles={data.handles}
@@ -69,4 +69,3 @@ export const DecimalNode = memo(function DecimalNode({ id, data, selected }: Nod
         </div>
     );
 });
-

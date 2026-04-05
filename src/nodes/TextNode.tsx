@@ -19,7 +19,7 @@ import 'katex/dist/katex.min.css';
 // @ts-ignore
 import nerdamer from 'nerdamer/all.min';
 import { getMathEngine } from '../utils/MathEngine';
-import useStore, { type AppState, type NodeData, type CustomHandle, type HandleType } from '../store/useStore';
+import useStore, { type AppState, type NodeData, type CustomHandle, type HandleType, type TextNodePage } from '../store/useStore';
 import { useShallow } from 'zustand/react/shallow';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
@@ -29,6 +29,29 @@ import { countRender } from '../components/DebugOverlay';
 
 // Helper for implicit multiplication
 const LINE_Y_THRESHOLD = 12; // px
+
+const createTextPageId = () => `page-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const deriveTextPages = (data: NodeData): { pages: TextNodePage[]; activePageId: string; activePage: TextNodePage } => {
+    const providedPages = (data.pages || [])
+        .filter((page) => page && typeof page.id === 'string')
+        .map((page, index) => ({
+            id: page.id,
+            label: page.label?.trim() || `Page ${index + 1}`,
+            text: page.text || ''
+        }));
+
+    const pages = providedPages.length > 0
+        ? providedPages
+        : [{ id: data.activePageId || 'page-1', label: 'Page 1', text: data.text || '' }];
+
+    const activePageId = pages.some((page) => page.id === data.activePageId)
+        ? (data.activePageId as string)
+        : pages[0].id;
+    const activePage = pages.find((page) => page.id === activePageId) || pages[0];
+
+    return { pages, activePageId, activePage };
+};
 
 export const TextNodeContext = React.createContext<{
     nodeId: string;
@@ -1015,6 +1038,8 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
     // Track which handles are toggled visible. Store in component state so it doesn't get wiped by Markdown.
     // Try to restore from outputs so handles don't disappear on reload.
     const [activeHandles, setActiveHandles] = useState<Set<string>>(new Set(data.outputs ? Object.values(data.outputs).map(v => `math-${v}`) : []));
+    const { pages, activePageId, activePage } = useMemo(() => deriveTextPages(data), [data]);
+    const activePageText = activePage.text || '';
 
     const toggleHandle = useCallback((handleKey: string) => {
         setActiveHandles(prev => {
@@ -1065,7 +1090,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
             GatePill,
         ],
         content: (() => {
-            const t = data.text || '';
+            const t = activePageText;
             if (t.startsWith('{')) {
                 try {
                     return JSON.parse(t);
@@ -1158,7 +1183,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
     // Sync external changes
     useEffect(() => {
         if (!editor) return;
-        const t = data.text || '';
+        const t = activePageText;
         if (editor.isFocused) return;
         // Compare current JSON to stored JSON
         const currentJson = JSON.stringify(editor.getJSON());
@@ -1171,7 +1196,19 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                 editor.commands.setContent(parseMarkdownToCustomNodes(t), undefined);
             }
         }
-    }, [data.text, editor]);
+    }, [activePageText, editor]);
+
+    useEffect(() => {
+        const hasStoredPages = Array.isArray(data.pages) && data.pages.length > 0;
+        const activePageExists = pages.some((page) => page.id === data.activePageId);
+        if (hasStoredPages && activePageExists && data.text === activePageText) return;
+
+        updateNodeData(id, {
+            pages,
+            activePageId,
+            text: activePageText
+        }, { skipGraphEval: true });
+    }, [activePageId, activePageText, data.activePageId, data.pages, data.text, id, pages, updateNodeData]);
 
     // Force handles sync when they're toggled
     useEffect(() => {
@@ -1337,7 +1374,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
     useEffect(() => {
         const timer = setTimeout(syncHandlesFromDOM, 50);
         return () => clearTimeout(timer);
-    }, [data.text, syncHandlesFromDOM]);
+    }, [activePageText, syncHandlesFromDOM]);
 
     // [PERF] Stable ref so ResizeObserver is not recreated on every render.
     const syncHandlesFromDOMRef = useRef(syncHandlesFromDOM);
@@ -1415,6 +1452,30 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
         editingNameRef.current = null;
     };
 
+    const selectPage = useCallback((pageId: string) => {
+        if (pageId === activePageId) return;
+        const nextActivePage = pages.find((page) => page.id === pageId);
+        if (!nextActivePage) return;
+        updateNodeData(id, {
+            pages,
+            activePageId: pageId,
+            text: nextActivePage.text || ''
+        });
+    }, [activePageId, id, pages, updateNodeData]);
+
+    const addPage = useCallback(() => {
+        const nextPage: TextNodePage = {
+            id: createTextPageId(),
+            label: `Page ${pages.length + 1}`,
+            text: ''
+        };
+        updateNodeData(id, {
+            pages: [...pages, nextPage],
+            activePageId: nextPage.id,
+            text: nextPage.text
+        });
+    }, [id, pages, updateNodeData]);
+
 
     const contextValue = useMemo(() => ({
         nodeId: id,
@@ -1451,10 +1512,10 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                 }}
                 onMouseDown={(e) => { if (mathInputOpen) e.stopPropagation(); }}
             >
-                <NodeResizer color="transparent" isVisible={selected} minWidth={150} minHeight={80} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
+                <NodeResizer color="transparent" isVisible={false} minWidth={150} minHeight={80} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
 
                 <div className="node-header">
-                    <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1, gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1, gap: '4px', minWidth: 0 }}>
                         <Icons.Text />
                         <input
                             title="Rename node"
@@ -1486,6 +1547,65 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                             onMouseDown={(e) => e.stopPropagation()}
                             onKeyDown={(e) => e.stopPropagation()}
                         />
+                    </div>
+                    <div className="text-toolbar nodrag" style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        maxWidth: '50%',
+                        overflowX: 'auto',
+                        paddingLeft: '8px'
+                    }}>
+                        {pages.map((page) => (
+                            <button
+                                key={page.id}
+                                type="button"
+                                title={page.label}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    selectPage(page.id);
+                                }}
+                                style={{
+                                    border: page.id === activePageId ? '1px solid rgba(79, 172, 254, 0.7)' : '1px solid transparent',
+                                    background: page.id === activePageId ? 'rgba(79, 172, 254, 0.16)' : 'rgba(255,255,255,0.04)',
+                                    color: page.id === activePageId ? 'var(--text-main)' : 'var(--text-sub)',
+                                    borderRadius: '999px',
+                                    padding: '3px 8px',
+                                    fontSize: '0.65rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap',
+                                    flexShrink: 0
+                                }}
+                            >
+                                {page.label}
+                            </button>
+                        ))}
+                        <button
+                            type="button"
+                            title="Add page"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                addPage();
+                            }}
+                            style={{
+                                border: '1px dashed rgba(79, 172, 254, 0.5)',
+                                background: 'transparent',
+                                color: 'var(--accent-bright)',
+                                borderRadius: '999px',
+                                width: '24px',
+                                height: '24px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                flexShrink: 0
+                            }}
+                        >
+                            +
+                        </button>
                     </div>
                 </div>
 

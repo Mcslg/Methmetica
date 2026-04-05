@@ -4,7 +4,7 @@ import useStore, { type AppState } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
 
-export const ButtonNode = ({ id, data, selected, className }: any) => {
+export const ButtonNode = ({ id, data, className }: any) => {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
     const [isEditing, setIsEditing] = useState(false);
 
@@ -39,7 +39,7 @@ export const ButtonNode = ({ id, data, selected, className }: any) => {
                 boxShadow: 'var(--node-shadow)'
             }}
         >
-            <NodeResizer minWidth={80} minHeight={40} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
+            <NodeResizer minWidth={80} minHeight={40} isVisible={false} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
 
             <div className="node-content" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexGrow: 1, padding: '12px' }}>
                 {isEditing ? (

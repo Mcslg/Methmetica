@@ -4,7 +4,7 @@ import useStore, { type AppState } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
 
-export const SliderNode = memo(function SliderNode({ id, data, selected, className }: any) {
+export const SliderNode = memo(function SliderNode({ id, data, className }: any) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
     const executeNode = useStore((state: AppState) => state.executeNode);
     const setGlobalVar = useStore((state: AppState) => state.setGlobalVar);
@@ -61,7 +61,7 @@ export const SliderNode = memo(function SliderNode({ id, data, selected, classNa
                  overflow: 'visible',
                  boxSizing: 'border-box'
              }}>
-            <NodeResizer minWidth={180} minHeight={110} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
+            <NodeResizer minWidth={180} minHeight={110} isVisible={false} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
             <DynamicHandles
                 nodeId={id}
                 handles={data.handles || [{ id: 'h-out', type: 'output', position: 'right', offset: 50, label: name }]}
@@ -179,4 +179,3 @@ export const SliderNode = memo(function SliderNode({ id, data, selected, classNa
         </div>
     );
 });
-

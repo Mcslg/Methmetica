@@ -3,7 +3,6 @@ import { type NodeProps, type Node, useUpdateNodeInternals } from '@xyflow/react
 import useStore, { type NodeData, type AppState, type CustomHandle } from '../store/useStore';
 import { getMathEngine } from '../utils/MathEngine';
 import { Icons } from '../components/Icons';
-import 'mathlive';
 import { NodeFrame } from '../components/NodeFrame';
 import { MathInput } from '../components/MathInput';
 
@@ -180,4 +179,3 @@ export const CalculateNode = memo(function CalculateNode({ id, data, selected }:
         </NodeFrame>
     );
 });
-

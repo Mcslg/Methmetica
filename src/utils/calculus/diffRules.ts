@@ -1,17 +1,26 @@
 import { getMathEngine, getMathSymbol } from '../MathEngine';
 import type { StepNode, StepTreeResult } from './types';
 
+type ExpressionNode = {
+    symbol?: string;
+    head?: string;
+    numericValue?: number | null;
+    ops?: ExpressionNode[];
+    latex?: string;
+    valueOf?: () => unknown;
+};
+
 interface RuleContext {
     variable: string;
-    variableSymbol: any;
-    annotate: (node: any) => StepNode;
-    latex: (node: any) => string;
+    variableSymbol: unknown;
+    annotate: (node: ExpressionNode) => StepNode;
+    latex: (node: ExpressionNode) => string;
 }
 
 interface DiffRule {
     name: string;
-    matches: (node: any, context: RuleContext) => boolean;
-    apply: (node: any, context: RuleContext) => StepNode;
+    matches: (node: ExpressionNode, context: RuleContext) => boolean;
+    apply: (node: ExpressionNode, context: RuleContext) => StepNode;
 }
 
 const trigMap: Record<string, string> = {
@@ -71,19 +80,19 @@ const diffRules: DiffRule[] = [
             explanationKey: 'diff-sum',
             inputLatex: context.latex(node),
             outputLatex: `\\frac{d}{d${context.variable}}\\left(${context.latex(node)}\\right) = \\text{(逐項求導之和)}`,
-            children: (node.ops ?? []).map((op: any) => context.annotate(op))
+            children: (node.ops ?? []).map((op: ExpressionNode) => context.annotate(op))
         })
     },
     {
         name: 'multiply',
         matches: (node) => node?.head === 'Multiply',
         apply: (node, context) => {
-            const ops: any[] = node.ops ?? [];
-            const consts = ops.filter((op: any) =>
+            const ops: ExpressionNode[] = node.ops ?? [];
+            const consts = ops.filter((op: ExpressionNode) =>
                 (op.numericValue !== null && op.numericValue !== undefined && !op.ops?.length) ||
                 (op.symbol !== undefined && op.symbol !== context.variable)
             );
-            const funcs = ops.filter((op: any) => !consts.includes(op));
+            const funcs = ops.filter((op: ExpressionNode) => !consts.includes(op));
 
             if (consts.length > 0 && funcs.length > 0) {
                 const constantLatex = consts.map(context.latex).join(' \\cdot ');
@@ -93,7 +102,7 @@ const diffRules: DiffRule[] = [
                     explanationKey: 'diff-constant-multiple',
                     inputLatex: context.latex(node),
                     outputLatex: `\\frac{d}{d${context.variable}}\\left(${context.latex(node)}\\right) = ${constantLatex} \\cdot \\frac{d}{d${context.variable}}\\left(${functionLatex}\\right)`,
-                    children: funcs.map((op: any) => context.annotate(op)),
+                    children: funcs.map((op: ExpressionNode) => context.annotate(op)),
                     meta: { constantLatex }
                 };
             }
@@ -122,7 +131,16 @@ const diffRules: DiffRule[] = [
         name: 'divide',
         matches: (node) => node?.head === 'Divide' && (node?.ops?.length ?? 0) === 2,
         apply: (node, context) => {
-            const [u, v] = node.ops;
+            const [u, v] = node.ops ?? [];
+            if (!u || !v) {
+                return {
+                    rule: 'fallback',
+                    explanationKey: 'diff-fallback',
+                    inputLatex: context.latex(node),
+                    outputLatex: `\\frac{d}{d${context.variable}}\\left(${context.latex(node)}\\right)`,
+                    children: []
+                };
+            }
             return {
                 rule: 'divide',
                 explanationKey: 'diff-quotient',
@@ -136,7 +154,16 @@ const diffRules: DiffRule[] = [
         name: 'power',
         matches: (node) => node?.head === 'Power' && (node?.ops?.length ?? 0) === 2,
         apply: (node, context) => {
-            const [base, exp] = node.ops;
+            const [base, exp] = node.ops ?? [];
+            if (!base || !exp) {
+                return {
+                    rule: 'fallback',
+                    explanationKey: 'diff-fallback',
+                    inputLatex: context.latex(node),
+                    outputLatex: `\\frac{d}{d${context.variable}}\\left(${context.latex(node)}\\right)`,
+                    children: []
+                };
+            }
             const baseLatex = context.latex(base);
             const expVal: number | undefined = typeof exp.numericValue === 'number' ? exp.numericValue : undefined;
 
@@ -175,7 +202,16 @@ const diffRules: DiffRule[] = [
         name: 'basic-function',
         matches: (node) => Boolean(node?.head && trigMap[node.head] && (node?.ops?.length ?? 0) >= 1),
         apply: (node, context) => {
-            const arg = node.ops[0];
+            const arg = node.ops?.[0];
+            if (!arg || !node.head) {
+                return {
+                    rule: 'fallback',
+                    explanationKey: 'diff-fallback',
+                    inputLatex: context.latex(node),
+                    outputLatex: `\\frac{d}{d${context.variable}}\\left(${context.latex(node)}\\right)`,
+                    children: []
+                };
+            }
             const argumentLatex = context.latex(arg);
             const outerForm = trigMap[node.head].replace(/ARG/g, argumentLatex);
             const children: StepNode[] = [];
@@ -224,7 +260,7 @@ export function buildDiffStepTree(formula: string, variable: string = 'x'): Step
         const expr = ce.parse(formula);
         let depth = 0;
 
-        const latex = (node: any): string => {
+        const latex = (node: ExpressionNode): string => {
             try {
                 return node?.latex ?? String(node);
             } catch {
@@ -232,7 +268,7 @@ export function buildDiffStepTree(formula: string, variable: string = 'x'): Step
             }
         };
 
-        const annotate = (node: any): StepNode => {
+        const annotate = (node: ExpressionNode): StepNode => {
             depth++;
             if (depth > 30 || !node) {
                 depth--;

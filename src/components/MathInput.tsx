@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
-import 'mathlive';
+import { loadMathlive } from '../utils/loadMathlive';
 
 interface MathInputProps {
     value: string;
@@ -15,6 +15,7 @@ export const MathInput = forwardRef<any, MathInputProps>(({ value, onChange, onK
     const mfRef = useRef<any>(null);
     const isSettingValueRef = useRef(false);
     const valueRef = useRef(value);
+    const [isReady, setIsReady] = React.useState(false);
 
     // Expose the underlying math-field to parent refs
     useImperativeHandle(ref, () => mfRef.current);
@@ -29,8 +30,21 @@ export const MathInput = forwardRef<any, MathInputProps>(({ value, onChange, onK
         onChangeRef.current = onChange;
     }, [onChange]);
 
+    useEffect(() => {
+        let isMounted = true;
+
+        loadMathlive().then(() => {
+            if (isMounted) setIsReady(true);
+        });
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+
     // Setup input listener exactly once
     useEffect(() => {
+        if (!isReady) return;
         const mf = mfRef.current;
         if (!mf) return;
 
@@ -52,10 +66,11 @@ export const MathInput = forwardRef<any, MathInputProps>(({ value, onChange, onK
             mf.removeEventListener('input', handleInput);
             cancelAnimationFrame(frameId);
         };
-    }, []); // Empty deps to bind only once
+    }, [isReady]); // Bind after mathlive registers the web component
 
     // Manually sync changes from React store to the Web Component
     useEffect(() => {
+        if (!isReady) return;
         const mf = mfRef.current;
         if (!mf) return;
 
@@ -65,6 +80,16 @@ export const MathInput = forwardRef<any, MathInputProps>(({ value, onChange, onK
             isSettingValueRef.current = false;
         }
     }, [value]);
+
+    if (!isReady) {
+        return (
+            <div
+                className={className}
+                style={style}
+                aria-busy="true"
+            />
+        );
+    }
 
     return (
         <math-field

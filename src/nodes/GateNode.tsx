@@ -3,7 +3,7 @@ import useStore, { type AppState } from '../store/useStore';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
 
-export function GateNode({ id, data, selected, className }: any) {
+export function GateNode({ id, data, className }: any) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
     // We check if the gate is "open" based on the data.value (which is updated by evaluateGraph)
     const val = Number(data.value || 0);
@@ -19,7 +19,7 @@ export function GateNode({ id, data, selected, className }: any) {
                 boxShadow: isOpen ? '0 0 15px rgba(74, 222, 128, 0.1)' : 'none'
             }}
         >
-            <NodeResizer minWidth={120} minHeight={110} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
+            <NodeResizer minWidth={120} minHeight={110} isVisible={false} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
             
             <div className="node-header" style={{ color: isOpen ? 'var(--accent-bright)' : 'var(--text-sub)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1, gap: '4px' }}>
@@ -75,5 +75,4 @@ export function GateNode({ id, data, selected, className }: any) {
         </div>
     );
 }
-
 

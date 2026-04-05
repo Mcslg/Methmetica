@@ -4,7 +4,7 @@ import { ReactFlow, Background, Controls, ReactFlowProvider, useReactFlow, Backg
 import { useShallow } from 'zustand/react/shallow';
 import '@xyflow/react/dist/style.css';
 
-import useStore from './store/useStore';
+import useStore, { type AppNode } from './store/useStore';
 import { nodeTypes, getNodeDefinition, buildNodeCatalog } from './nodes/registry';
 import { Sidebar } from './components/Sidebar';
 import { FloatingPalette } from './components/FloatingPalette';
@@ -13,6 +13,21 @@ import { Dashboard } from './components/Dashboard';
 import { DebugOverlay, countRender } from './components/DebugOverlay';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { AuthBootstrap } from './components/AuthBootstrap';
+
+type PaneMenuEvent = {
+  preventDefault: () => void;
+  clientX: number;
+  clientY: number;
+  shiftKey?: boolean;
+};
+
+type NodeMenuEvent = PaneMenuEvent & {
+  currentTarget?: EventTarget | null;
+};
+
+type AddNodeAtCenterEvent = CustomEvent<{ type: string; templateId?: string }>;
+type ConnectStartPayload = { nodeId: string | null; handleId: string | null; handleType: string | null };
+type TouchTargetEvent = React.TouchEvent<HTMLElement>;
 
 function Flow() {
   const { t } = useLanguage();
@@ -59,7 +74,7 @@ function Flow() {
   const [isShiftPressed, setIsShiftPressed] = useState(false);
   const [idleTooltip, setIdleTooltip] = useState<{ x: number, y: number } | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const idleTimerRef = useRef<any>(null);
+  const idleTimerRef = useRef<number | null>(null);
  
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -89,7 +104,7 @@ function Flow() {
       window.removeEventListener('keydown', handleKey);
       window.removeEventListener('keyup', handleKey);
     };
-  }, [setAltPressed, setCtrlPressed]);
+  }, [redo, setAltPressed, setCtrlPressed, undo]);
 
 
   useEffect(() => {
@@ -136,45 +151,6 @@ function Flow() {
     radialSelectionRef.current = radialSelection;
   }, [radialSelection]);
 
-  useEffect(() => {
-    if (!radialMenu) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const dx = e.clientX - radialMenu.screenX;
-      const dy = e.clientY - radialMenu.screenY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (dist < 40) {
-        setRadialSelection(null);
-        return;
-      }
-
-      let angle = Math.atan2(dx, -dy) * 180 / Math.PI;
-      if (angle < 0) angle += 360;
-
-      if (angle >= 0 && angle < 180) setRadialSelection('calculateNode');
-      else setRadialSelection('textNode');
-    };
-
-    const handleMouseUp = (e: MouseEvent) => {
-      if (e.button === 2) {
-        const currentSelection = radialSelectionRef.current;
-        if (currentSelection) {
-          handleAddNode(currentSelection, undefined, { x: radialMenu.screenX, y: radialMenu.screenY });
-          setRadialMenu(null);
-          setRadialSelection(null);
-        }
-      }
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [radialMenu]);
-
   const filteredLibrary = buildNodeCatalog(communityTemplates).filter(item => {
     const matches =
       item.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -185,7 +161,7 @@ function Flow() {
     return searchQuery.trim().length > 0;
   });
 
-  const onPaneContextMenu = useCallback((e: MouseEvent | React.MouseEvent | { preventDefault: () => void, clientX: number, clientY: number, shiftKey?: boolean }) => {
+  const onPaneContextMenu = useCallback((e: MouseEvent | React.MouseEvent | PaneMenuEvent) => {
     e.preventDefault();
     if (radialMenu) {
       if (!('shiftKey' in e && e.shiftKey)) { setRadialMenu(null); setRadialSelection(null); }
@@ -208,18 +184,19 @@ function Flow() {
     setTimeout(() => searchInputRef.current?.focus(), 10);
   }, [radialMenu]);
 
-  const onNodeContextMenu = useCallback((e: React.MouseEvent | { currentTarget: any, clientX: number, clientY: number, preventDefault: () => void }, node: any) => {
+  const onNodeContextMenu = useCallback((e: React.MouseEvent<HTMLElement> | NodeMenuEvent, node: AppNode) => {
     e.preventDefault();
     setPaneMenu(null);
-    const rect = 'currentTarget' in e && e.currentTarget ? (e.currentTarget as HTMLElement).getBoundingClientRect() : { top: e.clientY, height: 100 };
-    const nodeHeight = (rect as any).height || 100;
-    const relativeY = ((e.clientY - (rect as any).top) / nodeHeight) * 100;
+    const currentTarget = 'currentTarget' in e ? e.currentTarget : null;
+    const rect = currentTarget instanceof HTMLElement ? currentTarget.getBoundingClientRect() : { top: e.clientY, height: 100 };
+    const nodeHeight = rect.height || 100;
+    const relativeY = ((e.clientY - rect.top) / nodeHeight) * 100;
     setNodeMenu({ x: e.clientX, y: e.clientY, nodeId: node.id, relativeY });
   }, []);
 
   // Long press for touch support
-  const touchTimerRef = useRef<any>(null);
-  const handleTouchStart = useCallback((e: any, node?: any) => {
+  const touchTimerRef = useRef<number | null>(null);
+  const handleTouchStart = useCallback((e: TouchTargetEvent, node?: AppNode) => {
     const touch = e.touches[0];
     const { clientX, clientY } = touch;
     const target = e.currentTarget;
@@ -292,9 +269,48 @@ function Flow() {
           templateRelatedWorkflowIds: template.relatedWorkflowIds,
         } : {}),
       }
-    } as any);
+    } as AppNode);
     setPaneMenu(null); setRadialMenu(null);
   }, [addNode, communityTemplates, paneMenu, radialMenu, screenToFlowPosition]);
+
+  useEffect(() => {
+    if (!radialMenu) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const dx = e.clientX - radialMenu.screenX;
+      const dy = e.clientY - radialMenu.screenY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < 40) {
+        setRadialSelection(null);
+        return;
+      }
+
+      let angle = Math.atan2(dx, -dy) * 180 / Math.PI;
+      if (angle < 0) angle += 360;
+
+      if (angle >= 0 && angle < 180) setRadialSelection('calculateNode');
+      else setRadialSelection('textNode');
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+      if (e.button === 2) {
+        const currentSelection = radialSelectionRef.current;
+        if (currentSelection) {
+          handleAddNode(currentSelection, undefined, { x: radialMenu.screenX, y: radialMenu.screenY });
+          setRadialMenu(null);
+          setRadialSelection(null);
+        }
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [handleAddNode, radialMenu]);
 
   const onDrop = useCallback((event: React.DragEvent) => {
       event.preventDefault();
@@ -304,7 +320,7 @@ function Flow() {
         try {
           const { sliderData } = JSON.parse(ejectDataStr);
           const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-          addNode({ ...sliderData, id: `slider-ejected-${Date.now()}`, position, selected: true } as any);
+          addNode({ ...sliderData, id: `slider-ejected-${Date.now()}`, position, selected: true } as AppNode);
           return;
         } catch (e) { console.error('Failed to parse eject data', e); }
       }
@@ -316,12 +332,13 @@ function Flow() {
           handleAddNode(raw, undefined, { x: event.clientX, y: event.clientY });
         }
       }
-    }, [handleAddNode]);
+  }, [addNode, handleAddNode, screenToFlowPosition]);
 
   useEffect(() => {
-    const handleAddAtCenter = (e: any) => {
-      const type = e.detail.type;
-      const templateId = e.detail.templateId;
+    const handleAddAtCenter = (e: Event) => {
+      const addEvent = e as AddNodeAtCenterEvent;
+      const type = addEvent.detail.type;
+      const templateId = addEvent.detail.templateId;
       const { x, y } = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
       handleAddNode(type, undefined, { x, y }, templateId);
     };
@@ -335,13 +352,20 @@ function Flow() {
     if (!nodeMenu) return;
     const node = nodes.find(n => n.id === nodeMenu.nodeId);
     if (!node) return;
-    addNode({ ...node, id: `${node.type}-${Date.now()}`, position: { x: node.position.x + 30, y: node.position.y + 30 }, selected: true } as any);
+    addNode({ ...node, id: `${node.type}-${Date.now()}`, position: { x: node.position.x + 30, y: node.position.y + 30 }, selected: true } as AppNode);
     setNodeMenu(null);
   };
 
   const closeMenus = () => { setPaneMenu(null); setRadialMenu(null); setNodeMenu(null); };
 
-  const onConnectStart = useCallback((_event: any, { nodeId, handleId, handleType }: any) => {
+  const getPointerClientPosition = (event: React.MouseEvent | React.TouchEvent) => (
+    'touches' in event
+      ? { x: event.touches[0]?.clientX ?? 0, y: event.touches[0]?.clientY ?? 0 }
+      : { x: event.clientX, y: event.clientY }
+  );
+
+  const onConnectStart = useCallback((_event: unknown, { nodeId, handleId, handleType }: ConnectStartPayload) => {
+    if (!nodeId || !handleId || !handleType) return;
     connectingNodeRef.current = { nodeId, handleId, handleType };
   }, []);
 
@@ -404,24 +428,23 @@ function Flow() {
               selected: false,
               dragging: false,
             }));
-            addNodes(copies as any);
+            addNodes(copies as AppNode[]);
           }
         }}
-        onNodeDrag={(event: any, node) => {
+        onNodeDrag={(event: React.MouseEvent | React.TouchEvent, node: AppNode) => {
           // [PERF] Let math-field lose focus on drag to stop cursor/RAF thrashing
           (document.activeElement as HTMLElement)?.blur();
           
-          const x = 'clientX' in event ? event.clientX : (event.touches ? event.touches[0].clientX : 0);
-          const y = 'clientY' in event ? event.clientY : (event.touches ? event.touches[0].clientY : 0);
+          const { x, y } = getPointerClientPosition(event);
           const threshold = isSidebarOpen ? 180 : 40;
           setDeletingHover(x < threshold);
           
           // Update merge hint with flow position
           updateMergeHint(node.id, screenToFlowPosition({ x, y }));
         }}
-        onNodeDragStop={(event: any, node) => {
+        onNodeDragStop={(event: React.MouseEvent | React.TouchEvent, node: AppNode) => {
           setDeletingHover(false);
-          const x = 'clientX' in event ? event.clientX : (event.touches ? event.touches[0].clientX : 0);
+          const { x } = getPointerClientPosition(event);
           if (x < (isSidebarOpen ? 180 : 40)) removeNode(node.id);
           else handleProximitySnap(node.id);
         }}
@@ -476,7 +499,7 @@ function Flow() {
                   <div className="command-category">{t(`categories.${cat.toLowerCase()}`)}</div>
                   {filteredLibrary.filter(n => n.category === cat).map(item => (
                     <div key={item.type} className="command-item" onClick={() => handleAddNode(item.type)}>
-                      <div className="command-icon" style={{ '--theme-color': item.color } as any}>{item.icon}</div>
+                      <div className="command-icon" style={{ '--theme-color': item.color } as React.CSSProperties}>{item.icon}</div>
                       <div className="command-info"><span className="command-label">{item.label}</span><span className="command-desc">{item.desc}</span></div>
                     </div>
                   ))}
@@ -513,7 +536,7 @@ function Flow() {
                     const ty = center + Math.sin(rad) * 95;
                     return (
                         <g key={item.type}>
-                          <path className={`pie-segment ${isActive ? 'active' : ''}`} d={d} style={{ '--item-color': item.color } as any} onClick={() => handleAddNode(item.type)} />
+                          <path className={`pie-segment ${isActive ? 'active' : ''}`} d={d} style={{ '--item-color': item.color } as React.CSSProperties} onClick={() => handleAddNode(item.type)} />
                           <g className="pie-label-group" transform={`translate(${tx}, ${ty})`}>
                             <g transform="translate(-12, -35)" style={{ color: item.color }}>{item.icon}</g>
                             <text className="pie-item-label" y="5" style={{ fill: 'var(--text-main)', opacity: isActive ? 1 : 0.6 }}>{item.label}</text>
@@ -565,7 +588,7 @@ function Flow() {
         const bWidth = targetNode.measured?.width || targetNode.width || 200;
         const bHeight = targetNode.measured?.height || targetNode.height || 100;
         let anchor = { x: targetNode.position.x + bWidth, y: targetNode.position.y + bHeight / 2 };
-        let offset = { x: 0, y: 0 };
+        const offset = { x: 0, y: 0 };
         let transform = 'translateY(-50%)';
 
         if (mergeHint.side === 'left') {

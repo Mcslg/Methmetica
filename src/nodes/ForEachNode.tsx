@@ -3,7 +3,7 @@ import useStore, { type AppState, type NodeData, type AppNode } from '../store/u
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
 
-export function ForEachNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
+export function ForEachNode({ id, data }: NodeProps<Node<NodeData>>) {
     const nodes = useStore((state: AppState) => state.nodes);
     const targetNode = nodes.find(n => 
         useStore.getState().edges.some(e => e.source === id && e.target === n.id)
@@ -24,7 +24,7 @@ export function ForEachNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                 border: isAttached ? '1px solid rgba(162, 155, 254, 0.4)' : '1px solid var(--border-node)',
             }}
         >
-            <NodeResizer minWidth={150} minHeight={110} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
+            <NodeResizer minWidth={150} minHeight={110} isVisible={false} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
             
             <div className="node-header" style={{ color: isAttached ? 'var(--accent-bright)' : 'var(--text-sub)' }}>
                 <span>

@@ -46,7 +46,7 @@
 - `supabase/workflows.sql`
 
 ## Known Gaps
-- Template preview is still embedded in the builder UI, not yet a first-class workflow node.
+- Builder UI now uses a live node-style interface stage instead of a separate template preview card, but full workflow-canvas editing for template internals is still not built.
 - There is no dedicated "My published workflows" management area yet.
 - Core workflow moderation/editor tooling is not built yet.
 - Public workflow detail pages and richer SEO pages are not built yet.

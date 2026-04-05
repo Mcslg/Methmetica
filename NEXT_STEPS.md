@@ -1,12 +1,11 @@
 # Next Steps
 
 ## Highest Priority
-1. Turn template preview into a real node inside the workflow canvas.
-2. Add a "My Workflows" / "Published Workflows" management view.
-3. Improve public workflow open/edit/update flow after publish.
+1. Add a "My Workflows" / "Published Workflows" management view.
+2. Improve public workflow open/edit/update flow after publish.
 
 ## Product / UX
-1. Refine builder UX for input/output placement and preview.
+1. Continue refining builder UX for input/output interface placement and internal/external flow semantics.
 2. Decide whether node interfaces should visually stay attached to nodes while remaining separately configurable.
 3. Add clearer saved / unsaved indicators in the editor UI.
 

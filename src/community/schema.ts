@@ -14,14 +14,14 @@ export type SupabaseWorkflowRow = {
   visibility: 'public' | 'private' | 'core';
   author_id: string | null;
   updated_at: string;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 };
 
 export type SupabaseWorkflowNodeRow = {
   id: string;
   workflow_id: string;
   node_type: string;
-  payload: Record<string, any>;
+  payload: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 };
@@ -33,7 +33,7 @@ export type SupabaseNodeTemplateRow = {
   summary: string;
   visibility: 'community' | 'core';
   version: string;
-  payload: Record<string, any>;
+  payload: Record<string, unknown>;
   updated_at: string;
 };
 
@@ -46,4 +46,3 @@ export type SupabaseCoreNodeRow = {
   trusted_only: boolean;
   updated_at: string;
 };
-

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useReactFlow } from '@xyflow/react';
 import useStore, { type AppState } from '../store/useStore';
-import 'mathlive';
 import { MathInput } from './MathInput';
 
 

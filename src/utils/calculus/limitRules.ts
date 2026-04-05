@@ -1,11 +1,20 @@
 import { getMathEngine, getMathSymbol } from '../MathEngine';
 import type { StepNode, StepTreeResult } from './types';
 
+type LimitExpressionNode = {
+    head?: string;
+    ops?: LimitExpressionNode[];
+    latex?: string;
+    isFinite?: boolean;
+    isZero?: boolean;
+};
+
 export function buildLimitStepTree(formula: string, limitPoint: string, variable: string = 'x'): StepTreeResult | null {
     if (!formula) return null;
 
     const ce = getMathEngine();
     const variableSymbol = getMathSymbol(variable);
+    type BoxInput = NonNullable<ReturnType<typeof ce.parse>>;
 
     try {
         let lp = String(limitPoint).trim().toLowerCase();
@@ -38,21 +47,24 @@ export function buildLimitStepTree(formula: string, limitPoint: string, variable
             return { root, finalLatex: sub.latex };
         }
 
-        const exprHead = (expr as any).head;
+        const exprNode = expr as LimitExpressionNode;
+        const exprHead = exprNode.head;
         if (exprHead === 'Divide') {
-            const exprOps: any[] = (expr as any).ops ?? [];
+            const exprOps: LimitExpressionNode[] = exprNode.ops ?? [];
             const num = exprOps[0];
             const den = exprOps[1];
 
             if (num && den) {
-                const numSub = ce.box(['Replace', num, ce.box(['Equal', variableSymbol, targetValue])]).evaluate();
-                const denSub = ce.box(['Replace', den, ce.box(['Equal', variableSymbol, targetValue])]).evaluate();
-                const numIsZero = (numSub as any).isZero || false;
-                const denIsZero = (denSub as any).isZero || false;
+                const numExpr = num as BoxInput;
+                const denExpr = den as BoxInput;
+                const numSub = ce.box(['Replace', numExpr, ce.box(['Equal', variableSymbol, targetValue])]).evaluate();
+                const denSub = ce.box(['Replace', denExpr, ce.box(['Equal', variableSymbol, targetValue])]).evaluate();
+                const numIsZero = (numSub as LimitExpressionNode).isZero || false;
+                const denIsZero = (denSub as LimitExpressionNode).isZero || false;
 
                 if ((numIsZero && denIsZero) || (!numSub.isFinite && !denSub.isFinite)) {
-                    const dNum = ce.box(['D', num, variableSymbol]).evaluate();
-                    const dDen = ce.box(['D', den, variableSymbol]).evaluate();
+                    const dNum = ce.box(['D', numExpr, variableSymbol]).evaluate();
+                    const dDen = ce.box(['D', denExpr, variableSymbol]).evaluate();
                     const ratio = ce.box(['Divide', dNum, dDen]).simplify();
                     root.children.push({
                         rule: 'limit-lhopital',

@@ -4,7 +4,6 @@ import { type NodeProps, type Node } from '@xyflow/react';
 import useStore, { type NodeData, type AppState } from '../store/useStore';
 import { getMathEngine } from '../utils/MathEngine';
 import { Icons } from '../components/Icons';
-import 'mathlive';
 import { NodeFrame } from '../components/NodeFrame';
 import { FormulaSidebarArea } from '../components/FormulaSidebarArea';
 import { countRender } from '../components/DebugOverlay';
@@ -602,4 +601,3 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
         </NodeFrame>
     );
 });
-

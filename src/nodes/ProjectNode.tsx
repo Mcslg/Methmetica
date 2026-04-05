@@ -1,7 +1,7 @@
 import React from 'react';
-import { Handle, Position, useReactFlow } from '@xyflow/react';
+import { type NodeProps, Handle, Position, useReactFlow } from '@xyflow/react';
 import { Icons } from '../components/Icons';
-import useStore from '../store/useStore';
+import useStore, { type AppNode, type NodeData } from '../store/useStore';
 import { useLanguage } from '../contexts/LanguageContext';
 import { CommunityNodeMaker, buildTemplateFromBlocks } from '../components/CommunityNodeMaker';
 import type { CommunityNodeTemplate, WorkflowVisibility } from '../community/types';
@@ -14,24 +14,150 @@ const parseTags = (value: string) => value
   .map(item => item.trim())
   .filter(Boolean);
 
-export function ProjectNode({ id, data }: { id: string; data: any }) {
+const DRAFT_SYNC_DELAY_MS = 180;
+const INVISIBLE_HANDLE_STYLE = { opacity: 0 };
+const serializeDraft = (draft?: CommunityNodeTemplate) => (draft ? JSON.stringify(draft) : '');
+
+export const ProjectNode = React.memo(function ProjectNode({ id, data, selected }: NodeProps<AppNode>) {
   const { setViewport, getNodes } = useReactFlow();
-  const { updateNodeData, activeFileId, upsertCommunityTemplate, nodes, edges, user, setUser, markCurrentGraphSaved } = useStore();
+  const updateNodeData = useStore(state => state.updateNodeData);
+  const activeFileId = useStore(state => state.activeFileId);
+  const upsertCommunityTemplate = useStore(state => state.upsertCommunityTemplate);
+  const user = useStore(state => state.user);
+  const setUser = useStore(state => state.setUser);
+  const markCurrentGraphSaved = useStore(state => state.markCurrentGraphSaved);
+  const addNode = useStore(state => state.addNode);
   const { t } = useLanguage();
 
   const [localName, setLocalName] = React.useState(data.label || '');
   const [localDesc, setLocalDesc] = React.useState(data.description || '');
   const [localTags, setLocalTags] = React.useState(Array.isArray(data.tags) ? data.tags.join(', ') : '');
   const [localVisibility, setLocalVisibility] = React.useState<WorkflowVisibility>(data.visibility || 'private');
+  const [localBuilderDraft, setLocalBuilderDraft] = React.useState<CommunityNodeTemplate | undefined>(
+    data.builderDraft as CommunityNodeTemplate | undefined
+  );
   const [isExpanded, setIsExpanded] = React.useState(true);
   const [isPublishing, setIsPublishing] = React.useState(false);
+  const builderDraft = localBuilderDraft;
+  const linkedTemplateNodeId = data.linkedTemplateNodeId as string | undefined;
+  const publishStatus = data.publishStatus || '發布此工作流，就等於發布這個節點。';
+  const lastSyncedDraftSignatureRef = React.useRef(serializeDraft(data.builderDraft as CommunityNodeTemplate | undefined));
+
+  const syncDraftWithLocalMetadata = React.useCallback((draft: CommunityNodeTemplate) => syncDraftWithWorkflowMetadata(draft, {
+    title: (localName || data.label || draft.title).trim() || draft.title,
+    summary: localDesc || data.description || draft.summary,
+    tags: parseTags(localTags),
+  }), [data.description, data.label, localDesc, localName, localTags]);
+
+  const updateProjectData = React.useCallback((patch: Partial<{
+    label: string;
+    description: string;
+    tags: string[];
+    visibility: WorkflowVisibility;
+    builderDraft: CommunityNodeTemplate;
+    publishStatus: string;
+    linkedTemplateNodeId: string;
+    supabaseWorkflowId: string;
+  }>) => {
+    updateNodeData(id, patch, { skipGraphEval: true });
+  }, [id, updateNodeData]);
+
+  const syncLinkedTemplateNode = React.useCallback((draft: CommunityNodeTemplate, visibility: WorkflowVisibility) => {
+    const state = useStore.getState();
+    const projectNode = state.nodes.find(node => node.id === id);
+    if (!projectNode) return;
+
+    const managedTemplateNodes = state.nodes.filter(
+      node => node.type === 'communityTemplateNode' && node.data?.builderSourceId === id && node.data?.autoManagedTemplateNode
+    );
+    const linkedTemplateNode = state.nodes.find(node => node.id === linkedTemplateNodeId) || managedTemplateNodes[0];
+    const packagedDraft = buildTemplateFromBlocks({
+      ...draft,
+      slug: draft.slug || draft.id,
+      version: draft.version || '1.0.0',
+      discovery: 'search-only',
+      visibility,
+    });
+
+    const linkedNodeData = {
+      label: packagedDraft.title || 'Community Template',
+      templateId: packagedDraft.id,
+      templateDraft: packagedDraft,
+      builderSourceId: id,
+      autoManagedTemplateNode: true,
+      templateFields: Object.fromEntries(packagedDraft.fields.map(field => [field.id, field.defaultValue || ''])),
+      templateSummary: packagedDraft.summary,
+      handles: [
+        ...packagedDraft.inputs.map(handle => ({ ...handle })),
+        ...packagedDraft.outputs.map(handle => ({ ...handle })),
+      ],
+    };
+
+    const linkedDataSignature = JSON.stringify(linkedNodeData);
+    const duplicateManagedNodes = managedTemplateNodes.slice(1);
+
+    if (duplicateManagedNodes.length > 0) {
+      const duplicateIds = new Set(duplicateManagedNodes.map(node => node.id));
+      useStore.setState((current) => ({
+        nodes: current.nodes.filter(node => !duplicateIds.has(node.id)),
+        edges: current.edges.filter(edge => !duplicateIds.has(edge.source) && !duplicateIds.has(edge.target)),
+      }));
+      return;
+    }
+
+    if (linkedTemplateNode && linkedTemplateNodeId !== linkedTemplateNode.id) {
+      updateProjectData({ linkedTemplateNodeId: linkedTemplateNode.id });
+      return;
+    }
+
+    if (!linkedTemplateNodeId || !linkedTemplateNode) {
+      const projectWidth = projectNode.width || (typeof projectNode.style?.width === 'number' ? projectNode.style.width : 1080);
+      const linkedPosition = {
+        x: projectNode.position.x + Math.min(projectWidth + 56, 420),
+        y: projectNode.position.y + 36,
+      };
+      const newLinkedId = `builder-template-${id}`;
+      addNode({
+        id: newLinkedId,
+        type: 'communityTemplateNode',
+        position: linkedPosition,
+        width: packagedDraft.size.width,
+        height: packagedDraft.size.height,
+        style: { width: packagedDraft.size.width, height: packagedDraft.size.height },
+        selected: true,
+        data: linkedNodeData,
+      } as AppNode);
+      useStore.setState((current) => ({
+        nodes: current.nodes.map(node =>
+          node.id === id ? { ...node, selected: false } : node.id === newLinkedId ? { ...node, selected: true } : { ...node, selected: false }
+        ),
+      }));
+      updateProjectData({ linkedTemplateNodeId: newLinkedId });
+      return;
+    }
+
+    const currentLinkedDataSignature = JSON.stringify({
+      label: linkedTemplateNode.data?.label,
+      templateId: linkedTemplateNode.data?.templateId,
+      templateDraft: linkedTemplateNode.data?.templateDraft,
+      builderSourceId: linkedTemplateNode.data?.builderSourceId,
+      autoManagedTemplateNode: linkedTemplateNode.data?.autoManagedTemplateNode,
+      templateFields: linkedTemplateNode.data?.templateFields,
+      templateSummary: linkedTemplateNode.data?.templateSummary,
+      handles: linkedTemplateNode.data?.handles,
+    });
+
+    if (currentLinkedDataSignature !== linkedDataSignature) {
+      updateNodeData(linkedTemplateNode.id, linkedNodeData as Partial<NodeData>, { skipGraphEval: true });
+    }
+  }, [addNode, id, linkedTemplateNodeId, updateNodeData, updateProjectData]);
 
   const saveWorkflowMetadata = React.useCallback((patch?: Partial<{ label: string; description: string; tags: string[]; visibility: WorkflowVisibility }>) => {
     const finalName = (patch?.label ?? localName).trim() || 'Untitled Workflow';
     const finalDesc = patch?.description ?? localDesc;
     const finalTags = patch?.tags ?? parseTags(localTags);
     const finalVisibility = patch?.visibility ?? localVisibility;
-    const existingDraft = data.builderDraft as CommunityNodeTemplate | undefined;
+    const existingDraft = localBuilderDraft;
     const nextDraft = existingDraft
       ? syncDraftWithWorkflowMetadata(existingDraft, {
           title: finalName,
@@ -41,16 +167,20 @@ export function ProjectNode({ id, data }: { id: string; data: any }) {
       : undefined;
 
     if (finalName !== localName) setLocalName(finalName);
+    if (finalDesc !== localDesc) setLocalDesc(finalDesc);
+    if (finalVisibility !== localVisibility) setLocalVisibility(finalVisibility);
+    const finalTagsText = finalTags.join(', ');
+    if (finalTagsText !== localTags) setLocalTags(finalTagsText);
+    if (nextDraft) setLocalBuilderDraft(nextDraft);
 
-    updateNodeData(id, {
-      ...data,
+    updateProjectData({
       label: finalName,
       description: finalDesc,
       tags: finalTags,
       visibility: finalVisibility,
       ...(nextDraft ? { builderDraft: nextDraft } : {}),
     });
-  }, [data, id, localDesc, localName, localTags, localVisibility, updateNodeData]);
+  }, [localBuilderDraft, localDesc, localName, localTags, localVisibility, updateProjectData]);
 
   const handleFocus = () => {
     const node = getNodes().find(n => n.id === id);
@@ -66,8 +196,8 @@ export function ProjectNode({ id, data }: { id: string; data: any }) {
       tags: parseTags(localTags),
     });
 
-    updateNodeData(id, {
-      ...data,
+    setLocalBuilderDraft(draft);
+    updateProjectData({
       label: draft.title,
       description: draft.summary,
       tags: draft.tags,
@@ -76,28 +206,16 @@ export function ProjectNode({ id, data }: { id: string; data: any }) {
       publishStatus: '這條工作流現在已經是可發布的節點 root。',
     });
     setIsExpanded(true);
+    syncLinkedTemplateNode(draft, localVisibility);
   };
 
   const handleDraftChange = (draft: CommunityNodeTemplate) => {
-    const syncedDraft = syncDraftWithWorkflowMetadata(draft, {
-      title: (localName || data.label || draft.title).trim() || draft.title,
-      summary: localDesc || data.description || draft.summary,
-      tags: parseTags(localTags),
-    });
-
-    updateNodeData(id, {
-      ...data,
-      builderDraft: syncedDraft,
-      label: syncedDraft.title,
-      description: syncedDraft.summary,
-      tags: syncedDraft.tags,
-    });
+    setLocalBuilderDraft(syncDraftWithLocalMetadata(draft));
   };
 
   const handlePublish = async (draft: CommunityNodeTemplate) => {
     if (!user) {
-      updateNodeData(id, {
-        ...data,
+      updateProjectData({
         publishStatus: '先登入，才能把這條工作流發布到公開社群。',
       });
       return;
@@ -113,8 +231,7 @@ export function ProjectNode({ id, data }: { id: string; data: any }) {
       }
 
       if (!['trusted_editor', 'admin'].includes(fetchedRole)) {
-        updateNodeData(id, {
-          ...data,
+        updateProjectData({
           publishStatus: '只有 trusted_editor 或 admin 能發布 core workflow。先改成 public，或提升身份後再發布。',
         });
         return;
@@ -135,6 +252,7 @@ export function ProjectNode({ id, data }: { id: string; data: any }) {
         discovery: 'search-only',
         visibility: localVisibility,
       });
+      const { nodes, edges } = useStore.getState();
 
       const publishedNodes = nodes.map(node => (
         node.id === id
@@ -170,8 +288,8 @@ export function ProjectNode({ id, data }: { id: string; data: any }) {
       };
 
       upsertCommunityTemplate(publishedTemplate);
-      updateNodeData(id, {
-        ...data,
+      setLocalBuilderDraft(publishedTemplate);
+      updateProjectData({
         label: publishedTemplate.title,
         description: publishedTemplate.summary,
         tags: publishedTemplate.tags,
@@ -180,12 +298,12 @@ export function ProjectNode({ id, data }: { id: string; data: any }) {
         supabaseWorkflowId: blueprint.card.id,
         publishStatus: `已發布 "${publishedTemplate.title}" 到公開社群，可透過右鍵搜尋找到，也會出現在 Public Workflows。`,
       });
+      syncLinkedTemplateNode(publishedTemplate, localVisibility);
       setTimeout(() => markCurrentGraphSaved(), 0);
     } catch (error) {
       console.error('Failed to publish workflow', error);
       const message = error instanceof Error ? error.message : '發布失敗';
-      updateNodeData(id, {
-        ...data,
+      updateProjectData({
         publishStatus: `發布失敗：${message}`,
       });
     } finally {
@@ -193,8 +311,37 @@ export function ProjectNode({ id, data }: { id: string; data: any }) {
     }
   };
 
-  const publishStatus = data.publishStatus || '發布此工作流，就等於發布這個節點。';
-  const builderDraft = data.builderDraft as CommunityNodeTemplate | undefined;
+  React.useEffect(() => {
+    const incoming = data.builderDraft as CommunityNodeTemplate | undefined;
+    const incomingSignature = serializeDraft(incoming);
+    lastSyncedDraftSignatureRef.current = incomingSignature;
+    setLocalBuilderDraft((prev) => {
+      if (serializeDraft(prev) === incomingSignature) return prev;
+      return incoming;
+    });
+  }, [data.builderDraft]);
+
+  React.useEffect(() => {
+    if (!builderDraft) return;
+
+    const timeoutId = window.setTimeout(() => {
+      const syncedDraft = syncDraftWithLocalMetadata(builderDraft);
+      const syncedDraftSignature = serializeDraft(syncedDraft);
+      if (syncedDraftSignature === lastSyncedDraftSignatureRef.current) return;
+
+      lastSyncedDraftSignatureRef.current = syncedDraftSignature;
+      updateProjectData({
+        builderDraft: syncedDraft,
+        label: syncedDraft.title,
+        description: syncedDraft.summary,
+        tags: syncedDraft.tags,
+        visibility: localVisibility,
+      });
+      syncLinkedTemplateNode(syncedDraft, localVisibility);
+    }, DRAFT_SYNC_DELAY_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [builderDraft, localVisibility, syncDraftWithLocalMetadata, syncLinkedTemplateNode, updateProjectData]);
 
   React.useEffect(() => {
     if (data.label !== localName && document.activeElement?.className !== 'project-name-input') {
@@ -328,240 +475,13 @@ export function ProjectNode({ id, data }: { id: string; data: any }) {
                 publishLabel={isPublishing ? '發布中...' : '發布此工作流為節點'}
                 status={publishStatus}
                 hideMetadataFields
+                showDetachedToolkit={selected}
               />
             </div>
           )}
         </div>
       )}
-
-      <style>{`
-        .project-node-container {
-          padding: 20px;
-          background: linear-gradient(180deg, rgba(56, 189, 248, 0.08), rgba(26, 26, 26, 0.88) 24%);
-          border: 2px solid rgba(56, 189, 248, 0.45);
-          border-radius: 24px;
-          min-width: 520px;
-          box-shadow: 0 18px 45px rgba(0, 0, 0, 0.35), 0 0 18px rgba(56, 189, 248, 0.12);
-          backdrop-filter: blur(20px);
-          transition: all 0.3s cubic-bezier(0.19, 1, 0.22, 1);
-        }
-        .project-node-container.expanded {
-          min-width: 1080px;
-        }
-        .project-header {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-        }
-        .project-icon-wrapper {
-          width: 56px;
-          height: 56px;
-          background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(14, 165, 233, 0.9));
-          color: white;
-          border-radius: 16px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          box-shadow: 0 10px 22px rgba(56, 189, 248, 0.22);
-        }
-        .project-title-area {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-        .project-name-input {
-          background: transparent;
-          border: none;
-          color: var(--text-main);
-          font-size: 1.35rem;
-          font-weight: 800;
-          outline: none;
-          width: 100%;
-        }
-        .project-visibility-select {
-          width: 100%;
-          border-radius: 12px;
-          border: 1px solid rgba(148, 163, 184, 0.22);
-          background: rgba(15, 23, 42, 0.68);
-          color: var(--text-main);
-          padding: 12px 14px;
-          font: inherit;
-        }
-        .root-visibility-hint {
-          margin-top: -4px;
-          font-size: 0.76rem;
-          color: var(--text-sub);
-          opacity: 0.9;
-        }
-        .project-meta {
-          display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          gap: 8px;
-        }
-        .sync-status {
-          font-size: 0.68rem;
-          font-weight: 700;
-          color: var(--accent-bright);
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          opacity: 0.9;
-        }
-        .sync-status.local {
-          color: #fbbf24;
-        }
-        .sync-status.builder {
-          color: #38bdf8;
-        }
-        .project-ctrls {
-          display: flex;
-          gap: 6px;
-        }
-        .focus-btn, .expand-btn, .builder-refresh-btn {
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          color: var(--text-sub);
-          border-radius: 10px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          transition: all 0.2s;
-          font: inherit;
-        }
-        .focus-btn, .expand-btn {
-          width: 36px;
-          height: 36px;
-        }
-        .builder-refresh-btn {
-          padding: 10px 14px;
-        }
-        .focus-btn:hover, .expand-btn:hover, .builder-refresh-btn:hover {
-          background: rgba(56, 189, 248, 0.12);
-          color: #7dd3fc;
-          border-color: rgba(56, 189, 248, 0.4);
-        }
-        .expand-btn.active {
-          background: #0284c7;
-          color: white;
-        }
-        .project-body {
-          margin-top: 18px;
-          padding-top: 18px;
-          border-top: 1px solid rgba(255, 255, 255, 0.08);
-          display: grid;
-          gap: 16px;
-        }
-        .root-metadata {
-          display: grid;
-          grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
-          gap: 14px;
-        }
-        .root-field {
-          display: grid;
-          gap: 8px;
-          font-size: 0.75rem;
-          font-weight: 700;
-          color: var(--text-sub);
-          text-transform: uppercase;
-        }
-        .project-desc-input,
-        .project-tags-input {
-          width: 100%;
-          box-sizing: border-box;
-          background: rgba(0, 0, 0, 0.24);
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          border-radius: 12px;
-          padding: 12px;
-          color: var(--text-main);
-          font-size: 0.9rem;
-          line-height: 1.5;
-          resize: vertical;
-          outline: none;
-          text-transform: none;
-          font-weight: 400;
-        }
-        .project-desc-input {
-          min-height: 112px;
-        }
-        .project-desc-input:focus,
-        .project-tags-input:focus {
-          border-color: rgba(56, 189, 248, 0.45);
-          background: rgba(0, 0, 0, 0.32);
-        }
-        .builder-cta {
-          display: flex;
-          justify-content: space-between;
-          gap: 16px;
-          align-items: center;
-          background: rgba(255,255,255,0.03);
-          border: 1px dashed rgba(56, 189, 248, 0.35);
-          border-radius: 18px;
-          padding: 20px;
-        }
-        .builder-cta strong,
-        .builder-root-banner strong {
-          display: block;
-          color: var(--text-main);
-          margin-bottom: 6px;
-          text-transform: none;
-          font-size: 0.95rem;
-        }
-        .builder-cta p,
-        .builder-root-banner p {
-          margin: 0;
-          color: var(--text-sub);
-          text-transform: none;
-          font-weight: 400;
-          line-height: 1.5;
-        }
-        .builder-create-btn {
-          white-space: nowrap;
-          border: 1px solid rgba(56, 189, 248, 0.35);
-          background: rgba(56, 189, 248, 0.14);
-          color: #e0f2fe;
-          padding: 12px 16px;
-          border-radius: 999px;
-          cursor: pointer;
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          font: inherit;
-        }
-        .builder-root-panel {
-          display: grid;
-          gap: 12px;
-        }
-        .builder-root-banner {
-          display: flex;
-          justify-content: space-between;
-          gap: 16px;
-          align-items: center;
-          background: rgba(255,255,255,0.03);
-          border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 18px;
-          padding: 16px;
-        }
-        @media (max-width: 1100px) {
-          .project-node-container.expanded {
-            min-width: 780px;
-          }
-          .root-metadata {
-            grid-template-columns: 1fr;
-          }
-          .builder-cta,
-          .builder-root-banner {
-            flex-direction: column;
-            align-items: stretch;
-          }
-        }
-      `}</style>
-
-      <Handle type="source" position={Position.Right} id="name-out" style={{ opacity: 0 }} />
+      <Handle type="source" position={Position.Right} id="name-out" style={INVISIBLE_HANDLE_STYLE} />
     </div>
   );
-}
+});

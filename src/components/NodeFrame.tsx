@@ -87,7 +87,7 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
 
     return (
         <div 
-            className={`math-node op-node ${className} ${touchingClasses}`}
+            className={`math-node op-node ${selected ? 'selected' : ''} ${className} ${touchingClasses}`}
             style={{
                 width: '100%',
                 height: '100%',
@@ -100,7 +100,7 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
             <NodeResizer 
                 minWidth={minWidth} 
                 minHeight={minHeight} 
-                isVisible={selected} 
+                isVisible={false} 
                 lineStyle={{ border: 'none' }} 
                 handleStyle={{ 
                     width: 28, 

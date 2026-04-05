@@ -3,7 +3,7 @@ import useStore, { type AppState, type AppNode, type NodeData } from '../store/u
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
 
-export function RangeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
+export function RangeNode({ id, data }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
 
     const inputs = (data.rangeDef || '0..10').split('..');
@@ -25,7 +25,7 @@ export function RangeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                 minWidth: '150px',
             }}
         >
-            <NodeResizer minWidth={150} minHeight={40} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
+            <NodeResizer minWidth={150} minHeight={40} isVisible={false} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
             
             <div className="node-header">
                 <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1, gap: '4px' }}>

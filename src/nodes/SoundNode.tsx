@@ -58,15 +58,15 @@ export const SoundNode = memo(function SoundNode({ id, data, selected }: NodePro
         // but replacing the buffer requires a new source node.
     }, [displayFormula]);
 
-    const stopCustomSource = () => {
+    const stopCustomSource = useCallback(() => {
         if (customSourceRef.current) {
-            try { customSourceRef.current.stop(); } catch {}
+            try { customSourceRef.current.stop(); } catch { /* source may already be stopped */ }
             customSourceRef.current.disconnect();
             customSourceRef.current = null;
         }
-    };
+    }, []);
 
-    const startCustomSource = () => {
+    const startCustomSource = useCallback(() => {
         if (!audioCtxRef.current || !customBufferRef.current || !gainRef.current) return;
         stopCustomSource();
         
@@ -81,9 +81,9 @@ export const SoundNode = memo(function SoundNode({ id, data, selected }: NodePro
         source.connect(gainRef.current);
         source.start();
         customSourceRef.current = source;
-    };
+    }, [currentFreq, stopCustomSource]);
 
-    const updateAudioParams = useCallback(() => {
+    useEffect(() => {
         if (!audioCtxRef.current || !gainRef.current) return;
         const ctx = audioCtxRef.current;
 
@@ -105,11 +105,7 @@ export const SoundNode = memo(function SoundNode({ id, data, selected }: NodePro
                 oscRef.current.frequency.setTargetAtTime(currentFreq, ctx.currentTime, 0.05);
             }
         }
-    }, [isPlaying, currentFreq, currentVol, waveform]);
-
-    useEffect(() => {
-        updateAudioParams();
-    }, [updateAudioParams]);
+    }, [currentFreq, currentVol, isPlaying, startCustomSource, stopCustomSource, waveform]);
 
     useEffect(() => {
         if (waveform === 'custom') updateCustomBuffer();
@@ -117,7 +113,7 @@ export const SoundNode = memo(function SoundNode({ id, data, selected }: NodePro
 
     const initAudio = () => {
         if (audioCtxRef.current) return;
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
         const ctx = new AudioContextClass();
         audioCtxRef.current = ctx;
 
@@ -147,7 +143,7 @@ export const SoundNode = memo(function SoundNode({ id, data, selected }: NodePro
     };
 
     const handleModeSelect = (mode: string) => {
-        updateNodeData(id, { variant: mode as any });
+        updateNodeData(id, { variant: mode as NodeData['variant'] });
         if (audioCtxRef.current) {
             if (mode === 'custom') {
                 if (oscRef.current) {

@@ -5,7 +5,7 @@ import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
 import { MathInput } from '../components/MathInput';
 
-export const NumberNode = memo(function NumberNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
+export const NumberNode = memo(function NumberNode({ id, data }: NodeProps<Node<NodeData>>) {
   const updateNodeData = useStore.getState().updateNodeData;
 
 
@@ -18,7 +18,7 @@ export const NumberNode = memo(function NumberNode({ id, data, selected }: NodeP
 
   return (
     <div className={`math-node number-node ${touchingClasses}`} style={{ width: '100%', height: '100%' }}>
-      <NodeResizer minWidth={100} minHeight={60} isVisible={selected} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
+      <NodeResizer minWidth={100} minHeight={60} isVisible={false} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
       <DynamicHandles
         nodeId={id}
         handles={data.handles}
@@ -37,4 +37,3 @@ export const NumberNode = memo(function NumberNode({ id, data, selected }: NodeP
     </div>
   );
 });
-

@@ -9,7 +9,71 @@ const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/res
 const WORKFLOW_APP_TYPE = 'methmetica-workflow';
 const WORKFLOW_APP_VERSION = '0.7.1';
 
-let tokenClient: any = null;
+type TokenResponse = {
+  access_token: string;
+  error?: unknown;
+};
+
+type TokenClient = {
+  callback: ((resp: TokenResponse) => void) | string;
+  requestAccessToken: (options: { prompt: string }) => void;
+};
+
+type GapiRequestResult<T> = { result: T };
+type GapiDriveFilesListResponse = { files?: WorkflowFile[] };
+type GapiDriveFileIdResponse = { id: string };
+type WorkflowDocument = { nodes?: AppNode[]; edges?: Edge[]; [key: string]: unknown };
+
+type GapiClient = {
+  init: (config: { apiKey: string; discoveryDocs: string[] }) => Promise<void>;
+  getToken: () => unknown;
+  request: (config: {
+    path: string;
+    method: 'PATCH' | 'POST';
+    params: { uploadType: 'multipart' };
+    headers: { 'Content-Type': string };
+    body: string;
+  }) => Promise<GapiRequestResult<GapiDriveFileIdResponse>>;
+  drive: {
+    files: {
+      list: (config: {
+        pageSize: number;
+        fields: string;
+        q: string;
+        orderBy: string;
+      }) => Promise<GapiRequestResult<GapiDriveFilesListResponse>>;
+      get: (config: { fileId: string; alt: 'media' }) => Promise<GapiRequestResult<WorkflowDocument>>;
+      delete: (config: { fileId: string }) => Promise<unknown>;
+    };
+  };
+};
+
+type GapiNamespace = {
+  load: (name: 'client', callback: () => void | Promise<void>) => void;
+  client: GapiClient;
+};
+
+type GoogleAccountsNamespace = {
+  oauth2: {
+    initTokenClient: (config: {
+      client_id: string;
+      scope: string;
+      callback: string;
+      login_hint?: string;
+    }) => TokenClient;
+  };
+};
+
+declare global {
+  interface Window {
+    gapi: GapiNamespace;
+    google: {
+      accounts: GoogleAccountsNamespace;
+    };
+  }
+}
+
+let tokenClient: TokenClient | null = null;
 
 export type GoogleUser = {
   name: string;
@@ -33,11 +97,11 @@ export async function initGapi() {
   }
 
   return new Promise<void>((resolve) => {
-    const script = document.createElement('script');
-    script.src = 'https://apis.google.com/js/api.js';
-    script.onload = () => {
-      (window as any).gapi.load('client', async () => {
-        await (window as any).gapi.client.init({
+      const script = document.createElement('script');
+      script.src = 'https://apis.google.com/js/api.js';
+      script.onload = () => {
+      window.gapi.load('client', async () => {
+        await window.gapi.client.init({
           apiKey: API_KEY,
           discoveryDocs: [DISCOVERY_DOC],
         });
@@ -55,10 +119,10 @@ export async function initGis(loginHint?: string) {
   }
 
   return new Promise<void>((resolve) => {
-    const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.onload = () => {
-      tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.onload = () => {
+      tokenClient = window.google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: SCOPES,
         callback: '', // defined at request time
@@ -74,9 +138,14 @@ export async function initGis(loginHint?: string) {
 export async function authenticate(silent = false) {
   return new Promise<string>((resolve, reject) => {
     try {
-      tokenClient.callback = async (resp: any) => {
+      if (!tokenClient) {
+        reject(new Error('Google Identity Services not initialized.'));
+        return;
+      }
+      tokenClient.callback = async (resp: TokenResponse) => {
         if (resp.error !== undefined) {
           reject(resp);
+          return;
         }
         resolve(resp.access_token);
       };
@@ -84,7 +153,7 @@ export async function authenticate(silent = false) {
       if (silent) {
         tokenClient.requestAccessToken({ prompt: '' });
       } else {
-        if ((window as any).gapi.client.getToken() === null) {
+        if (window.gapi.client.getToken() === null) {
           tokenClient.requestAccessToken({ prompt: 'consent' });
         } else {
           tokenClient.requestAccessToken({ prompt: '' });
@@ -101,7 +170,7 @@ export async function trySilentAuth(): Promise<string | null> {
   return new Promise((resolve) => {
     if (!tokenClient) { resolve(null); return; }
     try {
-      tokenClient.callback = (resp: any) => {
+      tokenClient.callback = (resp: TokenResponse) => {
         if (resp.error !== undefined) {
           resolve(null); // Fail gracefully, no popup
         } else {
@@ -118,7 +187,7 @@ export async function trySilentAuth(): Promise<string | null> {
 
 // List Workflow Files (JSONs created by this app)
 export async function listWorkflows(): Promise<WorkflowFile[]> {
-  const response = await (window as any).gapi.client.drive.files.list({
+  const response = await window.gapi.client.drive.files.list({
     pageSize: 20,
     fields: 'nextPageToken, files(id, name, modifiedTime, size, appProperties)',
     q: [
@@ -131,8 +200,7 @@ export async function listWorkflows(): Promise<WorkflowFile[]> {
   return response.result.files || [];
 }
 
-// Create or Update a Workflow File
-export async function saveWorkflow(name: string, data: any, fileId?: string): Promise<string> {
+export async function saveWorkflow(name: string, data: unknown, fileId?: string): Promise<string> {
   const boundary = '-------314159265358979323846';
   const delimiter = "\r\n--" + boundary + "\r\n";
   const close_delim = "\r\n--" + boundary + "--";
@@ -158,7 +226,7 @@ export async function saveWorkflow(name: string, data: any, fileId?: string): Pr
   let request;
   if (fileId) {
     // Update existing file
-    request = (window as any).gapi.client.request({
+    request = window.gapi.client.request({
       path: `/upload/drive/v3/files/${fileId}`,
       method: 'PATCH',
       params: { uploadType: 'multipart' },
@@ -167,7 +235,7 @@ export async function saveWorkflow(name: string, data: any, fileId?: string): Pr
     });
   } else {
     // Create new file
-    request = (window as any).gapi.client.request({
+    request = window.gapi.client.request({
       path: '/upload/drive/v3/files',
       method: 'POST',
       params: { uploadType: 'multipart' },
@@ -181,8 +249,8 @@ export async function saveWorkflow(name: string, data: any, fileId?: string): Pr
 }
 
 // Load Workflow Content
-export async function loadWorkflow(fileId: string): Promise<any> {
-    const response = await (window as any).gapi.client.drive.files.get({
+export async function loadWorkflow(fileId: string): Promise<WorkflowDocument> {
+    const response = await window.gapi.client.drive.files.get({
       fileId: fileId,
       alt: 'media',
     });
@@ -191,7 +259,9 @@ export async function loadWorkflow(fileId: string): Promise<any> {
 
 // Delete Workflow File
 export async function deleteWorkflow(fileId: string) {
-    await (window as any).gapi.client.drive.files.delete({
+    await window.gapi.client.drive.files.delete({
         fileId: fileId
     });
 }
+import type { Edge } from '@xyflow/react';
+import type { AppNode } from '../store/useStore';

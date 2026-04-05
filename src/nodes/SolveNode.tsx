@@ -2,7 +2,6 @@ import { useEffect, memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
 import useStore, { type NodeData, type AppState } from '../store/useStore';
 import { Icons } from '../components/Icons';
-import 'mathlive';
 import { NodeFrame } from '../components/NodeFrame';
 import { MathInput } from '../components/MathInput';
 
@@ -86,4 +85,3 @@ export const SolveNode = memo(function SolveNode({ id, data, selected }: NodePro
         </NodeFrame>
     );
 });
-

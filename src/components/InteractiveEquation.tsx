@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { getMathEngine } from '../utils/MathEngine';
 import { useLanguage } from '../contexts/LanguageContext';
 import { MathInput } from './MathInput';
+import { loadMathlive } from '../utils/loadMathlive';
 import type { BalanceOperation } from '../store/useStore';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -38,6 +39,15 @@ interface SelectionActionState {
     factorSuggestion: FactorSuggestion | null;
     expandResult: string | null;
     simplifyResult: string | null;
+}
+
+type EquationExpression = ReturnType<ReturnType<typeof getMathEngine>['parse']> & {
+    numericValue?: number;
+    ops?: EquationExpression[];
+};
+
+interface MathFieldElement extends HTMLElement {
+    value: string;
 }
 
 // ─── Pure char-scanner ────────────────────────────────────────────────────────
@@ -105,12 +115,12 @@ function parseSide(latex: string, side: 'LHS' | 'RHS'): Term[] {
         let variable = raw.latex;
 
         try {
-            const expr = ce.parse(raw.latex);
+            const expr = ce.parse(raw.latex) as unknown as EquationExpression;
             const json = expr.json;
             const head = Array.isArray(json) ? json[0] : null;
 
             if (head === 'Multiply') {
-                const ops = (expr as any).ops ?? [];
+                const ops = expr.ops ?? [];
                 const first = ops[0];
                 if (first && first.numericValue !== undefined && ops.length >= 2) {
                     const rest = ops.slice(1);
@@ -118,12 +128,13 @@ function parseSide(latex: string, side: 'LHS' | 'RHS'): Term[] {
                     variable = rest.length === 1 ? rest[0].latex : ce.box(['Multiply', ...rest]).latex;
                 }
             } else if (head === 'Divide') {
-                const [num, den] = (expr as any).ops ?? [];
+                const [num, den] = expr.ops ?? [];
                 if (num && den) {
                     const numJson = num.json;
                     const numHead = Array.isArray(numJson) ? numJson[0] : null;
-                    if (numHead === 'Multiply' && (num as any).ops?.[0]?.numericValue !== undefined) {
-                        const numOps = (num as any).ops;
+                    if (numHead === 'Multiply' && num.ops?.[0]?.numericValue !== undefined) {
+                        const numOps = num.ops;
+                        if (!numOps) return;
                         coefficient = ce.box(['Divide', numOps[0], den]).latex;
                         variable = ce.box(['Multiply', ...numOps.slice(1)]).latex;
                     } else if (num?.numericValue !== undefined) {
@@ -134,7 +145,7 @@ function parseSide(latex: string, side: 'LHS' | 'RHS'): Term[] {
                         variable = num.latex;
                     }
                 }
-            } else if ((expr as any).numericValue !== undefined) {
+            } else if (expr.numericValue !== undefined) {
                 coefficient = raw.latex;
                 variable = '1';
             }
@@ -144,7 +155,7 @@ function parseSide(latex: string, side: 'LHS' | 'RHS'): Term[] {
                 coefficient = '1';
                 variable = raw.latex;
             }
-        } catch (_) { /* keep defaults */ }
+        } catch { /* keep defaults */ }
 
         terms.push({
             id: `${side}-${idx}`,
@@ -283,6 +294,23 @@ function detectSimplifySuggestion(latex: string): string | null {
     }
 }
 
+const HintLine = () => (
+    <div style={{
+        position: 'absolute',
+        bottom: '6px',
+        left: 0,
+        right: 0,
+        textAlign: 'center',
+        fontSize: '0.6rem',
+        color: 'var(--ieq-hint)',
+        pointerEvents: 'none',
+        letterSpacing: '0.04em',
+        userSelect: 'none',
+    }}>
+        ← drag across to move · drag down to divide ↓
+    </div>
+);
+
 // ─── Drag ghost – mounted once, moved via ref (zero React renders on move) ───
 
 interface GhostState {
@@ -298,8 +326,21 @@ interface GhostHandle {
 
 const DragGhost = React.forwardRef<GhostHandle, { _?: never }>((_props, ref) => {
     const elRef = useRef<HTMLDivElement>(null);
-    const mathRef = useRef<any>(null);
+    const mathRef = useRef<MathFieldElement | null>(null);
     const stateRef = useRef<GhostState | null>(null);
+    const [isReady, setIsReady] = useState(false);
+
+    React.useEffect(() => {
+        let isMounted = true;
+
+        loadMathlive().then(() => {
+            if (isMounted) setIsReady(true);
+        });
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
 
     React.useImperativeHandle(ref, () => ({
         show(g) {
@@ -347,18 +388,20 @@ const DragGhost = React.forwardRef<GhostHandle, { _?: never }>((_props, ref) => 
                 justifyContent: 'center',
             }}
         >
-            <math-field
-                ref={mathRef}
-                read-only="true"
-                style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'white',
-                    fontSize: '1.2rem',
-                    outline: 'none',
-                    padding: 0,
-                } as any}
-            />
+            {isReady ? (
+                <math-field
+                    ref={mathRef}
+                    read-only="true"
+                    style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'white',
+                        fontSize: '1.2rem',
+                        outline: 'none',
+                        padding: 0,
+                    }}
+                />
+            ) : null}
         </div>,
         document.body
     );
@@ -666,9 +709,9 @@ export const InteractiveEquation: React.FC<InteractiveEquationProps> = memo(({ f
     const [hoveredBar, setHoveredBar] = useState<ActionBarInfo | null>(null);
     const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const clearHoverTimer = () => {
+    const clearHoverTimer = useCallback(() => {
         if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null; }
-    };
+    }, []);
 
     const handleTermHoverEnter = useCallback((e: React.PointerEvent, term: Term) => {
         if (dragRef.current) return;
@@ -676,18 +719,18 @@ export const InteractiveEquation: React.FC<InteractiveEquationProps> = memo(({ f
         const rect = (e.currentTarget as HTMLElement).closest('.ieq-term')?.getBoundingClientRect();
         if (!rect) return;
         hoverTimer.current = setTimeout(() => setHoveredBar({ term, rect }), 160);
-    }, []);
+    }, [clearHoverTimer]);
 
     const handleTermHoverLeave = useCallback(() => {
         clearHoverTimer();
         hoverTimer.current = setTimeout(() => setHoveredBar(null), 220);
-    }, []);
+    }, [clearHoverTimer]);
 
-    const handleBarEnter = useCallback(() => clearHoverTimer(), []);
+    const handleBarEnter = useCallback(() => clearHoverTimer(), [clearHoverTimer]);
     const handleBarLeave = useCallback(() => {
         clearHoverTimer();
         hoverTimer.current = setTimeout(() => setHoveredBar(null), 150);
-    }, []);
+    }, [clearHoverTimer]);
 
     // ── Lasso selection ────────────────────────────────────────────────────
     const [selection, setSelection] = useState<{
@@ -1035,25 +1078,6 @@ export const InteractiveEquation: React.FC<InteractiveEquationProps> = memo(({ f
             flex: 1,
         };
     };
-
-    // ── Hint line ──────────────────────────────────────────────────────────
-
-    const HintLine = () => (
-        <div style={{
-            position: 'absolute',
-            bottom: '6px',
-            left: 0,
-            right: 0,
-            textAlign: 'center',
-            fontSize: '0.6rem',
-            color: 'var(--ieq-hint)',
-            pointerEvents: 'none',
-            letterSpacing: '0.04em',
-            userSelect: 'none',
-        }}>
-            ← drag across to move · drag down to divide ↓
-        </div>
-    );
 
     // ── Error state ────────────────────────────────────────────────────────
 

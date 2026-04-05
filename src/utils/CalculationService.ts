@@ -1,13 +1,31 @@
 import { getMathEngine, getMathSymbol } from './MathEngine';
-import useStore, { type AppNode } from '../store/useStore';
+import useStore, { type AppNode, type CustomHandle } from '../store/useStore';
 import { type Edge } from '@xyflow/react';
-// @ts-ignore
+// @ts-expect-error Nerdamer does not provide typings for this bundle entry.
 import nerdamer from 'nerdamer/all.min';
 
 export interface ExecutionContext {
     nodes: AppNode[];
     edges: Edge[];
 }
+
+type EngineExpression = ReturnType<ReturnType<typeof getMathEngine>['parse']> & {
+    numericValue?: number;
+    value?: unknown;
+    ops?: EngineExpression[];
+};
+
+type SequenceValue = string | number | boolean | null;
+
+interface NerdamerExpression {
+    toTeX: () => string;
+}
+
+type NerdamerApi = ((input: unknown) => NerdamerExpression) & {
+    solveEquations: (equations: string | string[], variables: string | string[]) => unknown;
+};
+
+const nerdamerApi = nerdamer as unknown as NerdamerApi;
 
 export class CalculationService {
     static async calculate(node: AppNode, context: ExecutionContext): Promise<string> {
@@ -72,7 +90,7 @@ export class CalculationService {
                 ce.popScope();
             } else if (op.op === '(' && op.value) {
                 const wrap = (s: string) => {
-                    const escapeRegex = (value: string) => value.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    const escapeRegex = (value: string) => value.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
                     const regex = new RegExp(escapeRegex(op.value).replace(/\s+/g, '\\s*'));
                     const match = s.match(regex);
                     if (!match || match.index === undefined) return s;
@@ -90,7 +108,7 @@ export class CalculationService {
                 }
             } else if (op.op === 'factor' && op.value && op.factor && op.result) {
                 const factorize = (s: string) => {
-                    const escapeRegex = (value: string) => value.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    const escapeRegex = (value: string) => value.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
                     const regex = new RegExp(escapeRegex(op.value).replace(/\s+/g, '\\s*'));
                     const match = s.match(regex);
                     if (!match || match.index === undefined) return s;
@@ -110,7 +128,7 @@ export class CalculationService {
                 }
             } else if (op.op === 'expand' && op.value && op.result) {
                 const expand = (s: string) => {
-                    const escapeRegex = (value: string) => value.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    const escapeRegex = (value: string) => value.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
                     const regex = new RegExp(escapeRegex(op.value).replace(/\s+/g, '\\s*'));
                     const match = s.match(regex);
                     if (!match || match.index === undefined) return s;
@@ -126,7 +144,7 @@ export class CalculationService {
                 }
             } else if (op.op === 'simplify' && op.value && op.result) {
                 const simplifySelection = (s: string) => {
-                    const escapeRegex = (value: string) => value.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    const escapeRegex = (value: string) => value.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
                     const regex = new RegExp(escapeRegex(op.value).replace(/\s+/g, '\\s*'));
                     const match = s.match(regex);
                     if (!match || match.index === undefined) return s;
@@ -159,7 +177,7 @@ export class CalculationService {
         const inputVal = node.data.input || node.data.value;
         if (!inputVal) return '--';
 
-        let clean = inputVal.replace(/\\/g, '');
+        const clean = inputVal.replace(/\\/g, '');
         if (clean.includes('frac')) {
             const matches = clean.match(/frac\{(\d+)\}\{(\d+)\}/);
             if (matches && matches.length === 3) {
@@ -265,7 +283,7 @@ export class CalculationService {
         return result.latex;
     }
 
-    private static parseSequence(val: string): any[] | null {
+    private static parseSequence(val: string): SequenceValue[] | null {
         if (!val) return null;
         const s = val.trim();
         if (!s.startsWith('[') || !s.endsWith(']')) return null;
@@ -292,11 +310,11 @@ export class CalculationService {
         if (!formula) return '?';
 
         const ce = getMathEngine();
-        const solver = ce.parse(formula);
+        const solver = ce.parse(formula) as unknown as EngineExpression;
         const variables = solver.symbols; // Get list of symbols
 
-        const sequenceVars: Record<string, any[]> = {};
-        const staticVars: Record<string, any> = {};
+        const sequenceVars: Record<string, SequenceValue[]> = {};
+        const staticVars: Record<string, EngineExpression> = {};
         let maxSeqLength = 0;
 
         // Build global variable lookup from named text node outputs
@@ -311,7 +329,7 @@ export class CalculationService {
             }
         });
         variables.forEach((v: string) => {
-            const handle = node.data.handles?.find((h: any) => h.label === v || h.id === `h-in-${v}`);
+            const handle = node.data.handles?.find((h: CustomHandle) => h.label === v || h.id === `h-in-${v}`);
             let val: string | undefined;
 
             if (handle) {
@@ -356,7 +374,7 @@ export class CalculationService {
                     sequenceVars[v] = seq;
                     maxSeqLength = Math.max(maxSeqLength, seq.length);
                 } else {
-                    staticVars[v] = ce.parse(val);
+                    staticVars[v] = ce.parse(val) as unknown as EngineExpression;
                 }
             }
         });
@@ -404,32 +422,46 @@ export class CalculationService {
 
             try {
                 // Determine if equations are a list (comma separated or JSON)
-                let eqs: any = formattedEq;
+                let eqs: string | string[] = formattedEq;
                 if (typeof formattedEq === 'string') {
                    if (formattedEq.trim().startsWith('[') && formattedEq.trim().endsWith(']')) {
-                        try { eqs = JSON.parse(formattedEq); } catch {}
+                        try {
+                            const parsed = JSON.parse(formattedEq);
+                            if (Array.isArray(parsed) && parsed.every(item => typeof item === 'string')) {
+                                eqs = parsed;
+                            }
+                        } catch {
+                            // Keep the raw equation string if JSON parsing fails.
+                        }
                    } else if (formattedEq.includes(',') || formattedEq.includes(';')) {
                         eqs = formattedEq.split(/[;,]/).map(e => e.trim());
                    }
                 }
 
                 // Determine target variable(s)
-                let vars: any = wrt;
+                let vars: string | string[] = wrt;
                 if (typeof wrt === 'string') {
                     if (wrt.includes(',')) {
                         vars = wrt.split(',').map(v => v.trim());
                     } else if (wrt.trim().startsWith('[') && wrt.trim().endsWith(']')) {
-                        try { vars = JSON.parse(wrt); } catch {}
+                        try {
+                            const parsed = JSON.parse(wrt);
+                            if (Array.isArray(parsed) && parsed.every(item => typeof item === 'string')) {
+                                vars = parsed;
+                            }
+                        } catch {
+                            // Keep the raw variable string if JSON parsing fails.
+                        }
                     }
                 }
 
-                const cleanResult = (nerdamer as any).solveEquations(eqs, vars);
-                const list = Array.isArray(cleanResult) ? cleanResult.map((sol: any) => {
+                const cleanResult = nerdamerApi.solveEquations(eqs, vars);
+                const list = Array.isArray(cleanResult) ? cleanResult.map((sol: unknown) => {
                     if (Array.isArray(sol) && sol.length === 2 && typeof sol[0] === 'string') {
-                        return `${sol[0]}=${(nerdamer as any)(sol[1]).toTeX()}`;
+                        return `${sol[0]}=${nerdamerApi(sol[1]).toTeX()}`;
                     }
-                    return (nerdamer as any)(sol).toTeX();
-                }) : [(nerdamer as any)(cleanResult).toTeX()];
+                    return nerdamerApi(sol).toTeX();
+                }) : [nerdamerApi(cleanResult).toTeX()];
 
                 finalRes = JSON.stringify(list);
             } catch (e) {
