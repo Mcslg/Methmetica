@@ -6,6 +6,7 @@ import '@xyflow/react/dist/style.css';
 
 import useStore, { type AppNode } from './store/useStore';
 import { nodeTypes, getNodeDefinition, buildNodeCatalog } from './nodes/registry';
+import { getTemplateInternalHandles } from './community/types';
 import { Sidebar } from './components/Sidebar';
 import { FloatingPalette } from './components/FloatingPalette';
 import { Icons } from './components/Icons';
@@ -29,7 +30,7 @@ type AddNodeAtCenterEvent = CustomEvent<{ type: string; templateId?: string }>;
 type ConnectStartPayload = { nodeId: string | null; handleId: string | null; handleType: string | null };
 type TouchTargetEvent = React.TouchEvent<HTMLElement>;
 type ExplainSide = 'left' | 'right' | 'top' | 'bottom';
-type ExplainMergeOpportunity = {
+type ExplainPluginOpportunity = {
   sourceType: string;
   side: ExplainSide;
   title: string;
@@ -48,16 +49,16 @@ const EXPLAIN_SIDE_ARROWS: Record<ExplainSide, string> = {
   bottom: '↓',
 };
 
-function getExplainMergeOpportunities(node: AppNode, language: 'en' | 'zh-TW'): ExplainMergeOpportunity[] {
+function getExplainPluginOpportunities(node: AppNode, language: 'en' | 'zh-TW'): ExplainPluginOpportunity[] {
   const slots = node.data.slots || {};
   const isZh = language === 'zh-TW';
-  const items: ExplainMergeOpportunity[] = [];
+  const items: ExplainPluginOpportunity[] = [];
   const add = (sourceType: string, side: ExplainSide, title: string, detail: string, enabled = true) => {
     if (enabled) items.push({ sourceType, side, title, detail });
   };
 
   if (node.type === 'graphNode') {
-    add('textNode', 'left', isZh ? '合併公式側欄' : 'Merge formula sidebar', isZh ? '把 Notebook 貼到左側，變成圖形的公式輸入區。' : 'Drop a Notebook on the left edge to turn it into the graph formula sidebar.', !slots.formulaSidebar);
+    add('textNode', 'left', isZh ? '插入公式側欄' : 'Plug in formula sidebar', isZh ? '把 Notebook 插到左側，變成圖形的公式輸入區。' : 'Plug a Notebook into the left edge to turn it into the graph formula sidebar.', !slots.formulaSidebar);
     add('sliderNode', 'left', isZh ? '加入參數滑桿' : 'Attach parameter slider', isZh ? '把 Slider 貼到左側，讓圖形用該變數控制參數。' : 'Drop a Slider on the left edge to expose its variable as a graph parameter.');
     add('textNode', 'top', isZh ? '加入節點註解' : 'Attach note', isZh ? '把 Notebook 貼到上方，作為圖形的註解區。' : 'Drop a Notebook on the top edge to use it as a note for the graph.', !slots.comment);
   }
@@ -87,10 +88,10 @@ function getExplainMergeOpportunities(node: AppNode, language: 'en' | 'zh-TW'): 
 
 function Flow() {
   const { t, language } = useLanguage();
-    const { 
-    nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, addNodes, removeNode, 
-    handleProximitySnap, updateMergeHint, setAltPressed, setCtrlPressed, theme, 
-    isSidebarOpen, setDeletingHover, draggingEjectPos, hoveredNodeId, 
+  const {
+    nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, addNodes, removeNode,
+    handleProximitySnap, updatePluginHint, setAltPressed, setCtrlPressed, theme,
+    isSidebarOpen, setDeletingHover, draggingEjectPos, hoveredNodeId,
     setHoveredNodeId, updateNodeDimensions, isAltPressed, undo, redo, takeSnapshot
   } = useStore(useShallow(state => ({
     nodes: state.nodes,
@@ -102,7 +103,7 @@ function Flow() {
     addNodes: state.addNodes,
     removeNode: state.removeNode,
     handleProximitySnap: state.handleProximitySnap,
-    updateMergeHint: state.updateMergeHint,
+    updatePluginHint: state.updatePluginHint,
     setAltPressed: state.setAltPressed,
     setCtrlPressed: state.setCtrlPressed,
     theme: state.theme,
@@ -118,7 +119,7 @@ function Flow() {
     takeSnapshot: state.takeSnapshot
   })));
   const communityTemplates = useStore(state => state.communityTemplates);
-  const mergeHint = useStore(state => state.mergeHint);
+  const pluginHint = useStore(state => state.pluginHint);
   const { screenToFlowPosition, flowToScreenPosition } = useReactFlow();
   const [paneMenu, setPaneMenu] = useState<{ x: number, y: number, screenX: number, screenY: number } | null>(null);
   const [radialMenu, setRadialMenu] = useState<{ x: number, y: number, screenX: number, screenY: number } | null>(null);
@@ -132,7 +133,7 @@ function Flow() {
   const [isExplainMode, setIsExplainMode] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const idleTimerRef = useRef<number | null>(null);
- 
+
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Shift') setIsShiftPressed(e.type === 'keydown');
@@ -173,43 +174,39 @@ function Flow() {
   }, [redo, setAltPressed, setCtrlPressed, undo]);
 
 
-  useEffect(() => {
-    document.body.setAttribute('data-theme', theme);
-  }, [theme]);
-
   // Handle Cmd+Scroll for node resizing with event aggregation
   const resizeRafRef = useRef<number | null>(null);
   const pendingDeltaRef = useRef<number>(0);
 
   useEffect(() => {
     const handleWheel = (e: WheelEvent) => {
-        // [FIX] Use ONLY metaKey (Cmd on Mac), NOT ctrlKey.
-        // On Mac, trackpad pinch-to-zoom fires wheel events with ctrlKey=true.
-        // If we also check ctrlKey, pinch gestures would resize nodes instead of zooming the canvas.
-        if (e.metaKey && hoveredNodeId) {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            pendingDeltaRef.current += e.deltaY;
+      // [FIX] Use ONLY metaKey (Cmd on Mac), NOT ctrlKey.
+      // On Mac, trackpad pinch-to-zoom fires wheel events with ctrlKey=true.
+      // If we also check ctrlKey, pinch gestures would resize nodes instead of zooming the canvas.
+      if (e.metaKey && hoveredNodeId) {
+        e.preventDefault();
+        e.stopPropagation();
 
-            if (resizeRafRef.current === null) {
-                resizeRafRef.current = requestAnimationFrame(() => {
-                    const start = performance.now();
-                    const factorW = -1.2, factorH = -0.8;
-                    updateNodeDimensions(hoveredNodeId!, pendingDeltaRef.current * factorW, pendingDeltaRef.current * factorH);
-                    pendingDeltaRef.current = 0;
-                    resizeRafRef.current = null;
-                    const end = performance.now();
-                    if (end - start > 10) console.warn(`[Performance] Resize logic took ${Math.round(end - start)}ms`);
-                });
-            }
+        pendingDeltaRef.current += e.deltaY;
+
+        if (resizeRafRef.current === null) {
+          resizeRafRef.current = requestAnimationFrame(() => {
+            const start = performance.now();
+            const factorW = -1.2, factorH = -0.8;
+            updateNodeDimensions(hoveredNodeId!, pendingDeltaRef.current * factorW, pendingDeltaRef.current * factorH);
+            pendingDeltaRef.current = 0;
+            resizeRafRef.current = null;
+            const end = performance.now();
+            if (end - start > 10) console.warn(`[Performance] Resize logic took ${Math.round(end - start)}ms`);
+          });
         }
+      }
     };
 
     window.addEventListener('wheel', handleWheel, { passive: false, capture: true });
     return () => {
-        window.removeEventListener('wheel', handleWheel, { capture: true });
-        if (resizeRafRef.current !== null) cancelAnimationFrame(resizeRafRef.current);
+      window.removeEventListener('wheel', handleWheel, { capture: true });
+      if (resizeRafRef.current !== null) cancelAnimationFrame(resizeRafRef.current);
     };
   }, [hoveredNodeId, updateNodeDimensions]);
 
@@ -233,7 +230,7 @@ function Flow() {
   );
   const explainDefinition = explainNode ? getNodeDefinition(explainNode.type || '') : null;
   const explainOpportunities = useMemo(
-    () => (explainNode ? getExplainMergeOpportunities(explainNode, language) : []),
+    () => (explainNode ? getExplainPluginOpportunities(explainNode, language) : []),
     [explainNode, language]
   );
   const explainSides = Array.from(new Set(explainOpportunities.map(item => item.side)));
@@ -242,26 +239,53 @@ function Flow() {
     if (!isExplainMode || !explainNode) return null;
     const width = explainNode.measured?.width || explainNode.width || 200;
     const height = explainNode.measured?.height || explainNode.height || 100;
-    const screen = flowToScreenPosition(explainNode.position);
-    return { left: screen.x, top: screen.y, width, height };
+    
+    // Transform coordinates properly taking into account the zoom scale
+    const topLeft = flowToScreenPosition({ x: explainNode.position.x, y: explainNode.position.y });
+    const bottomRight = flowToScreenPosition({ x: explainNode.position.x + width, y: explainNode.position.y + height });
+    
+    return { 
+       left: topLeft.x, 
+       top: topLeft.y, 
+       width: bottomRight.x - topLeft.x, 
+       height: bottomRight.y - topLeft.y 
+    };
   }, [explainNode, flowToScreenPosition, isExplainMode]);
   const explainDescription = explainDefinition?.metadata.desc || explainNode?.data.templateSummary || '';
   const explainTitle = explainNode?.data.label || explainDefinition?.metadata.label || explainNode?.type || '';
   const explainCategory = explainDefinition?.metadata.category || '';
-  const explainPanelWidth = 360;
+  const explainInfoWidth = 260;
+  const explainSlotsWidth = 320;
   const explainPanelHeight = 420;
-  const explainPanelPosition = useMemo(() => {
+
+  const explainPositions = useMemo(() => {
     if (!isExplainMode || !explainNodeRect || typeof window === 'undefined') return null;
-    const spaceLeft = explainNodeRect.left;
-    const useLeftSide = spaceLeft > explainPanelWidth + 40;
-    const left = useLeftSide
-      ? Math.max(20, explainNodeRect.left - explainPanelWidth - 24)
-      : Math.min(window.innerWidth - explainPanelWidth - 20, explainNodeRect.left + explainNodeRect.width + 24);
+
+    // Ideal positions: sandwich the node
+    let leftPanelX = explainNodeRect.left - explainInfoWidth - 24;
+    let rightPanelX = explainNodeRect.left + explainNodeRect.width + 24;
+
+    // Bounds check
+    const isLeftSafe = leftPanelX >= 20;
+    const isRightSafe = rightPanelX + explainSlotsWidth <= window.innerWidth - 20;
+
+    // If sandwich is impossible, stack them on the side that has more space
+    if (!isLeftSafe && !isRightSafe) {
+      leftPanelX = 20;
+      rightPanelX = leftPanelX + explainInfoWidth + 16;
+    } else if (!isLeftSafe) {
+      leftPanelX = rightPanelX;
+      rightPanelX += explainInfoWidth + 16;
+    } else if (!isRightSafe) {
+      rightPanelX = leftPanelX;
+      leftPanelX -= explainSlotsWidth + 16;
+    }
+
     const top = Math.min(
       Math.max(20, explainNodeRect.top - 16),
       Math.max(20, window.innerHeight - explainPanelHeight - 20)
     );
-    return { left, top };
+    return { infoPos: { x: leftPanelX, y: top }, slotsPos: { x: rightPanelX, y: top } };
   }, [explainNodeRect, isExplainMode]);
 
   const onPaneContextMenu = useCallback((e: MouseEvent | React.MouseEvent | PaneMenuEvent) => {
@@ -303,14 +327,14 @@ function Flow() {
     const touch = e.touches[0];
     const { clientX, clientY } = touch;
     const target = e.currentTarget;
-    
+
     if (touchTimerRef.current) clearTimeout(touchTimerRef.current);
-    
+
     touchTimerRef.current = setTimeout(() => {
       if (node) {
-        onNodeContextMenu({ preventDefault: () => {}, clientX, clientY, currentTarget: target }, node);
+        onNodeContextMenu({ preventDefault: () => { }, clientX, clientY, currentTarget: target }, node);
       } else {
-        onPaneContextMenu({ preventDefault: () => {}, clientX, clientY });
+        onPaneContextMenu({ preventDefault: () => { }, clientX, clientY });
       }
       touchTimerRef.current = null;
     }, 600);
@@ -335,22 +359,13 @@ function Flow() {
     const position = screenToFlowPosition({ x: posSource.x, y: posSource.y });
     const def = getNodeDefinition(type);
     const template = templateId ? communityTemplates.find(t => t.id === templateId) : null;
-    const handles = template ? [
-      ...template.inputs.map(input => ({
-        id: input.id,
-        type: input.type,
-        position: input.position,
-        offset: input.offset,
-        label: input.label,
-      })),
-      ...template.outputs.map(output => ({
-        id: output.id,
-        type: output.type,
-        position: output.position,
-        offset: output.offset,
-        label: output.label,
-      })),
-    ] : (def ? def.defaultHandles : []);
+    const handles = template ? getTemplateInternalHandles(template).map(handle => ({
+      id: handle.id,
+      type: handle.type,
+      position: handle.position,
+      offset: handle.offset,
+      label: handle.label,
+    })) : (def ? def.defaultHandles : []);
     const size = template ? template.size : (def ? def.defaultSize : { width: 200, height: 120 });
     addNode({
       id: `${templateId || type}-${Date.now()}`,
@@ -416,25 +431,25 @@ function Flow() {
   }, [handleAddNode, radialMenu]);
 
   const onDrop = useCallback((event: React.DragEvent) => {
-      event.preventDefault();
-      const raw = event.dataTransfer.getData('application/reactflow');
-      const ejectDataStr = event.dataTransfer.getData('application/reactflow-eject');
-      if (ejectDataStr) {
-        try {
-          const { sliderData } = JSON.parse(ejectDataStr);
-          const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-          addNode({ ...sliderData, id: `slider-ejected-${Date.now()}`, position, selected: true } as AppNode);
-          return;
-        } catch (e) { console.error('Failed to parse eject data', e); }
+    event.preventDefault();
+    const raw = event.dataTransfer.getData('application/reactflow');
+    const ejectDataStr = event.dataTransfer.getData('application/reactflow-eject');
+    if (ejectDataStr) {
+      try {
+        const { sliderData } = JSON.parse(ejectDataStr);
+        const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+        addNode({ ...sliderData, id: `slider-ejected-${Date.now()}`, position, selected: true } as AppNode);
+        return;
+      } catch (e) { console.error('Failed to parse eject data', e); }
+    }
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        handleAddNode(parsed.type, undefined, { x: event.clientX, y: event.clientY }, parsed.templateId);
+      } catch {
+        handleAddNode(raw, undefined, { x: event.clientX, y: event.clientY });
       }
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw);
-          handleAddNode(parsed.type, undefined, { x: event.clientX, y: event.clientY }, parsed.templateId);
-        } catch {
-          handleAddNode(raw, undefined, { x: event.clientX, y: event.clientY });
-        }
-      }
+    }
   }, [addNode, handleAddNode, screenToFlowPosition]);
 
   useEffect(() => {
@@ -527,7 +542,7 @@ function Flow() {
             const copies = nodesBeingDragged.map(n => ({
               ...n,
               id: `${n.type}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-              data: { ...n.data }, 
+              data: { ...n.data },
               selected: false,
               dragging: false,
             }));
@@ -537,13 +552,13 @@ function Flow() {
         onNodeDrag={(event: React.MouseEvent | React.TouchEvent, node: AppNode) => {
           // [PERF] Let math-field lose focus on drag to stop cursor/RAF thrashing
           (document.activeElement as HTMLElement)?.blur();
-          
+
           const { x, y } = getPointerClientPosition(event);
           const threshold = isSidebarOpen ? 180 : 40;
           setDeletingHover(x < threshold);
-          
-          // Update merge hint with flow position
-          updateMergeHint(node.id, screenToFlowPosition({ x, y }));
+
+          // Update plugin hint with flow position
+          updatePluginHint(node.id, screenToFlowPosition({ x, y }));
         }}
         onNodeDragStop={(event: React.MouseEvent | React.TouchEvent, node: AppNode) => {
           setDeletingHover(false);
@@ -617,37 +632,37 @@ function Flow() {
         <div className="pie-menu-container" style={{ left: radialMenu.screenX - 160, top: radialMenu.screenY - 160 }}>
           <svg className="pie-svg" viewBox="0 0 320 320">
             {(() => {
-                const items = [
-                  { type: 'calculateNode', label: t('nodes.calculate.title'), icon: <Icons.Calculate size={24} />, color: '#ffcc33', start: 2, end: 178 },
-                  { type: 'textNode', label: t('categories.text') || 'Text', icon: <Icons.Text size={24} />, color: '#4facfe', start: 182, end: 358 }
-                ];
-                const center = 160; const outer = 140; const inner = 55;
-                const polarToCartesian = (r: number, angle: number) => {
-                    const rad = (angle - 90) * Math.PI / 180;
-                    return { x: center + r * Math.cos(rad), y: center + r * Math.sin(rad) };
-                };
-                return items.map((item) => {
-                    const isActive = radialSelection === item.type;
-                    const sOut = polarToCartesian(outer, item.end);
-                    const eOut = polarToCartesian(outer, item.start);
-                    const sIn = polarToCartesian(inner, item.end);
-                    const eIn = polarToCartesian(inner, item.start);
-                    const d = ["M", sOut.x, sOut.y, "A", outer, outer, 0, 0, 0, eOut.x, eOut.y, "L", eIn.x, eIn.y, "A", inner, inner, 0, 0, 1, sIn.x, sIn.y, "Z"].join(" ");
-                    const midAngle = (item.start + item.end) / 2;
-                    const rad = (midAngle - 90) * Math.PI / 180;
-                    const tx = center + Math.cos(rad) * 95;
-                    const ty = center + Math.sin(rad) * 95;
-                    return (
-                        <g key={item.type}>
-                          <path className={`pie-segment ${isActive ? 'active' : ''}`} d={d} style={{ '--item-color': item.color } as React.CSSProperties} onClick={() => handleAddNode(item.type)} />
-                          <g className="pie-label-group" transform={`translate(${tx}, ${ty})`}>
-                            <g transform="translate(-12, -35)" style={{ color: item.color }}>{item.icon}</g>
-                            <text className="pie-item-label" y="5" style={{ fill: 'var(--text-main)', opacity: isActive ? 1 : 0.6 }}>{item.label}</text>
-                            <text className="pie-item-desc" y="20" style={{ fill: 'var(--text-main)', opacity: 0.4 }}>{item.type === 'calculateNode' ? t('nodes.calculate.desc') || 'Calculation' : t('categories.logic')}</text>
-                          </g>
-                        </g>
-                    );
-                });
+              const items = [
+                { type: 'calculateNode', label: t('nodes.calculate.title'), icon: <Icons.Calculate size={24} />, color: '#ffcc33', start: 2, end: 178 },
+                { type: 'textNode', label: t('categories.text') || 'Text', icon: <Icons.Text size={24} />, color: '#4facfe', start: 182, end: 358 }
+              ];
+              const center = 160; const outer = 140; const inner = 55;
+              const polarToCartesian = (r: number, angle: number) => {
+                const rad = (angle - 90) * Math.PI / 180;
+                return { x: center + r * Math.cos(rad), y: center + r * Math.sin(rad) };
+              };
+              return items.map((item) => {
+                const isActive = radialSelection === item.type;
+                const sOut = polarToCartesian(outer, item.end);
+                const eOut = polarToCartesian(outer, item.start);
+                const sIn = polarToCartesian(inner, item.end);
+                const eIn = polarToCartesian(inner, item.start);
+                const d = ["M", sOut.x, sOut.y, "A", outer, outer, 0, 0, 0, eOut.x, eOut.y, "L", eIn.x, eIn.y, "A", inner, inner, 0, 0, 1, sIn.x, sIn.y, "Z"].join(" ");
+                const midAngle = (item.start + item.end) / 2;
+                const rad = (midAngle - 90) * Math.PI / 180;
+                const tx = center + Math.cos(rad) * 95;
+                const ty = center + Math.sin(rad) * 95;
+                return (
+                  <g key={item.type}>
+                    <path className={`pie-segment ${isActive ? 'active' : ''}`} d={d} style={{ '--item-color': item.color } as React.CSSProperties} onClick={() => handleAddNode(item.type)} />
+                    <g className="pie-label-group" transform={`translate(${tx}, ${ty})`}>
+                      <g transform="translate(-12, -35)" style={{ color: item.color }}>{item.icon}</g>
+                      <text className="pie-item-label" y="5" style={{ fill: 'var(--text-main)', opacity: isActive ? 1 : 0.6 }}>{item.label}</text>
+                      <text className="pie-item-desc" y="20" style={{ fill: 'var(--text-main)', opacity: 0.4 }}>{item.type === 'calculateNode' ? t('nodes.calculate.desc') || 'Calculation' : t('categories.logic')}</text>
+                    </g>
+                  </g>
+                );
+              });
             })()}
           </svg>
           <div className="pie-menu-center-v2" onClick={closeMenus}>{radialSelection ? '+' : '×'}</div>
@@ -685,7 +700,9 @@ function Flow() {
           padding: '10px 14px',
           borderRadius: 14,
           border: `1px solid ${isExplainMode ? 'rgba(74, 222, 128, 0.45)' : 'var(--border-node)'}`,
-          background: isExplainMode ? 'rgba(20, 34, 22, 0.82)' : 'rgba(18, 18, 18, 0.62)',
+          background: isExplainMode
+            ? (theme === 'dark' ? 'rgba(20, 34, 22, 0.82)' : 'rgba(240, 253, 244, 0.95)')
+            : 'var(--bg-node)',
           backdropFilter: 'blur(14px)',
           color: 'var(--text-main)',
           boxShadow: 'var(--node-shadow)',
@@ -702,8 +719,8 @@ function Flow() {
             minWidth: 28,
             height: 28,
             borderRadius: 8,
-            background: isExplainMode ? 'rgba(74, 222, 128, 0.18)' : 'rgba(255,255,255,0.08)',
-            border: `1px solid ${isExplainMode ? 'rgba(74, 222, 128, 0.45)' : 'rgba(255,255,255,0.14)'}`,
+            background: isExplainMode ? 'rgba(74, 222, 128, 0.18)' : 'var(--bg-input)',
+            border: `1px solid ${isExplainMode ? 'rgba(74, 222, 128, 0.45)' : 'var(--border-input)'}`,
             fontWeight: 700,
           }}
         >
@@ -750,80 +767,103 @@ function Flow() {
         document.body
       )}
 
-      {isExplainMode && explainPanelPosition && explainNode && createPortal(
-        <div
-          style={{
-            position: 'fixed',
-            left: explainPanelPosition.left,
-            top: explainPanelPosition.top,
-            width: explainPanelWidth,
-            maxHeight: explainPanelHeight,
-            overflow: 'hidden',
-            zIndex: 99995,
-            borderRadius: 24,
-            border: '1px solid rgba(255,255,255,0.08)',
-            background: 'linear-gradient(180deg, rgba(12, 16, 15, 0.96), rgba(8, 11, 10, 0.94))',
-            backdropFilter: 'blur(18px)',
-            color: 'var(--text-main)',
-            boxShadow: '0 28px 60px rgba(0,0,0,0.35)',
-            display: 'grid',
-            gridTemplateColumns: '0.95fr 1.05fr',
-          }}
-        >
-          <div style={{ padding: '20px 18px', borderRight: '1px solid rgba(255,255,255,0.07)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+      {isExplainMode && explainPositions && explainNode && createPortal(
+        <>
+          {/* Left Panel: Information */}
+          <div
+            style={{
+              position: 'fixed',
+              left: explainPositions.infoPos.x,
+              top: explainPositions.infoPos.y,
+              width: explainInfoWidth,
+              maxHeight: explainPanelHeight,
+              overflowY: 'auto',
+              zIndex: 99995,
+              borderRadius: 24,
+              border: '1px solid var(--border-node)',
+              background: theme === 'dark'
+                ? 'linear-gradient(180deg, rgba(15, 20, 15, 0.98), rgba(10, 12, 10, 0.96))'
+                : 'linear-gradient(180deg, #ffffff, #fdfcf7)',
+              backdropFilter: 'blur(20px)',
+              color: 'var(--text-main)',
+              boxShadow: theme === 'dark' ? '0 28px 60px rgba(0,0,0,0.6)' : 'var(--node-shadow)',
+              padding: '24px 20px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
               <div
                 style={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: 10,
+                  width: 36,
+                  height: 36,
+                  borderRadius: 12,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  background: 'rgba(255,255,255,0.06)',
+                  background: 'var(--bg-input)',
                   color: explainDefinition?.metadata.color || 'var(--text-main)',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
                 }}
               >
                 {explainDefinition?.metadata.icon || <Icons.Comment />}
               </div>
               <div>
-                <div style={{ fontSize: '1.05rem', fontWeight: 700 }}>{explainTitle}</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>{explainTitle}</div>
                 <div style={{ fontSize: '0.72rem', opacity: 0.55, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
                   {explainCategory}
                 </div>
               </div>
             </div>
 
-            <div style={{ fontSize: '0.9rem', lineHeight: 1.65, opacity: 0.85, marginBottom: 16 }}>
+            <div style={{ fontSize: '0.9rem', lineHeight: 1.65, opacity: 0.85, marginBottom: 20 }}>
               {explainDescription || (language === 'zh-TW' ? '這個節點目前沒有額外說明。' : 'No extra description is available for this node yet.')}
             </div>
 
             <div
               style={{
                 borderRadius: 16,
-                padding: '14px 14px 12px',
-                background: 'rgba(255,255,255,0.04)',
-                border: '1px solid rgba(255,255,255,0.06)',
+                padding: '16px 16px 14px',
+                background: 'var(--accent-light)',
+                border: '1px solid var(--border-input)',
               }}
             >
               <div style={{ fontSize: '0.72rem', opacity: 0.6, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>
-                {language === 'zh-TW' ? '使用提示' : 'Quick Hint'}
+                {language === 'zh-TW' ? '探索與擴充' : 'Explore & Extend'}
               </div>
               <div style={{ fontSize: '0.85rem', lineHeight: 1.6 }}>
                 {language === 'zh-TW'
-                  ? '移到節點邊緣的綠色框線位置，就是可合併的方向。'
-                  : 'Green edge highlights show where another node can be merged into this one.'}
+                  ? '綠色的發光邊框表示強大的「插槽」。將右側的插件拖曳到邊緣，或是直接點擊即可快速擴充功能。'
+                  : 'Green glowing edges represent powerful "slots". Drag nodes to the edge or click the plugins on the right to extend functionality.'}
               </div>
             </div>
           </div>
 
-          <div style={{ padding: '20px 18px', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          {/* Right Panel: Pluggable Slots */}
+          <div
+            style={{
+              position: 'fixed',
+              left: explainPositions.slotsPos.x,
+              top: explainPositions.slotsPos.y,
+              width: explainSlotsWidth,
+              maxHeight: explainPanelHeight,
+              overflowY: 'auto',
+              zIndex: 99995,
+              borderRadius: 24,
+              border: '1px solid var(--border-node)',
+              background: theme === 'dark'
+                ? 'linear-gradient(180deg, rgba(8, 22, 12, 0.96), rgba(8, 11, 10, 0.96))'
+                : 'linear-gradient(180deg, #f0fdf4, #ffffff)',
+              backdropFilter: 'blur(20px)',
+              color: 'var(--text-main)',
+              boxShadow: theme === 'dark' ? '0 28px 60px rgba(0,0,0,0.6)' : 'var(--node-shadow)',
+              padding: '24px 20px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <div style={{ fontSize: '0.8rem', opacity: 0.62, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                {language === 'zh-TW' ? '可合併節點' : 'Mergeable Nodes'}
+                {language === 'zh-TW' ? '可搭配的插件' : 'Pluggable Plugins'}
               </div>
-              <div style={{ fontSize: '0.78rem', color: '#4ade80', fontWeight: 700 }}>
-                {explainOpportunities.length}
+              <div style={{ fontSize: '0.78rem', color: '#4ade80', fontWeight: 700, background: 'rgba(74, 222, 128, 0.15)', padding: '2px 8px', borderRadius: 12 }}>
+                {explainOpportunities.length} {language === 'zh-TW' ? '可用' : 'Slots'}
               </div>
             </div>
 
@@ -833,25 +873,52 @@ function Flow() {
                 <div
                   key={`${item.sourceType}-${item.side}-${index}`}
                   style={{
-                    padding: '12px 12px 11px',
+                    padding: '14px',
                     borderRadius: 16,
-                    marginBottom: 10,
-                    background: 'rgba(74, 222, 128, 0.05)',
-                    border: '1px solid rgba(74, 222, 128, 0.16)',
-                    borderLeft: item.side === 'left' ? '4px solid #4ade80' : '1px solid rgba(74, 222, 128, 0.16)',
+                    marginBottom: 12,
+                    background: theme === 'dark' ? 'rgba(74, 222, 128, 0.05)' : 'rgba(74, 222, 128, 0.08)',
+                    border: `1px solid ${theme === 'dark' ? 'rgba(74, 222, 128, 0.16)' : 'rgba(74, 222, 128, 0.3)'}`,
+                    borderLeft: item.side === 'left' ? '4px solid #4ade80' : `1px solid ${theme === 'dark' ? 'rgba(74, 222, 128, 0.16)' : 'rgba(74, 222, 128, 0.3)'}`,
                     borderRight: item.side === 'right' ? '4px solid #4ade80' : undefined,
                     borderTop: item.side === 'top' ? '4px solid #4ade80' : undefined,
                     borderBottom: item.side === 'bottom' ? '4px solid #4ade80' : undefined,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 8px 20px rgba(74, 222, 128, 0.15)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
+                  onClick={() => {
+                    // Get current target block flow position
+                    const nodeLeft = explainNode.position.x;
+                    const nodeTop = explainNode.position.y;
+                    const nodeW = explainNode.measured?.width || explainNode.width || 200;
+                    const nodeH = explainNode.measured?.height || explainNode.height || 100;
+
+                    // Calculate where the new node should drop (Flow coordinates)
+                    let customPos = { x: nodeLeft, y: nodeTop };
+                    if (item.side === 'left') customPos = { x: nodeLeft - 240, y: nodeTop };
+                    if (item.side === 'right') customPos = { x: nodeLeft + nodeW + 40, y: nodeTop };
+                    if (item.side === 'top') customPos = { x: nodeLeft, y: nodeTop - 150 };
+                    if (item.side === 'bottom') customPos = { x: nodeLeft, y: nodeTop + nodeH + 40 };
+
+                    // Add node via command (Convert back to Screen so handleAddNode can handle it)
+                    handleAddNode(item.sourceType, undefined, flowToScreenPosition(customPos));
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                      <span style={{ color: sourceDefinition?.metadata.color || '#4ade80', display: 'inline-flex', alignItems: 'center' }}>
+                      <span style={{ color: sourceDefinition?.metadata.color || '#4ade80', display: 'inline-flex', alignItems: 'center', background: 'var(--bg-input)', padding: 6, borderRadius: 8 }}>
                         {sourceDefinition?.metadata.icon || <Icons.Grid />}
                       </span>
-                      <span style={{ fontWeight: 700, fontSize: '0.88rem' }}>{item.title}</span>
+                      <span style={{ fontWeight: 700, fontSize: '0.92rem' }}>{item.title}</span>
                     </div>
-                    <span style={{ color: '#4ade80', fontSize: '0.76rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                    <span style={{ color: '#4ade80', fontSize: '0.76rem', fontWeight: 700, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
                       {EXPLAIN_SIDE_ARROWS[item.side]} {explainSideLabels[item.side]}
                     </span>
                   </div>
@@ -863,23 +930,24 @@ function Flow() {
             }) : (
               <div
                 style={{
-                  padding: '14px',
+                  padding: '16px',
                   borderRadius: 16,
-                  background: 'rgba(255,255,255,0.04)',
-                  border: '1px solid rgba(255,255,255,0.06)',
+                  background: 'var(--bg-input)',
+                  border: '1px dashed var(--border-input)',
                   fontSize: '0.84rem',
                   lineHeight: 1.6,
                   opacity: 0.82,
+                  textAlign: 'center'
                 }}
               >
                 {language === 'zh-TW'
-                  ? '這個節點目前沒有可說明的合併目標，或相關插槽已被占用。'
-                  : 'This node has no explainable merge targets right now, or the relevant slots are already occupied.'}
+                  ? '這個節點目前沒有可擴充的插槽。'
+                  : 'This node currently has no expandable slots.'}
               </div>
             )}
           </div>
-        </div>,
-        document.body
+        </>
+        , document.body
       )}
 
       {draggingEjectPos && createPortal(
@@ -895,8 +963,8 @@ function Flow() {
         document.body
       )}
 
-      {mergeHint && (() => {
-        const targetNode = nodes.find(n => n.id === mergeHint.targetId);
+      {pluginHint && (() => {
+        const targetNode = nodes.find(n => n.id === pluginHint.targetId);
         if (!targetNode) return null;
         const bWidth = targetNode.measured?.width || targetNode.width || 200;
         const bHeight = targetNode.measured?.height || targetNode.height || 100;
@@ -904,19 +972,19 @@ function Flow() {
         const offset = { x: 0, y: 0 };
         let transform = 'translateY(-50%)';
 
-        if (mergeHint.side === 'left') {
+        if (pluginHint.side === 'left') {
           anchor = { x: targetNode.position.x, y: targetNode.position.y + bHeight / 2 };
           transform = 'translate(-100%, -50%)';
           offset.x = -15;
-        } else if (mergeHint.side === 'right') {
+        } else if (pluginHint.side === 'right') {
           anchor = { x: targetNode.position.x + bWidth, y: targetNode.position.y + bHeight / 2 };
           transform = 'translateY(-50%)';
           offset.x = 15;
-        } else if (mergeHint.side === 'top') {
+        } else if (pluginHint.side === 'top') {
           anchor = { x: targetNode.position.x + bWidth / 2, y: targetNode.position.y };
           transform = 'translateX(-50%) translateY(-100%)';
           offset.y = -15;
-        } else if (mergeHint.side === 'bottom') {
+        } else if (pluginHint.side === 'bottom') {
           anchor = { x: targetNode.position.x + bWidth / 2, y: targetNode.position.y + bHeight };
           transform = 'translateX(-50%)';
           offset.y = 15;
@@ -925,7 +993,7 @@ function Flow() {
         const screenPos = flowToScreenPosition(anchor);
         return createPortal(
           <div style={{ position: 'fixed', left: screenPos.x + offset.x, top: screenPos.y + offset.y, transform, zIndex: 99999, pointerEvents: 'none' }}>
-              <div className="merge-hint-pill"><span className="plus">+</span>{mergeHint.label}</div>
+            <div className="plugin-hint-pill"><span className="plus">+</span>{pluginHint.label}</div>
           </div>,
           document.body
         );
@@ -934,8 +1002,8 @@ function Flow() {
       <style>{`
         @keyframes eject-flow { from { stroke-dashoffset: 28; } to { stroke-dashoffset: 0; } }
         @keyframes hint-pulse { 0% { transform: scale(0.98); opacity: 0.8; } 50% { transform: scale(1.02); opacity: 1; } 100% { transform: scale(0.98); opacity: 0.8; } }
-        .merge-hint-pill { background: var(--bg-node); backdrop-filter: blur(10px); border: 1px solid var(--border-node); border-radius: 12px; padding: 8px 14px; color: var(--text-main); font-size: 0.75rem; font-weight: 500; white-space: nowrap; display: flex; align-items: center; gap: 8px; animation: hint-pulse 2s infinite ease-in-out; letter-spacing: 0.02em; boxShadow: var(--node-shadow); }
-        .merge-hint-pill .plus { color: #4facfe; font-weight: 700; font-size: 1rem; }
+        .plugin-hint-pill { background: var(--bg-node); backdrop-filter: blur(10px); border: 1px solid var(--border-node); border-radius: 12px; padding: 8px 14px; color: var(--text-main); font-size: 0.75rem; font-weight: 500; white-space: nowrap; display: flex; align-items: center; gap: 8px; animation: hint-pulse 2s infinite ease-in-out; letter-spacing: 0.02em; boxShadow: var(--node-shadow); }
+        .plugin-hint-pill .plus { color: #4facfe; font-weight: 700; font-size: 1rem; }
       `}</style>
     </div>
   );
@@ -943,6 +1011,12 @@ function Flow() {
 
 function App() {
   const currentView = useStore(state => state.currentView);
+  const theme = useStore(state => state.theme);
+
+  useEffect(() => {
+    document.body.setAttribute('data-theme', theme);
+  }, [theme]);
+
   return (
     <LanguageProvider>
       <AuthBootstrap />

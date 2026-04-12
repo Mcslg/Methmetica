@@ -1,20 +1,26 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Icons } from './Icons';
-import { useLanguage } from '../contexts/LanguageContext';
+import { Icons } from '../Icons';
 
-interface CalculusModePanelProps {
-    currentMode: 'diff' | 'integ' | 'limit';
-    onSelect: (mode: 'diff' | 'integ' | 'limit') => void;
+interface SoundModePanelProps {
+    currentMode: string;
+    onSelect: (mode: string) => void;
     onClose: () => void;
-    position: { x: number; y: number }; // Screen absolute coordinates
+    position: { x: number; y: number }; 
 }
 
-export const CalculusModePanel: React.FC<CalculusModePanelProps> = ({ currentMode, onSelect, onClose, position }) => {
-    const { t } = useLanguage();
+export const SoundModePanel: React.FC<SoundModePanelProps> = ({ currentMode, onSelect, onClose, position }) => {
     const [isVisible, setIsVisible] = useState(false);
-    const [selection, setSelection] = useState<'diff' | 'integ' | 'limit' | null>(null);
-    const selectionRef = useRef<'diff' | 'integ' | 'limit' | null>(null);
+    const [selection, setSelection] = useState<string | null>(null);
+    const selectionRef = useRef<string | null>(null);
+
+    const items = [
+        { id: 'sine', label: 'Sine', color: '#4facfe', start: 290, end: 358 },
+        { id: 'square', label: 'Square', color: '#ffcc00', start: 2, end: 70 },
+        { id: 'sawtooth', label: 'Saw', color: '#ff4757', start: 74, end: 142 },
+        { id: 'triangle', label: 'Tri', color: '#4ade80', start: 146, end: 214 },
+        { id: 'custom', label: 'Formula', color: '#a18cd1', start: 218, end: 286 },
+    ];
 
     useEffect(() => {
         requestAnimationFrame(() => setIsVisible(true));
@@ -24,23 +30,25 @@ export const CalculusModePanel: React.FC<CalculusModePanelProps> = ({ currentMod
             const dy = e.clientY - position.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
 
-            if (dist < 45) {
+            if (dist < 40) {
                 setSelection(null);
                 selectionRef.current = null;
                 return;
             }
 
-            // Calculate angle (0-360)
             let angle = (Math.atan2(dx, -dy) * 180) / Math.PI;
             if (angle < 0) angle += 360;
 
-            let current: 'diff' | 'integ' | 'limit' | null = null;
-            if (angle >= 240 || angle < 0) current = 'diff';
-            else if (angle >= 0 && angle < 120) current = 'integ';
-            else if (angle >= 120 && angle < 240) current = 'limit';
+            const selected = items.find(item => {
+                if (item.start > item.end) { // Wraps around 0
+                    return angle >= item.start || angle < item.end;
+                }
+                return angle >= item.start && angle < item.end;
+            });
 
-            setSelection(current);
-            selectionRef.current = current;
+            const nextId = selected ? selected.id : null;
+            setSelection(nextId);
+            selectionRef.current = nextId;
         };
 
         const handleUp = (e: PointerEvent) => {
@@ -59,12 +67,6 @@ export const CalculusModePanel: React.FC<CalculusModePanelProps> = ({ currentMod
         };
     }, [position, onSelect, onClose]);
 
-    const items = [
-        { id: 'diff', icon: <Icons.Calculus size={24} />, label: t('nodes.calculus.diff'), color: '#ff4757', start: 242, end: 358 },
-        { id: 'integ', icon: <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>∫</div>, label: t('nodes.calculus.integ'), color: '#1e90ff', start: 2, end: 118 },
-        { id: 'limit', icon: <div style={{ fontSize: '1rem', fontWeight: 'bold' }}>lim</div>, label: t('nodes.calculus.limit'), color: '#00f2fe', start: 122, end: 238 },
-    ] as const;
-
     const center = 160;
     const outer = 140;
     const inner = 55;
@@ -78,32 +80,22 @@ export const CalculusModePanel: React.FC<CalculusModePanelProps> = ({ currentMod
         <div 
             className="pie-menu-overlay"
             style={{
-                position: 'fixed',
-                inset: 0,
-                zIndex: 999999,
-                pointerEvents: 'auto',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: 'rgba(0,0,0,0.2)',
-                backdropFilter: isVisible ? 'blur(4px)' : 'none',
-                opacity: isVisible ? 1 : 0,
-                transition: 'all 0.3s ease'
+                position: 'fixed', inset: 0, zIndex: 999999, pointerEvents: 'auto',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'rgba(0,0,0,0.2)', backdropFilter: isVisible ? 'blur(4px)' : 'none',
+                opacity: isVisible ? 1 : 0, transition: 'all 0.3s ease'
             }} 
             onContextMenu={(e) => e.preventDefault()}
         >
             <div 
                 className="pie-menu-container" 
                 style={{ 
-                    position: 'absolute',
-                    left: position.x - 160, 
-                    top: position.y - 160,
-                    transform: `scale(${isVisible ? 1 : 0.8})`,
-                    transition: 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                    position: 'absolute', left: position.x - 160, top: position.y - 160,
+                    transform: `scale(${isVisible ? 1 : 0.8})`, transition: 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
                     pointerEvents: 'none'
                 }}
             >
-                <svg className="pie-svg" viewBox="0 0 320 320" style={{ pointerEvents: 'none' }}>
+                <svg className="pie-svg" viewBox="0 0 320 320">
                     {items.map((item) => {
                         const isActive = (selection || currentMode) === item.id;
                         const sOut = polarToCartesian(outer, item.end);
@@ -121,29 +113,28 @@ export const CalculusModePanel: React.FC<CalculusModePanelProps> = ({ currentMod
                         
                         const midAngle = (item.start + item.end) / 2;
                         const rad = (midAngle - 90) * (Math.PI / 180);
-                        const tx = center + Math.cos(rad) * 95;
-                        const ty = center + Math.sin(rad) * 95;
+                        const tx = center + Math.cos(rad) * 90;
+                        const ty = center + Math.sin(rad) * 90;
 
                         return (
                             <g key={item.id}>
                                 <path 
                                     className={`pie-segment ${isActive ? 'active' : ''}`} 
                                     d={d} 
-                                    style={{ 
-                                        '--item-color': item.color,
-                                        opacity: selection ? (selection === item.id ? 1 : 1) : 1 // Logic same, but style classes handle it
-                                    } as any} 
+                                    style={{ '--item-color': item.color } as any} 
                                 />
                                 <g className="pie-label-group" transform={`translate(${tx}, ${ty})`}>
-                                    <g transform="translate(-12, -35)" style={{ color: item.color }}>{item.icon}</g>
+                                    {/* Small icon or text based on type */}
                                     <text 
                                         className="pie-item-label" 
-                                        y="5" 
+                                        textAnchor="middle"
+                                        dominantBaseline="middle"
                                         style={{ 
                                             fill: 'var(--text-main)', 
                                             opacity: isActive ? 1 : 0.6, 
-                                            fontSize: '11px', 
-                                            fontWeight: (selection === item.id) ? 'bold' : 'normal'
+                                            fontSize: '10px', 
+                                            fontWeight: (selection === item.id) ? 'bold' : 'normal',
+                                            textShadow: '0 2px 4px rgba(0,0,0,0.5)'
                                         }}
                                     >
                                         {item.label}
@@ -153,10 +144,8 @@ export const CalculusModePanel: React.FC<CalculusModePanelProps> = ({ currentMod
                         );
                     })}
                 </svg>
-                <div 
-                    className="pie-menu-center-v2" 
-                >
-                    {selection ? (selection === 'diff' ? 'd' : selection === 'integ' ? '∫' : 'L') : (currentMode === 'diff' ? 'd' : currentMode === 'integ' ? '∫' : 'L')}
+                <div className="pie-menu-center-v2" style={{ color: 'var(--accent-bright)', fontSize: '1.2rem' }}>
+                    <Icons.Sound style={{ margin: 0 }} />
                 </div>
             </div>
         </div>,

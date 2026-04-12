@@ -1,7 +1,7 @@
 import React from 'react';
 import { useReactFlow } from '@xyflow/react';
-import useStore, { type AppState } from '../store/useStore';
-import { Icons } from './Icons';
+import useStore, { type AppNode, type AppState } from '../../store/useStore';
+import { Icons } from '../Icons';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 
@@ -11,7 +11,7 @@ interface ResultAreaProps {
 }
 
 export const ResultArea: React.FC<ResultAreaProps> = ({ containerId, targetSid: _targetSid }) => {
-    const parentNode = useStore((state: AppState) => state.nodes.find(n => n.id === containerId));
+    const parentNode = useStore((state: AppState) => state.nodes.find((n: AppNode) => n.id === containerId));
     const handleEject = useStore((state: AppState) => state.handleEject);
     const isCtrlPressed = useStore((state: AppState) => state.isCtrlPressed);
     const setDraggingEjectPos = useStore((state: AppState) => state.setDraggingEjectPos);

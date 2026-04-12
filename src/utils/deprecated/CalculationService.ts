@@ -1,5 +1,5 @@
-import { getMathEngine, getMathSymbol } from './MathEngine';
-import useStore, { type AppNode, type CustomHandle } from '../store/useStore';
+import { getMathEngine, getMathSymbol } from '../MathEngine';
+import useStore, { type AppNode, type CustomHandle } from '../../store/useStore';
 import { type Edge } from '@xyflow/react';
 // @ts-expect-error Nerdamer does not provide typings for this bundle entry.
 import nerdamer from 'nerdamer/all.min';
@@ -59,7 +59,7 @@ export class CalculationService {
         if (parts.length !== 2) return inputEq;
 
         let [lhs, rhs] = parts;
-        
+
         const ops = node.data.operations || [];
         for (const op of ops) {
             let funcName = '';
@@ -162,7 +162,7 @@ export class CalculationService {
         }
 
         const res = `${lhs}=${rhs}`;
-        
+
         // Synchronize the computed result to the currentFormula state, but avoid immediate re-render loops.
         if (node.data.currentFormula !== res) {
             setTimeout(() => {
@@ -209,7 +209,7 @@ export class CalculationService {
             result = ce.box(['Integrate', expr, wrtSymbol]).evaluate();
         } else if (variant === 'limit') {
             const limitPoint = node.data.limitPoint !== undefined ? node.data.limitPoint : '';
-            
+
             // Clean up limit point input
             let lp = String(limitPoint).trim().toLowerCase();
             // Map inf keywords to nerdamer's Infinity token
@@ -222,14 +222,14 @@ export class CalculationService {
             // Helper: convert LaTeX to nerdamer-friendly string
             const latexToNerdamer = (s: string): string =>
                 s.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1)/($2)')
-                 .replace(/\\left\(/g, '(').replace(/\\right\)/g, ')')
-                 .replace(/\\sin/g, 'sin').replace(/\\cos/g, 'cos')
-                 .replace(/\\tan/g, 'tan').replace(/\\ln/g, 'log')
-                 .replace(/\\sqrt\{([^{}]+)\}/g, 'sqrt($1)')
-                 .replace(/\\cdot/g, '*')
-                 .replace(/\{/g, '(').replace(/\}/g, ')')
-                 .replace(/\\/g, '')
-                 .trim();
+                    .replace(/\\left\(/g, '(').replace(/\\right\)/g, ')')
+                    .replace(/\\sin/g, 'sin').replace(/\\cos/g, 'cos')
+                    .replace(/\\tan/g, 'tan').replace(/\\ln/g, 'log')
+                    .replace(/\\sqrt\{([^{}]+)\}/g, 'sqrt($1)')
+                    .replace(/\\cdot/g, '*')
+                    .replace(/\{/g, '(').replace(/\}/g, ')')
+                    .replace(/\\/g, '')
+                    .trim();
 
             // Helper: numerical two-sided limit approximation
             const numericalLimit = (exprStr: string, varName: string, target: string): string | null => {
@@ -321,7 +321,7 @@ export class CalculationService {
         const globalVars: Record<string, string> = {};
         nodes.filter(n => n.type === 'textNode').forEach(tn => {
             if (tn.data.handles && tn.data.outputs) {
-                tn.data.handles.forEach(h => {
+                tn.data.handles.forEach((h: CustomHandle) => {
                     if (h.label && tn.data.outputs![h.id] !== undefined) {
                         globalVars[h.label] = tn.data.outputs![h.id];
                     }
@@ -344,7 +344,7 @@ export class CalculationService {
                 }
             }
 
-            // [NEW] Check if variable is provided by an absorbed slot (e.g. a merged Slider)
+            // [NEW] Check if variable is provided by an absorbed slot (e.g. a plugged Slider)
             if (!val || val.trim() === '') {
                 const slotSid = node.data.slots?.[v];
                 if (typeof slotSid === 'string') {
@@ -400,14 +400,14 @@ export class CalculationService {
                 }
                 ce.popScope();
             }
-            
+
             return JSON.stringify(results);
         }
 
         // Standard single evaluation
         ce.pushScope();
         Object.entries(staticVars).forEach(([k, val]) => ce.assign(k, val));
-        
+
         let finalRes;
         if (node.type === 'solveNode') {
             const wrt = node.data.variable || 'x';
@@ -424,7 +424,7 @@ export class CalculationService {
                 // Determine if equations are a list (comma separated or JSON)
                 let eqs: string | string[] = formattedEq;
                 if (typeof formattedEq === 'string') {
-                   if (formattedEq.trim().startsWith('[') && formattedEq.trim().endsWith(']')) {
+                    if (formattedEq.trim().startsWith('[') && formattedEq.trim().endsWith(']')) {
                         try {
                             const parsed = JSON.parse(formattedEq);
                             if (Array.isArray(parsed) && parsed.every(item => typeof item === 'string')) {
@@ -433,9 +433,9 @@ export class CalculationService {
                         } catch {
                             // Keep the raw equation string if JSON parsing fails.
                         }
-                   } else if (formattedEq.includes(',') || formattedEq.includes(';')) {
+                    } else if (formattedEq.includes(',') || formattedEq.includes(';')) {
                         eqs = formattedEq.split(/[;,]/).map(e => e.trim());
-                   }
+                    }
                 }
 
                 // Determine target variable(s)
@@ -471,7 +471,7 @@ export class CalculationService {
         } else {
             finalRes = solver.evaluate().latex;
         }
-        
+
         ce.popScope();
         return finalRes;
     }

@@ -1,8 +1,8 @@
 import { memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
-import useStore, { type NodeData, type AppNode, type AppState } from '../store/useStore';
-import { NodeFrame } from '../components/NodeFrame';
-import { Icons } from '../components/Icons';
+import useStore, { type NodeData, type AppNode, type AppState } from '../../store/useStore';
+import { NodeFrame } from '../../components/NodeFrame';
+import { Icons } from '../../components/Icons';
 
 export const AppendNode = memo(function AppendNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore(state => state.updateNodeData);

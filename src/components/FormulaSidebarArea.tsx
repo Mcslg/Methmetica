@@ -104,7 +104,7 @@ export const FormulaSidebarArea: React.FC<FormulaSidebarAreaProps> = ({ containe
     const containerNode = useStore((state: AppState) => state.nodes.find(n => n.id === containerId));
     const allSlots = containerNode?.data.slots || {};
 
-    // Get all sliders merged into this node
+    // Get all sliders plugged into this node
     const sliders = Object.entries(allSlots)
         .filter(([_, sid]) => {
             const node = useStore.getState().nodes.find(n => n.id === sid);

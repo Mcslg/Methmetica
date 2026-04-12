@@ -1,7 +1,7 @@
 import { NodeResizer, type NodeProps, type Node } from '@xyflow/react';
-import useStore, { type AppState, type AppNode, type NodeData } from '../store/useStore';
-import { DynamicHandles } from './DynamicHandles';
-import { Icons } from '../components/Icons';
+import useStore, { type AppState, type AppNode, type NodeData } from '../../store/useStore';
+import { DynamicHandles } from '../DynamicHandles';
+import { Icons } from '../../components/Icons';
 
 export function RangeNode({ id, data }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);

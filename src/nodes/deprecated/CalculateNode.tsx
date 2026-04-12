@@ -1,10 +1,10 @@
 import { useEffect, memo } from 'react';
 import { type NodeProps, type Node, useUpdateNodeInternals } from '@xyflow/react';
-import useStore, { type NodeData, type AppState, type CustomHandle } from '../store/useStore';
-import { getMathEngine } from '../utils/MathEngine';
-import { Icons } from '../components/Icons';
-import { NodeFrame } from '../components/NodeFrame';
-import { MathInput } from '../components/MathInput';
+import useStore, { type NodeData, type AppState, type CustomHandle } from '../../store/useStore';
+import { getMathEngine } from '../../utils/MathEngine';
+import { Icons } from '../../components/Icons';
+import { NodeFrame } from '../../components/NodeFrame';
+import { MathInput } from '../../components/MathInput';
 
 export const CalculateNode = memo(function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);

@@ -3,9 +3,9 @@ import { NodeResizer, useReactFlow } from '@xyflow/react';
 import useStore, { type AppState } from '../store/useStore';
 import { DynamicHandles } from '../nodes/DynamicHandles';
 import { CommentArea } from './CommentArea';
-import { ResultArea } from './ResultArea';
-import { CalculusStepsArea } from './CalculusStepsArea';
 import { Icons } from './Icons';
+import { ResultArea } from './deprecated/ResultArea';
+import { CalculusStepsArea } from './deprecated/CalculusStepsArea';
 
 interface NodeFrameProps {
     id: string;
@@ -64,13 +64,13 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
     const slotKeys = Object.keys(data.slots || {});
     const augmentedHandles = (data.handles || [])
         .filter((h: any) => {
-            // 1. Hide handles that match merged slots (generic)
+            // 1. Hide handles that match plugged slots (generic)
             if (h.type === 'target' || h.type === 'input') {
                 if (h.label && slotKeys.includes(h.label)) return false;
             }
             // 2. Hide f(x) input if formula sidebar is active
             if (h.id === 'h-fn-in' && slotKeys.includes('formulaSidebar')) return false;
-            
+
             return true;
         });
 
@@ -86,7 +86,7 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
         : '';
 
     return (
-        <div 
+        <div
             className={`math-node op-node ${selected ? 'selected' : ''} ${className} ${touchingClasses}`}
             style={{
                 width: '100%',
@@ -97,16 +97,16 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
                 boxSizing: 'border-box',
                 ...style
             }}>
-            <NodeResizer 
-                minWidth={minWidth} 
-                minHeight={minHeight} 
-                isVisible={false} 
-                lineStyle={{ border: 'none' }} 
-                handleStyle={{ 
-                    width: 28, 
-                    height: 28, 
-                    borderRadius: '50%', 
-                    background: 'transparent', 
+            <NodeResizer
+                minWidth={minWidth}
+                minHeight={minHeight}
+                isVisible={false}
+                lineStyle={{ border: 'none' }}
+                handleStyle={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: '50%',
+                    background: 'transparent',
                     border: 'none',
                     margin: -14,
                     zIndex: 1000
@@ -117,7 +117,7 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
             {data.slots?.comment && (
                 <CommentArea containerId={id} commentSid={data.slots.comment as string} />
             )}
-            
+
             {data.slots?.resultText && (
                 <ResultArea containerId={id} targetSid={data.slots.resultText as string} />
             )}
@@ -263,7 +263,7 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
                                 );
                             }
 
-                             return null;
+                            return null;
 
                             return null;
                         })}

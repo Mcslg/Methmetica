@@ -1,4 +1,5 @@
 import type { CommunityNodeTemplate } from './types';
+import { cloneInterfaceSchema } from './types';
 import { defaultCommunityTemplates } from './catalog';
 
 const slugify = (value: string) => value
@@ -9,6 +10,7 @@ const slugify = (value: string) => value
 
 export const cloneTemplate = (template: CommunityNodeTemplate): CommunityNodeTemplate => ({
   ...template,
+  interfaceSchema: cloneInterfaceSchema(template.interfaceSchema),
   fields: template.fields.map(field => ({ ...field })),
   inputs: template.inputs.map(handle => ({ ...handle })),
   outputs: template.outputs.map(handle => ({ ...handle })),
@@ -50,10 +52,17 @@ export const makeInitialDraft = (
     tutorialSteps: ['步驟一', '步驟二'],
     relatedWorkflowIds: [],
     tags: metadata?.tags || [],
+    interfaceSchemaText: JSON.stringify({
+      inputs: [
+        { id: 'input', label: 'input', type: 'input', position: 'left', offset: 42, source: 'static', valueKind: 'value' }
+      ],
+      outputs: [
+        { id: 'result', label: 'result', type: 'output', position: 'right', offset: 42, source: 'static', valueKind: 'value' }
+      ]
+    }, null, 2),
     builderBlocks: [
-      { id: `input-${now}`, kind: 'input', label: 'input', placeholder: '使用此節點時傳入的值' },
       { id: `text-${now + 1}`, kind: 'text', label: '根據這個節點：', content: '補上你想呈現的解釋文字。' },
-      { id: `output-${now + 2}`, kind: 'output', label: 'result', placeholder: '此節點輸出的值' },
+      { id: `toggle-${now + 2}`, kind: 'toggle', label: '補充說明', content: '在這裡整理節點的補充邏輯與使用情境。' },
     ],
   }, {
     title: metadata?.title || 'New Community Node',
@@ -61,4 +70,3 @@ export const makeInitialDraft = (
     tags: metadata?.tags || [],
   });
 };
-

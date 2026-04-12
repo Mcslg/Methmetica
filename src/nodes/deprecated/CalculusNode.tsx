@@ -1,10 +1,10 @@
 import React, { useEffect, memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
-import useStore, { type AppState, type NodeData } from '../store/useStore';
-import { useLanguage } from '../contexts/LanguageContext';
-import { Icons } from '../components/Icons';
-import { NodeFrame } from '../components/NodeFrame';
-import { CalculusModePanel } from '../components/CalculusModePanel';
+import useStore, { type AppState, type NodeData } from '../../store/useStore';
+import { useLanguage } from '../../contexts/LanguageContext';
+import { Icons } from '../../components/Icons';
+import { NodeFrame } from '../../components/NodeFrame';
+import { CalculusModePanel } from '../../components/deprecated/CalculusModePanel';
 
 export const CalculusNode = memo(function CalculusNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const { t } = useLanguage();
@@ -36,7 +36,7 @@ export const CalculusNode = memo(function CalculusNode({ id, data, selected }: N
             {showPanel && (
                 <CalculusModePanel 
                     currentMode={variant as any} 
-                    onSelect={(m) => updateNodeData(id, { variant: m })}
+                    onSelect={(m: 'diff' | 'integ' | 'limit') => updateNodeData(id, { variant: m })}
                     onClose={() => setShowPanel(false)}
                     position={panelPosition}
                 />

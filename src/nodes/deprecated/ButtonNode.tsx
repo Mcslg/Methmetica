@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { NodeResizer } from '@xyflow/react';
-import useStore, { type AppState } from '../store/useStore';
-import { DynamicHandles } from './DynamicHandles';
-import { Icons } from '../components/Icons';
+import useStore, { type AppState } from '../../store/useStore';
+import { DynamicHandles } from '../DynamicHandles';
+import { Icons } from '../../components/Icons';
 
 export const ButtonNode = ({ id, data, className }: any) => {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);

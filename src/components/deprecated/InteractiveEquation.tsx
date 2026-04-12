@@ -1,10 +1,10 @@
 import React, { useState, useMemo, memo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getMathEngine } from '../utils/MathEngine';
-import { useLanguage } from '../contexts/LanguageContext';
-import { MathInput } from './MathInput';
-import { loadMathlive } from '../utils/loadMathlive';
-import type { BalanceOperation } from '../store/useStore';
+import { getMathEngine } from '../../utils/MathEngine';
+import { useLanguage } from '../../contexts/LanguageContext';
+import { MathInput } from '../MathInput';
+import { loadMathlive } from '../../utils/loadMathlive';
+import type { BalanceOperation } from '../../store/useStore';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

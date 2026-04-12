@@ -1,16 +1,16 @@
 import React from 'react';
 import { Icons } from '../components/Icons';
-import { NumberNode } from './NumberNode';
-import { DecimalNode } from './DecimalNode';
-import { AppendNode, executeAppendNode } from './AppendNode';
-import { ButtonNode } from './ButtonNode';
-import { GateNode } from './GateNode';
-import { RangeNode, executeRangeNode } from './RangeNode';
-import { ForEachNode, executeForEachNode } from './ForEachNode';
-import { SliderNode } from './SliderNode';
+import { NumberNode } from './deprecated/NumberNode';
+import { DecimalNode } from './deprecated/DecimalNode';
+import { AppendNode, executeAppendNode } from './deprecated/AppendNode';
+import { ButtonNode } from './deprecated/ButtonNode';
+import { GateNode } from './deprecated/GateNode';
+import { RangeNode, executeRangeNode } from './deprecated/RangeNode';
+import { ForEachNode, executeForEachNode } from './deprecated/ForEachNode';
+import { SliderNode } from './deprecated/SliderNode';
 import { ProjectNode } from './ProjectNode';
-import { CommunityTemplateNode } from './CommunityTemplateNode';
-import { WorkflowLinkNode } from './WorkflowLinkNode';
+import { CommunityTemplateNode } from './deprecated/CommunityTemplateNode';
+import { WorkflowLinkNode } from './deprecated/WorkflowLinkNode';
 import { CodeNode, executeCodeNode } from './CodeNode';
 import type { CommunityNodeTemplate } from '../community/types';
 import {
@@ -53,12 +53,12 @@ export interface NodeDefinition {
 }
 
 const LazyTextNode = React.lazy(() => import('./TextNode').then((mod) => ({ default: mod.TextNode })));
-const LazyCalculateNode = React.lazy(() => import('./CalculateNode').then((mod) => ({ default: mod.CalculateNode })));
-const LazyCalculusNode = React.lazy(() => import('./CalculusNode').then((mod) => ({ default: mod.CalculusNode })));
-const LazyGraphNode = React.lazy(() => import('./GraphNode').then((mod) => ({ default: mod.GraphNode })));
-const LazyBalanceNode = React.lazy(() => import('./BalanceNode').then((mod) => ({ default: mod.BalanceNode })));
-const LazySolveNode = React.lazy(() => import('./SolveNode').then((mod) => ({ default: mod.SolveNode })));
-const LazySoundNode = React.lazy(() => import('./SoundNode').then((mod) => ({ default: mod.SoundNode })));
+const LazyCalculateNode = React.lazy(() => import('./deprecated/CalculateNode').then((mod) => ({ default: mod.CalculateNode })));
+const LazyCalculusNode = React.lazy(() => import('./deprecated/CalculusNode').then((mod) => ({ default: mod.CalculusNode })));
+const LazyGraphNode = React.lazy(() => import('./deprecated/GraphNode').then((mod) => ({ default: mod.GraphNode })));
+const LazyBalanceNode = React.lazy(() => import('./deprecated/BalanceNode').then((mod) => ({ default: mod.BalanceNode })));
+const LazySolveNode = React.lazy(() => import('./deprecated/SolveNode').then((mod) => ({ default: mod.SolveNode })));
+const LazySoundNode = React.lazy(() => import('./deprecated/SoundNode').then((mod) => ({ default: mod.SoundNode })));
 
 const withNodeSuspense = (Component: React.LazyExoticComponent<React.ComponentType<any>>) => {
     const WrappedNode = (props: any) => (
@@ -71,7 +71,7 @@ const withNodeSuspense = (Component: React.LazyExoticComponent<React.ComponentTy
 };
 
 const mathExecute = async (node: AppNode, state: AppState) => {
-    const { CalculationService } = await import('../utils/CalculationService');
+    const { CalculationService } = await import('../utils/deprecated/CalculationService');
     return CalculationService.calculate(node, {
         nodes: state.nodes,
         edges: state.edges
@@ -89,7 +89,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'calculateNode',
         component: withNodeSuspense(LazyCalculateNode),
-        metadata: { label: 'Math Calc', desc: 'Symbolic math expressions', category: 'Math', icon: <Icons.Calculate />, color: 'var(--accent-bright)' },
+        metadata: { label: 'Math Calc', desc: 'Symbolic math expressions', category: 'Math', icon: <Icons.Calculate />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 160, height: 75 },
         defaultHandles: toolNodeHandles,
         execute: mathExecute
@@ -97,7 +97,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'decimalNode',
         component: DecimalNode,
-        metadata: { label: 'Decimal', desc: 'Fraction to float', category: 'Utils', icon: <Icons.Decimal />, color: 'var(--accent-bright)' },
+        metadata: { label: 'Decimal', desc: 'Fraction to float', category: 'Utils', icon: <Icons.Decimal />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 200, height: 120 },
         defaultHandles: toolNodeHandles,
         execute: mathExecute
@@ -105,7 +105,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'calculusNode',
         component: withNodeSuspense(LazyCalculusNode),
-        metadata: { label: 'Calculus', desc: 'Derivatives & Integrals', category: 'Math', icon: <Icons.Calculus />, color: 'var(--accent-bright)' },
+        metadata: { label: 'Calculus', desc: 'Derivatives & Integrals', category: 'Math', icon: <Icons.Calculus />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 220, height: 80 },
         defaultHandles: calculusNodeHandles,
         execute: mathExecute
@@ -113,7 +113,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'appendNode',
         component: AppendNode,
-        metadata: { label: 'Logger', desc: 'Append to TextNode', category: 'Logic', icon: <Icons.Append />, color: 'var(--accent-bright)' },
+        metadata: { label: 'Logger', desc: 'Append to TextNode', category: 'Logic', icon: <Icons.Append />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 200, height: 120 },
         defaultHandles: appendNodeHandles,
         execute: executeAppendNode
@@ -121,21 +121,21 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'buttonNode',
         component: ButtonNode,
-        metadata: { label: 'Trigger', desc: 'Signal trigger', category: 'Logic', icon: <Icons.Trigger />, color: 'var(--accent-bright)' },
+        metadata: { label: 'Trigger', desc: 'Signal trigger', category: 'Logic', icon: <Icons.Trigger />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 120, height: 46 },
         defaultHandles: buttonNodeHandles
     },
     {
         type: 'gateNode',
         component: GateNode,
-        metadata: { label: 'Gate', desc: 'Pass/Block trigger', category: 'Logic', icon: <Icons.Gate />, color: 'var(--accent-bright)' },
+        metadata: { label: 'Gate', desc: 'Pass/Block trigger', category: 'Logic', icon: <Icons.Gate />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 180, height: 110 },
         defaultHandles: gateNodeHandles
     },
     {
         type: 'rangeNode',
         component: RangeNode,
-        metadata: { label: 'Range', desc: 'Number sequence', category: 'Math', icon: <Icons.Range />, color: 'var(--accent-bright)' },
+        metadata: { label: 'Range', desc: 'Number sequence', category: 'Math', icon: <Icons.Range />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 180, height: 110 },
         defaultHandles: rangeNodeHandles,
         execute: executeRangeNode
@@ -143,7 +143,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'forEachNode',
         component: ForEachNode,
-        metadata: { label: 'ForEach', desc: 'Loop neighbor nodes', category: 'Logic', icon: <Icons.ForEach />, color: 'var(--accent-bright)' },
+        metadata: { label: 'ForEach', desc: 'Loop neighbor nodes', category: 'Logic', icon: <Icons.ForEach />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 180, height: 110 },
         defaultHandles: forEachNodeHandles,
         execute: executeForEachNode
@@ -151,7 +151,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'graphNode',
         component: withNodeSuspense(LazyGraphNode),
-        metadata: { label: 'Graph', desc: 'Plot 2D dynamic functions', category: 'Math', icon: <Icons.Graph />, color: 'var(--accent-bright)' },
+        metadata: { label: 'Graph', desc: 'Plot 2D dynamic functions', category: 'Math', icon: <Icons.Graph />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 300, height: 260 },
         defaultHandles: graphNodeHandles,
         execute: mathExecute
@@ -159,14 +159,14 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'sliderNode',
         component: SliderNode,
-        metadata: { label: 'Slider', desc: 'Value slider', category: 'Input', icon: <Icons.Slider />, color: 'var(--accent-bright)' },
+        metadata: { label: 'Slider', desc: 'Value slider', category: 'Input', icon: <Icons.Slider />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 180, height: 110 },
         defaultHandles: sliderNodeHandles
     },
     {
         type: 'solveNode',
         component: withNodeSuspense(LazySolveNode),
-        metadata: { label: 'Solver', desc: 'Equation solver', category: 'Math', icon: <Icons.Solve />, color: 'var(--accent-bright)' },
+        metadata: { label: 'Solver', desc: 'Equation solver', category: 'Math', icon: <Icons.Solve />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 220, height: 160 },
         defaultHandles: [{ id: 'h-in', type: 'input', position: 'left', offset: 50, label: 'eq' }, { id: 'h-out', type: 'output', position: 'right', offset: 50 }],
         execute: mathExecute
@@ -174,7 +174,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'balanceNode',
         component: withNodeSuspense(LazyBalanceNode),
-        metadata: { label: 'Balance', desc: 'Step-by-step equivalence', category: 'Math', icon: <Icons.Balance />, color: 'var(--accent-bright)' },
+        metadata: { label: 'Balance', desc: 'Step-by-step equivalence', category: 'Math', icon: <Icons.Balance />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 240, height: 300 },
         defaultHandles: [{ id: 'h-in', type: 'input', position: 'left', offset: 50, label: 'eq' }, { id: 'h-out', type: 'output', position: 'right', offset: 50 }],
         execute: mathExecute
@@ -182,7 +182,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'soundNode',
         component: withNodeSuspense(LazySoundNode),
-        metadata: { label: 'Sound', desc: 'Synthesize sound from math', category: 'Output', icon: <Icons.Sound />, color: '#4ade80' },
+        metadata: { label: 'Sound', desc: 'Synthesize sound from math', category: 'Output', icon: <Icons.Sound />, color: '#4ade80', hidden: true },
         defaultSize: { width: 220, height: 160 },
         defaultHandles: soundNodeHandles
     },
@@ -211,7 +211,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'workflowLinkNode',
         component: WorkflowLinkNode,
-        metadata: { label: 'Workflow Link', desc: 'Open another workflow', category: 'Community', icon: <Icons.ExternalLink />, color: '#f59e0b' },
+        metadata: { label: 'Workflow Link', desc: 'Open another workflow', category: 'Community', icon: <Icons.ExternalLink />, color: '#f59e0b', hidden: true },
         defaultSize: { width: 280, height: 180 },
         defaultHandles: [
             { id: 'h-in', type: 'input', position: 'left', offset: 42, label: 'ref' },

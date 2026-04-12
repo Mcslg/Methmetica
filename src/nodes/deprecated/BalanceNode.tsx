@@ -1,11 +1,11 @@
 import { useEffect, memo, useRef, useState } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
-import useStore, { type NodeData, type AppState, type BalanceOperation } from '../store/useStore';
-import { Icons } from '../components/Icons';
-import { NodeFrame } from '../components/NodeFrame';
-import { MathInput } from '../components/MathInput';
-import { InteractiveEquation } from '../components/InteractiveEquation';
-import { useLanguage } from '../contexts/LanguageContext';
+import useStore, { type NodeData, type AppState, type BalanceOperation } from '../../store/useStore';
+import { Icons } from '../../components/Icons';
+import { NodeFrame } from '../../components/NodeFrame';
+import { MathInput } from '../../components/MathInput';
+import { InteractiveEquation } from '../../components/deprecated/InteractiveEquation';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 export const BalanceNode = memo(function BalanceNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const { t } = useLanguage();
@@ -136,7 +136,7 @@ export const BalanceNode = memo(function BalanceNode({ id, data, selected }: Nod
                 {/* ── Interactive equation stage ── */}
                 <InteractiveEquation
                     formula={currentFormula}
-                    onApplyOperation={(op, val, meta) => {
+                    onApplyOperation={(op: string, val: string, meta?: any) => {
                         appendOperation({ op, value: val, ...meta });
                     }}
                 />
@@ -318,7 +318,7 @@ export const BalanceNode = memo(function BalanceNode({ id, data, selected }: Nod
                     color: rgba(14,47,11,0.5);
                 }
 
-                /* History list (TextNode merged only) */
+                /* History list (TextNode plugged only) */
                 .balance-node .bn-history {
                     display: flex;
                     flex-direction: column;

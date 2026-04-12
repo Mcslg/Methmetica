@@ -1,12 +1,12 @@
 /**
- * Merge Registry — Declarative Merge Rules Config
+ * Plugin Registry — Declarative Plugin Rules Config
  *
- * Defines which node types can be absorbed ("proxyable") into which
+ * Defines which node types can be plugged ("proxyable") into which
  * container types ("containers"), and how they behave.
  *
  * To add a new proxy type:
  *   1. Check it's listed under `proxyableTypes`
- *   2. Add an entry to `mergeRules` listing which containers accept it
+ *   2. Add an entry to `pluginRules` listing which containers accept it
  *   3. Set `slotKey` and optional `heightIncrement`
  *
  * To add a new container type:
@@ -17,7 +17,7 @@
 export type ProxyableType = 'sliderNode' | 'buttonNode' | 'gateNode' | 'textNode' | 'appendNode';
 export type ContainerType = 'textNode' | 'calculateNode' | 'solveNode' | 'graphNode' | 'calculusNode' | 'gateNode' | 'rangeNode' | 'balanceNode';
 
-export interface MergeRule {
+export interface PluginRule {
     /** Which container types accept this proxyable type */
     acceptedBy: ContainerType[];
     /** Key used in the `slots` map, and for edge rerouting */
@@ -30,7 +30,7 @@ export interface MergeRule {
  * The master registry of all proxyable → container relationships.
  * Keep this as the single source of truth.
  */
-export const MergeRules: Record<ProxyableType, MergeRule> = {
+export const PluginRules: Record<ProxyableType, PluginRule> = {
     sliderNode: {
         acceptedBy: ['textNode', 'calculateNode', 'solveNode', 'graphNode'],
         getSlotKey: (_id, name) => name || 'a',
@@ -59,16 +59,16 @@ export const MergeRules: Record<ProxyableType, MergeRule> = {
 };
 
 /** All proxyable node types */
-export const proxyableTypes = Object.keys(MergeRules) as ProxyableType[];
+export const proxyableTypes = Object.keys(PluginRules) as ProxyableType[];
 
 /** All container node types */
 export const containerTypes: ContainerType[] = ['textNode', 'calculateNode', 'solveNode', 'graphNode', 'calculusNode', 'gateNode', 'rangeNode', 'balanceNode'];
 
 /**
- * Check if a node of `aType` can be absorbed into a node of `bType`.
+ * Check if a node of `aType` can be plugged into a node of `bType`.
  */
-export function canMerge(aType: string, bType: string): boolean {
-    const rule = MergeRules[aType as ProxyableType];
+export function canPlugin(aType: string, bType: string): boolean {
+    const rule = PluginRules[aType as ProxyableType];
     if (!rule) return false;
     return rule.acceptedBy.includes(bType as ContainerType);
 }
@@ -77,7 +77,7 @@ export function canMerge(aType: string, bType: string): boolean {
  * Get the slot key for a proxyable node.
  */
 export function getSlotKey(aType: string, nodeName?: string): string {
-    const rule = MergeRules[aType as ProxyableType];
+    const rule = PluginRules[aType as ProxyableType];
     if (!rule) return aType;
     return rule.getSlotKey('', nodeName);
 }

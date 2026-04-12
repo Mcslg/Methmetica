@@ -2,10 +2,11 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { type Edge } from '@xyflow/react';
 import { getNodeDefinition } from '../nodes/registry';
-import { canMerge, MergeRules, type ProxyableType } from '../config/mergeRegistry';
+import { canPlugin, PluginRules, type ProxyableType } from '../config/pluginRegistry';
 import { defaultCommunityTemplates } from '../community/catalog';
 import type { CommunityNodeTemplate, WorkflowVisibility } from '../community/types';
 import type { AppUser, AuthStatus } from '../integrations/supabase/types';
+import type { MathValue } from '../types/mathTypes';
 import {
     type Connection,
     type EdgeChange,
@@ -65,6 +66,7 @@ export type NodeData = {
     useExternalFormula?: boolean;
     formulaInput?: string; // Formula string received from an external connection
     outputs?: Record<string, string>; // Multi-output support (handleId -> value)
+    typedOutputs?: Record<string, MathValue>; // Typed multi-output support (handleId -> MathValue)
     style?: { color?: string; fontSize?: number }; // Custom styles for node
     rangeDef?: string; // For rangeNode definition (e.g., '0..10')
     status?: string; // For progress reporting (e.g., 'ForEach' progress)
@@ -80,6 +82,7 @@ export type NodeData = {
     currentFormula?: string; // For BalanceNode interim result
     inputSignature?: string; // A signature combining all incoming variable edge values to trigger calculation hooks
     inputs?: Record<string, string>; // Multi-input support (handleId -> value)
+    typedInputs?: Record<string, MathValue>; // Typed multi-input support (handleId -> MathValue)
     limitPoint?: string; // For CalculusNode limit target (e.g. x -> a)
     description?: string; // For ProjectNode metadata
     tags?: string[]; // Shared workflow/tag metadata for builder root
@@ -153,9 +156,9 @@ export type AppState = {
     draggingEjectPos: { startX: number, startY: number, curX: number, curY: number } | null;
     setDraggingEjectPos: (pos: { startX: number, startY: number, curX: number, curY: number } | null) => void;
 
-    // [NEW] Merge Hint during drag
-    mergeHint: { targetId: string, slotKey: string, label: string, side: 'left' | 'right' | 'top' | 'bottom' } | null;
-    updateMergeHint: (draggedNodeId: string, mousePos: { x: number, y: number } | null, side?: 'left' | 'right' | 'top' | 'bottom') => void;
+    // [NEW] Plugin hint during drag
+    pluginHint: { targetId: string, slotKey: string, label: string, side: 'left' | 'right' | 'top' | 'bottom' } | null;
+    updatePluginHint: (draggedNodeId: string, mousePos: { x: number, y: number } | null, side?: 'left' | 'right' | 'top' | 'bottom') => void;
 
     // [NEW] Node Resizing via Cmd+Scroll
     hoveredNodeId: string | null;
@@ -370,21 +373,21 @@ const useStore = create<AppState>()(
                 if (end - start > 10) console.warn(`[Performance] updateNodeDimensions for ${nodeId} took ${Math.round(end - start)}ms`);
             },
 
-            mergeHint: null,
-            updateMergeHint: (draggedNodeId, mousePos, forcedSide) => {
+            pluginHint: null,
+            updatePluginHint: (draggedNodeId, mousePos, forcedSide) => {
                 if (!mousePos) {
-                    set({ mergeHint: null });
+                    set({ pluginHint: null });
                     return;
                 }
                 const { nodes } = get();
                 const a = nodes.find(n => n.id === draggedNodeId);
                 if (!a) return;
 
-                let bestHint: AppState['mergeHint'] = null;
+                let bestHint: AppState['pluginHint'] = null;
 
                 for (const b of nodes) {
                     if (b.id === draggedNodeId || b.hidden || !b.type) continue;
-                    if (!canMerge(a.type as string, b.type as string)) continue;
+                    if (!canPlugin(a.type as string, b.type as string)) continue;
 
                     const bWidth = b.measured?.width || b.width || 200;
                     const bHeight = b.measured?.height || b.height || 100;
@@ -401,7 +404,7 @@ const useStore = create<AppState>()(
                         // Detect side if not forced
                         const side = forcedSide || (dyTop < 40 ? 'top' : dyBottom < 40 ? 'bottom' : dxLeft < 40 ? 'left' : 'right');
 
-                        // Rule for LEFT Merges (Inputs/Sidebar)
+                        // Rule for left-side plugin slots (inputs/sidebar)
                         if (side === 'left' && b.type === 'graphNode') {
                             if (a.type === 'textNode') {
                                 if (!slots.formulaSidebar) {
@@ -414,7 +417,7 @@ const useStore = create<AppState>()(
                                 }
                             }
                         } 
-                        // [FIX] Rule for TextNode Merges (Sliders, Buttons, Gates, Calculators, Loggers)
+                        // [FIX] Rule for TextNode plugin slots (sliders, buttons, gates, calculators, loggers)
                         else if (b.type === 'textNode') {
                             if (a.type === 'sliderNode' || a.type === 'buttonNode' || a.type === 'gateNode') {
                                 const key = a.data.nodeName || (a.type === 'sliderNode' ? 'x' : a.type === 'buttonNode' ? 'btn' : 'gate');
@@ -433,7 +436,7 @@ const useStore = create<AppState>()(
                                 }
                             }
                         }
-                        // Rule for RIGHT Merges (Results for nodes that aren't TextNodes)
+                        // Rule for right-side plugin slots (results for non-TextNodes)
                         else if (side === 'right' && (b.type === 'calculateNode' || b.type === 'solveNode' || b.type === 'balanceNode' || b.type === 'calculusNode')) {
                             if (a.type === 'textNode' && !slots.resultText) {
                                 bestHint = { targetId: b.id, slotKey: 'resultText', label: '+ Result Display', side: 'right' };
@@ -444,13 +447,13 @@ const useStore = create<AppState>()(
                                 }
                             }
                         } 
-                        // Rule for TOP Merges (Comments)
+                        // Rule for top-side plugin slots (comments)
                         else if (side === 'top') {
                             if (a.type === 'textNode' && !slots.comment) {
                                 bestHint = { targetId: b.id, slotKey: 'comment', label: '+ Add Note', side: 'top' };
                             }
                         }
-                        // [NEW] Rule for BOTTOM Merges (Specifically for AppendNode or others)
+                        // [NEW] Rule for bottom-side plugin slots
                         else if (side === 'bottom') {
                             if (a.type === 'appendNode' && b.type === 'textNode' && !slots.appender) {
                                 bestHint = { targetId: b.id, slotKey: 'appender', label: '+ Add Appender (Log)', side: 'bottom' };
@@ -459,7 +462,7 @@ const useStore = create<AppState>()(
                         break; 
                     }
                 }
-                set({ mergeHint: bestHint });
+                set({ pluginHint: bestHint });
             },
 
             setNodeHidden: (nodeId, hidden) => {
@@ -830,7 +833,7 @@ const useStore = create<AppState>()(
             const currentNodes = get().nodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, value: res } } : n);
             set({ nodes: currentNodes });
 
-            // [NEW] Sync results to merged resultText slot if present
+            // [NEW] Sync results to plugged resultText slot if present
             if (node.data.slots?.resultText) {
                 const textNodeId = typeof node.data.slots.resultText === 'string' 
                     ? node.data.slots.resultText 
@@ -865,21 +868,21 @@ const useStore = create<AppState>()(
 
     handleProximitySnap: (nodeId: string) => {
         get().takeSnapshot(); // Snapshot BEFORE snap
-        const { nodes, mergeHint } = get();
+        const { nodes, pluginHint } = get();
         const a = nodes.find(n => n.id === nodeId);
         if (!a) { console.warn("Snap fail: A not found"); return; }
 
-        if (mergeHint && mergeHint.targetId) {
-            const b = nodes.find(n => n.id === mergeHint.targetId);
+        if (pluginHint && pluginHint.targetId) {
+            const b = nodes.find(n => n.id === pluginHint.targetId);
             if (b) {
-                const rule = MergeRules[a.type as ProxyableType];
+                const rule = PluginRules[a.type as ProxyableType];
                 if (!rule) { console.warn("Snap fail: No rule for", a.type); return; }
 
-                const slotKey = mergeHint.slotKey;
+                const slotKey = pluginHint.slotKey;
                 const currentSlots = b.data.slots || {};
                 
                 if (!currentSlots[slotKey]) {
-                    console.log(`Merging ${a.id} into ${b.id} at ${slotKey}`);
+                    console.log(`Plugging ${a.id} into ${b.id} at ${slotKey}`);
                     const newSlots = { ...currentSlots, [slotKey]: a.id };
                     const curHeight = b.height || b.measured?.height || 100;
                     const curWidth = b.width || b.measured?.width || 200;
@@ -912,10 +915,10 @@ const useStore = create<AppState>()(
                             }
                             return e;
                         }),
-                        mergeHint: null 
+                        pluginHint: null 
                     });
                     // [PERF] Defer evaluateGraph so React can batch the structural render first.
-                    // Without this, merge triggers ~50 re-renders. With this, it's ~2.
+                    // Without this, plugging in triggers ~50 re-renders. With this, it's ~2.
                     requestAnimationFrame(() => get().evaluateGraph());
                     return;
                 } else {
@@ -928,7 +931,7 @@ const useStore = create<AppState>()(
             console.log("Snap fail: No active hint");
         }
         
-        set({ mergeHint: null });
+        set({ pluginHint: null });
     },
 
     evaluateGraph: () => {
@@ -984,6 +987,7 @@ const useStore = create<AppState>()(
             let valIn: string | undefined = undefined;
             let gateValFromEdge: string | undefined = undefined;
             const collectedInputs: Record<string, string> = {};
+            const collectedTypedInputs: Record<string, MathValue> = {};
 
             if (explicitEdges.length > 0) {
                 explicitEdges.forEach(e => {
@@ -992,12 +996,19 @@ const useStore = create<AppState>()(
                     const val = (e.sourceHandle && source.data.outputs?.[e.sourceHandle] !== undefined)
                         ? source.data.outputs[e.sourceHandle]
                         : source.data.value;
+                    const typedVal = e.sourceHandle
+                        ? source.data.typedOutputs?.[e.sourceHandle]
+                        : undefined;
                     
                     if (val !== undefined) {
                         if (e.targetHandle) {
                             collectedInputs[e.targetHandle] = val;
                         }
                         if (valIn === undefined) valIn = val; // First one is the generic input
+                    }
+
+                    if (typedVal && e.targetHandle) {
+                        collectedTypedInputs[e.targetHandle] = typedVal;
                     }
 
                     if (e.targetHandle === 'h-gate-in') {
@@ -1012,6 +1023,11 @@ const useStore = create<AppState>()(
             // Sync inputs Record
             if (JSON.stringify(collectedInputs) !== JSON.stringify(node.data.inputs || {})) {
                 updatedData.inputs = collectedInputs;
+                isUpdated = true;
+            }
+
+            if (JSON.stringify(collectedTypedInputs) !== JSON.stringify(node.data.typedInputs || {})) {
+                updatedData.typedInputs = collectedTypedInputs;
                 isUpdated = true;
             }
 
@@ -1109,7 +1125,8 @@ const useStore = create<AppState>()(
             if (['calculateNode', 'solveNode', 'graphNode', 'balanceNode', 'codeNode'].includes(node.type || '')) {
                 const signature = explicitEdges.map(e => {
                     const source = nodeMap.get(e.source);
-                    return `${e.targetHandle}=${(e.sourceHandle && source?.data.outputs?.[e.sourceHandle]) ?? source?.data.value}`;
+                    const typedValue = e.sourceHandle ? source?.data.typedOutputs?.[e.sourceHandle] : undefined;
+                    return `${e.targetHandle}=${(e.sourceHandle && source?.data.outputs?.[e.sourceHandle]) ?? source?.data.value}|typed=${JSON.stringify(typedValue ?? '')}`;
                 }).sort().join('|');
 
                 if (signature !== node.data.inputSignature) {

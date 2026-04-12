@@ -1,10 +1,12 @@
-import { memo } from 'react';
+import { memo, useEffect } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
 import useStore, { type AppState, type AppNode, type NodeData } from '../store/useStore';
 import { NodeFrame } from '../components/NodeFrame';
 import { Icons } from '../components/Icons';
+import type { MathValue } from '../types/mathTypes';
 
 const defaultCode = `return inputs.input;`;
+const GLOBAL_DECLARATION_PATTERN = /^(\s*)global\s+([A-Za-z_$][\w$]*)\s*=\s*(.+);?\s*$/gm;
 
 const stringifyOutput = (value: unknown): string => {
     if (value === undefined) return '';
@@ -39,6 +41,29 @@ const parseValue = (value: string): unknown => {
     return value;
 };
 
+const buildGlobals = (state: AppState) => {
+    const globals: Record<string, unknown> = {};
+
+    Object.entries(state.globalVars || {}).forEach(([name, rawValue]) => {
+        const parsedValue = parseValue(rawValue);
+        globals[name] = parsedValue;
+
+        if (name.startsWith('$') && name.length > 1) {
+            globals[name.slice(1)] = parsedValue;
+        }
+    });
+
+    return globals;
+};
+
+const normalizeGlobalName = (name: string) => name.startsWith('$') ? name : `$${name}`;
+
+const transformGlobalDeclarations = (code: string) =>
+    code.replace(GLOBAL_DECLARATION_PATTERN, (_match, indent: string, name: string, expression: string) => {
+        const normalizedName = normalizeGlobalName(name);
+        return `${indent}const ${name} = helpers.setGlobal('${normalizedName}', (${expression}));`;
+    });
+
 const buildInputs = (node: AppNode) => {
     const inputs: Record<string, unknown> = {};
     const handleMap = new Map((node.data.handles || []).map(handle => [handle.id, handle.label || handle.id]));
@@ -61,56 +86,156 @@ const buildInputs = (node: AppNode) => {
     return inputs;
 };
 
+const buildTypedInputs = (node: AppNode) => {
+    const typedInputs: Record<string, MathValue> = {};
+    const handleMap = new Map((node.data.handles || []).map(handle => [handle.id, handle.label || handle.id]));
+
+    Object.entries(node.data.typedInputs || {}).forEach(([handleId, typedValue]) => {
+        const label = handleMap.get(handleId);
+
+        typedInputs[handleId] = typedValue;
+
+        if (label) {
+            typedInputs[label] = typedValue;
+        }
+    });
+
+    return typedInputs;
+};
+
 type CodeExecutionResult = {
     result?: unknown;
     error?: unknown;
     outputs?: Record<string, unknown>;
 };
 
-export const executeCodeNode = (node: AppNode, state: AppState): void => {
-    const code = node.data.code?.trim() || defaultCode;
+// Worker management
+let workerInstance: Worker | null = null;
+let pendingRequests = new Map<string, { resolve: (val: any) => void, reject: (err: any) => void }>();
+
+const getWorker = () => {
+    if (!workerInstance) {
+        // Vite worker import syntax
+        workerInstance = new Worker(new URL('../workers/codeRunner.worker.ts', import.meta.url), { type: 'module' });
+        workerInstance.onmessage = (e) => {
+            const { requestId, type, result, outputs, globalUpdates, error } = e.data;
+            const pending = pendingRequests.get(requestId);
+            if (!pending) return;
+
+            if (type === 'success') {
+                pending.resolve({ result, outputs, globalUpdates });
+            } else {
+                pending.reject(error);
+            }
+            pendingRequests.delete(requestId);
+        };
+    }
+    return workerInstance;
+};
+
+export const executeCodeNode = async (node: AppNode, state: AppState): Promise<void> => {
+    let baseCode = node.data.code?.trim() || defaultCode;
+    
+    // [NEW] Extract input & output declarations
+    const INPUT_DECLARATION_REGEX = /^\s*input\s+([A-Za-z_$][\w$]*)\s+as\s+\[([a-zA-Z_]+)\]\s*$/gm;
+    const OUTPUT_DECLARATION_REGEX = /^\s*output\s+([A-Za-z_$][\w$]*)\s+as\s+\[([a-zA-Z_]+)\]\s*$/gm;
+    
+    const declaredVars: string[] = [];
+    const outputDeclarations: Record<string, string> = {};
+    
+    Array.from(baseCode.matchAll(INPUT_DECLARATION_REGEX)).forEach(match => declaredVars.push(match[1]));
+    Array.from(baseCode.matchAll(OUTPUT_DECLARATION_REGEX)).forEach(match => {
+        outputDeclarations[match[1]] = match[2];
+    });
+    
+    // Strip declarations
+    let strippedCode = baseCode.replace(INPUT_DECLARATION_REGEX, '');
+    strippedCode = strippedCode.replace(OUTPUT_DECLARATION_REGEX, '').trim();
+    
+    // Inject destructured variables
+    const preamble = declaredVars.length > 0 ? `const { ${declaredVars.join(', ')} } = inputs;\n` : '';
+    
+    const code = transformGlobalDeclarations(preamble + strippedCode);
     const inputs = buildInputs(node);
+    const typedInputs = buildTypedInputs(node);
+    const globals = buildGlobals(state);
+
+    const requestId = `${node.id}-${Date.now()}`;
+    const worker = getWorker();
 
     try {
-        const executor = new Function(
-            'inputs',
-            'helpers',
-            `"use strict";
-${code}`
-        ) as (inputs: Record<string, unknown>, helpers: Record<string, unknown>) => unknown;
+        const response = await new Promise<any>((resolve, reject) => {
+            pendingRequests.set(requestId, { resolve, reject });
+            worker.postMessage({ requestId, code, inputs, typedInputs, globals, outputDeclarations });
 
-        const raw = executor(inputs, {
-            stringify: stringifyOutput,
-            parse: parseValue
+            // Safety timeout
+            setTimeout(() => {
+                if (pendingRequests.has(requestId)) {
+                    pendingRequests.delete(requestId);
+                    reject('Execution Timeout (可能存在無窮迴圈)');
+                }
+            }, 3000);
         });
 
-        const payload: CodeExecutionResult =
-            raw && typeof raw === 'object' && !Array.isArray(raw) &&
-            ('result' in (raw as Record<string, unknown>) || 'outputs' in (raw as Record<string, unknown>) || 'error' in (raw as Record<string, unknown>))
-                ? raw as CodeExecutionResult
-                : { result: raw };
+        const { result, outputs: customOutputs, globalUpdates } = response;
 
-        const resultText = stringifyOutput(payload.result);
-        const errorText = payload.error === undefined ? '' : stringifyOutput(payload.error);
+        // Apply global updates from worker
+        if (globalUpdates) {
+            Object.entries(globalUpdates).forEach(([name, value]) => {
+                state.setGlobalVar(name as string, value as string);
+            });
+        }
+
+        const payload: CodeExecutionResult =
+            result && typeof result === 'object' && !Array.isArray(result) &&
+            ('result' in (result as Record<string, unknown>) || 'outputs' in (result as Record<string, unknown>) || 'error' in (result as Record<string, unknown>))
+                ? result as CodeExecutionResult
+                : { result };
+
+        // [NEW] Handle unboxing for display, but keep object for output handles
+        const displayValue = (val: any) => {
+            if (val && typeof val === 'object' && 'value' in val) return stringifyOutput(val.value);
+            return stringifyOutput(val);
+        };
+
+        const resultText = displayValue(payload.result);
+        const errorText = payload.error === undefined ? '' : displayValue(payload.error);
+
+        const newOutputs: Record<string, string> = {
+            'h-result': resultText,
+            'h-error': stringifyOutput(payload.error),
+        };
+        const newTypedOutputs: Record<string, MathValue> = {};
+
+        if (payload.result && typeof payload.result === 'object' && 'type' in payload.result && 'value' in payload.result) {
+            newTypedOutputs['h-result'] = payload.result as MathValue;
+        }
+        
+        // Serialize custom outputs (already boxed in worker)
+        Object.entries(customOutputs || {}).forEach(([key, val]) => {
+            newOutputs[`h-out-${key}`] = displayValue(val);
+            if (val && typeof val === 'object' && 'type' in val && 'value' in val) {
+                newTypedOutputs[`h-out-${key}`] = val as MathValue;
+            }
+        });
 
         state.updateNodeData(node.id, {
             value: resultText,
             error: errorText || undefined,
-            outputs: {
-                'h-result': resultText,
-                'h-error': errorText,
-            }
+            outputs: newOutputs,
+            typedOutputs: newTypedOutputs
         });
         state.evaluateGraph();
     } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = typeof error === 'string' ? error : (error instanceof Error ? error.message : String(error));
         state.updateNodeData(node.id, {
             value: '',
             error: message,
             outputs: {
                 'h-result': '',
                 'h-error': message,
-            }
+            },
+            typedOutputs: {}
         });
         state.evaluateGraph();
     }
@@ -119,6 +244,68 @@ ${code}`
 export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
     const executeNode = useStore((state: AppState) => state.executeNode);
+
+    const currentCode = data.code ?? defaultCode;
+
+    // [NEW] Sync handles based on input/output declarations
+    useEffect(() => {
+        const INPUT_DECLARATION_REGEX = /^\s*input\s+([A-Za-z_$][\w$]*)\s+as\s+\[([a-zA-Z_]+)\]\s*$/gm;
+        const OUTPUT_DECLARATION_REGEX = /^\s*output\s+([A-Za-z_$][\w$]*)\s+as\s+\[([a-zA-Z_]+)\]\s*$/gm;
+        
+        const newInputs: { name: string, type: string }[] = [];
+        Array.from(currentCode.matchAll(INPUT_DECLARATION_REGEX)).forEach(match => newInputs.push({ name: match[1], type: match[2] }));
+        
+        const newOutputs: { name: string, type: string }[] = [];
+        Array.from(currentCode.matchAll(OUTPUT_DECLARATION_REGEX)).forEach(match => newOutputs.push({ name: match[1], type: match[2] }));
+
+        const currentHandles = data.handles || [];
+        
+        let newInputHandles: any[] = [];
+        if (newInputs.length > 0) {
+            newInputHandles = newInputs.map((inp, index) => {
+                const spacing = 100 / (newInputs.length + 1);
+                return {
+                    id: `h-in-${inp.name}`,
+                    type: 'input',
+                    position: 'left',
+                    offset: (index + 1) * spacing,
+                    label: inp.name
+                };
+            });
+        } else {
+            // Fallback to generic handle if no declarations
+            newInputHandles = [{ id: 'h-in', type: 'input', position: 'left', offset: 50 }];
+        }
+
+        let newOutputHandles: any[] = [];
+        if (newOutputs.length > 0) {
+            newOutputHandles = newOutputs.map((out, index) => {
+                const spacing = 100 / (newOutputs.length + 1);
+                return {
+                    id: `h-out-${out.name}`,
+                    type: 'output',
+                    position: 'right',
+                    offset: (index + 1) * spacing,
+                    label: out.name
+                };
+            });
+        }
+
+        const baseOutputHandles = currentHandles.filter((h: any) => h.type === 'output' && (h.id === 'h-result' || h.id === 'h-error'));
+        if (baseOutputHandles.length === 0) {
+            baseOutputHandles.push(
+                { id: 'h-result', type: 'output', position: 'right', offset: 33 },
+                { id: 'h-error', type: 'output', position: 'right', offset: 66 }
+            );
+        }
+
+        const nextHandles = [...newInputHandles, ...newOutputHandles, ...baseOutputHandles];
+
+        if (JSON.stringify(currentHandles) !== JSON.stringify(nextHandles)) {
+            // Uses a requestAnimationFrame to avoid update-during-render React warnings if triggered immediately
+            requestAnimationFrame(() => updateNodeData(id, { handles: nextHandles }));
+        }
+    }, [currentCode, id, updateNodeData, data.handles]);
 
     return (
         <NodeFrame

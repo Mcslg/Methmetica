@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, memo, useCallback } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
-import useStore, { type AppState, type NodeData } from '../store/useStore';
-import { Icons } from '../components/Icons';
-import { NodeFrame } from '../components/NodeFrame';
-import { SoundModePanel } from '../components/SoundModePanel';
-import { getMathEngine } from '../utils/MathEngine';
+import useStore, { type AppState, type NodeData } from '../../store/useStore';
+import { Icons } from '../../components/Icons';
+import { NodeFrame } from '../../components/NodeFrame';
+import { SoundModePanel } from '../../components/deprecated/SoundModePanel';
+import { getMathEngine } from '../../utils/MathEngine';
 
 export const SoundNode = memo(function SoundNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);

@@ -1,8 +1,8 @@
-import useStore from '../store/useStore';
-import { NodeFrame } from '../components/NodeFrame';
-import { Icons } from '../components/Icons';
-import { getCommunityWorkflowBlueprint } from '../community/catalog';
-import { getWorkflowBlueprintFromSupabase } from '../integrations/supabase/workflows';
+import useStore from '../../store/useStore';
+import { NodeFrame } from '../../components/NodeFrame';
+import { Icons } from '../../components/Icons';
+import { getCommunityWorkflowBlueprint } from '../../community/catalog';
+import { getWorkflowBlueprintFromSupabase } from '../../integrations/supabase/workflows';
 
 export function WorkflowLinkNode({ id, data, selected }: { id: string; data: any; selected?: boolean }) {
   const updateNodeData = useStore(state => state.updateNodeData);

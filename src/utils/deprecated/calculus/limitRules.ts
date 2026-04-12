@@ -1,4 +1,4 @@
-import { getMathEngine, getMathSymbol } from '../MathEngine';
+import { getMathEngine, getMathSymbol } from '../../MathEngine';
 import type { StepNode, StepTreeResult } from './types';
 
 type LimitExpressionNode = {

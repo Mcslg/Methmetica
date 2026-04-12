@@ -24,6 +24,8 @@ import { useShallow } from 'zustand/react/shallow';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
 import { MathInput } from '../components/MathInput';
+import { classifyMathPillValue } from '../utils/mathPillClassifier';
+import type { MathValue } from '../types/mathTypes';
 
 import { countRender } from '../components/DebugOverlay';
 
@@ -63,6 +65,7 @@ export const TextNodeContext = React.createContext<{
     triggerSync: () => void;
     handleEject: (name: string, pos?: { x: number, y: number }) => void;
     inputs?: Record<string, string>;
+    typedInputs?: Record<string, MathValue>;
 }>({
     nodeId: '',
     isHandleActive: () => false,
@@ -72,7 +75,26 @@ export const TextNodeContext = React.createContext<{
     triggerSync: () => { },
     handleEject: () => { },
     inputs: {},
+    typedInputs: {},
 });
+
+const stringifyMathValuePayload = (value: unknown): string => {
+    if (value === undefined || value === null) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return String(value);
+    }
+};
+
+const getMathValueDisplay = (value: MathValue): string => {
+    if (value.display !== undefined) return value.display;
+    if (value.latex !== undefined) return value.latex;
+    if (value.text !== undefined && typeof value.value === 'object') return value.text;
+    return stringifyMathValuePayload(value.value);
+};
 
 /**
  * SliderPill Extension
@@ -167,6 +189,7 @@ const SliderPill = TiptapNode.create({
                     className="slider-pill-wrapper nodrag has-handle data-pill-render"
                     data-name={name}
                     data-value={val.toString()}
+                    data-pill-kind="number"
                     data-handle-id={`h-out-${name}`}
                     style={{
                         display: 'inline-flex', alignItems: 'center', gap: '4px', verticalAlign: 'middle',
@@ -369,6 +392,8 @@ const GatePill = TiptapNode.create({
             return (
                 <NodeViewWrapper as="span" className="gate-pill-wrapper has-handle"
                     data-name={name} data-handle-id={`h-out-${name}`}
+                    data-value={isOpen ? '1' : '0'}
+                    data-pill-kind="boolean"
                     style={{ display: 'inline-flex', verticalAlign: 'middle', margin: '0 4px' }}>
                     <div
                         onPointerDown={(e) => {
@@ -507,7 +532,9 @@ const MathPill = TiptapNode.create({
             
             // Check for incoming value from graph evaluation
             const remoteVal = ctx.inputs?.[inHandleId];
+            const typedRemoteVal = ctx.typedInputs?.[inHandleId];
             const hasRemoteVal = remoteVal !== undefined;
+            const hasTypedRemoteVal = typedRemoteVal !== undefined;
 
             const effectiveShowHandle = localShowHandle || isConnectedOut || isConnectedIn;
 
@@ -652,7 +679,7 @@ const MathPill = TiptapNode.create({
                 }
             }, [globalVars, name, isGlobal, val, editor, getPos, localVal]);
 
-            const finalBaseVal = hasRemoteVal ? remoteVal : localVal;
+            const finalBaseVal = hasTypedRemoteVal ? getMathValueDisplay(typedRemoteVal) : hasRemoteVal ? remoteVal : localVal;
             const displayVal = useMemo(() => (isCtrlPressed && evaluatedVal !== null) ? evaluatedVal : finalBaseVal, [isCtrlPressed, evaluatedVal, finalBaseVal]);
 
             const sequenceData = useMemo(() => {
@@ -828,6 +855,7 @@ const MathPill = TiptapNode.create({
                     className={`data-pill-render ${effectiveShowHandle ? 'has-handle' : ''} ${isCtrlPressed ? 'ctrl-preview' : ''}`}
                     data-value={localVal}
                     data-name={name}
+                    data-pill-kind="math"
                     data-handle-out={outHandleId}
                     data-handle-in={inHandleId}
                     data-show-handle={effectiveShowHandle ? 'true' : 'false'}
@@ -1299,6 +1327,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
         lineGroups.sort((a, b) => a.centerY - b.centerY);
         const newHandles: CustomHandle[] = [];
         const newOutputs: Record<string, string> = {};
+        const newTypedOutputs: Record<string, MathValue> = {};
 
         lineGroups.forEach((group, groupIdx) => {
             group.elements.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
@@ -1306,20 +1335,22 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
             const STAGGER_GAP = 12;
 
             group.elements.forEach((el, subIdx) => {
-                const isMathPill = el.classList.contains('data-pill-render');
+                const pillKind = el.getAttribute('data-pill-kind');
+                const isMathPill = pillKind === 'math';
+                const isDataPill = el.classList.contains('data-pill-render');
                 const name = el.getAttribute('data-name');
                 
                 const staggerOffset = (subIdx - (totalInGroup - 1) / 2) * STAGGER_GAP;
                 const offset = Math.max(0, Math.min(100, ((group.centerY + staggerOffset - containerRect.top) / containerRect.height) * 100));
 
-                if (isMathPill) {
-                    const outId = el.getAttribute('data-handle-out') || `h-auto-out-${name || `${groupIdx}-${subIdx}`}`;
+                if (isDataPill) {
+                    const outId = el.getAttribute('data-handle-out') || el.getAttribute('data-handle-id') || `h-auto-out-${name || `${groupIdx}-${subIdx}`}`;
                     const inId = el.getAttribute('data-handle-in') || `h-auto-in-${name || `${groupIdx}-${subIdx}`}`;
                     
                     if (!newHandles.some(h => h.id === outId)) {
                         newHandles.push({ id: outId, type: 'output', position: 'right', offset, label: name || undefined });
                     }
-                    if (!newHandles.some(h => h.id === inId)) {
+                    if (isMathPill && !newHandles.some(h => h.id === inId)) {
                         newHandles.push({ id: inId, type: 'input', position: 'left', offset, label: name || undefined });
                     }
                     
@@ -1328,6 +1359,11 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                         if (outVal.trim() === '\\top') outVal = '1';
                         if (outVal.trim() === '\\bot') outVal = '0';
                         newOutputs[outId] = outVal;
+                        newTypedOutputs[outId] = classifyMathPillValue(el.getAttribute('data-value') || '', {
+                            name: name || undefined,
+                            nodeId: id,
+                            handleId: outId,
+                        });
                     }
                 } else {
                     const customHandleId = el.getAttribute('data-handle-id');
@@ -1341,6 +1377,13 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                     if (!newOutputs[hId]) {
                         let outVal = el.getAttribute('data-value') || '';
                         newOutputs[hId] = outVal;
+                        if (outVal !== '') {
+                            newTypedOutputs[hId] = classifyMathPillValue(outVal, {
+                                name: name || undefined,
+                                nodeId: id,
+                                handleId: hId,
+                            });
+                        }
                     }
                     el.setAttribute('data-handle-id', hId);
                 }
@@ -1361,11 +1404,15 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
         const currentHandleSummary = JSON.stringify((data.handles || []).map(roundOff));
         const newHandleSummary = JSON.stringify(finalHandles.map(roundOff));
 
-        if (currentHandleSummary !== newHandleSummary || JSON.stringify(newOutputs) !== JSON.stringify(data.outputs || {})) {
-            updateNodeData(id, { handles: finalHandles, outputs: newOutputs });
+        if (
+            currentHandleSummary !== newHandleSummary ||
+            JSON.stringify(newOutputs) !== JSON.stringify(data.outputs || {}) ||
+            JSON.stringify(newTypedOutputs) !== JSON.stringify(data.typedOutputs || {})
+        ) {
+            updateNodeData(id, { handles: finalHandles, outputs: newOutputs, typedOutputs: newTypedOutputs });
         }
         updateNodeInternals(id);
-    }, [data.handles, id, updateNodeData, updateNodeInternals]);
+    }, [data.handles, data.outputs, data.typedOutputs, id, updateNodeData, updateNodeInternals]);
 
     const triggerSync = useCallback(() => {
         setTimeout(syncHandlesFromDOM, 10);
@@ -1486,8 +1533,9 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
         renameTrigger,
         triggerSync,
         handleEject,
-        inputs: data.inputs
-    }), [id, data.slots, isHandleActive, toggleHandle, editMath, renameTrigger, triggerSync, handleEject, data.inputs]);
+        inputs: data.inputs,
+        typedInputs: data.typedInputs
+    }), [id, data.slots, isHandleActive, toggleHandle, editMath, renameTrigger, triggerSync, handleEject, data.inputs, data.typedInputs]);
 
     return (
         <TextNodeContext.Provider value={contextValue}>

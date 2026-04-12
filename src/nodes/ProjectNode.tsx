@@ -1,13 +1,16 @@
 import React from 'react';
 import { type NodeProps, Handle, Position, useReactFlow } from '@xyflow/react';
 import { Icons } from '../components/Icons';
+import { NodeFrame } from '../components/NodeFrame';
 import useStore, { type AppNode, type NodeData } from '../store/useStore';
 import { useLanguage } from '../contexts/LanguageContext';
 import { CommunityNodeMaker, buildTemplateFromBlocks } from '../components/CommunityNodeMaker';
-import type { CommunityNodeTemplate, WorkflowVisibility } from '../community/types';
+import type { CommunityNodeTemplate, TemplateInterfaceSchema, TemplatePortSpec, WorkflowVisibility } from '../community/types';
+import { getTemplateInternalHandles, getTemplateInterfaceSchema } from '../community/types';
 import { makeInitialDraft, syncDraftWithWorkflowMetadata } from '../community/templateDraft';
 import { publishWorkflowToSupabase } from '../integrations/supabase/workflows';
 import { getUserRole } from '../integrations/supabase/auth';
+import { mathTypeCatalog, getAllCapabilities, getTypesByCapability } from '../config/mathTypeCatalog';
 
 const parseTags = (value: string) => value
   .split(',')
@@ -17,6 +20,134 @@ const parseTags = (value: string) => value
 const DRAFT_SYNC_DELAY_MS = 180;
 const INVISIBLE_HANDLE_STYLE = { opacity: 0 };
 const serializeDraft = (draft?: CommunityNodeTemplate) => (draft ? JSON.stringify(draft) : '');
+const stripLegacyInterfaceBlocks = (draft?: CommunityNodeTemplate): CommunityNodeTemplate | undefined => (
+  draft ? {
+    ...draft,
+    builderBlocks: draft.builderBlocks.filter(block => block.kind !== 'input' && block.kind !== 'output'),
+  } : undefined
+);
+const slugifyPortId = (value: string, fallback: string) => {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return normalized || fallback;
+};
+
+const createPort = (type: 'input' | 'output', index: number): TemplatePortSpec => ({
+  id: `${type}-${Date.now()}-${index}`,
+  label: type === 'input' ? `input_${index + 1}` : `output_${index + 1}`,
+  type,
+  position: type === 'input' ? 'left' : 'right',
+  offset: 42,
+  source: 'static',
+  valueKind: 'value',
+  derivesFrom: 'builderBlocks',
+});
+
+const normalizePortOffsets = (ports: TemplatePortSpec[]): TemplatePortSpec[] => {
+  if (ports.length === 0) return ports;
+  const spacing = 100 / (ports.length + 1);
+  return ports.map((port, index) => ({
+    ...port,
+    offset: Math.max(12, Math.min(88, Math.round((index + 1) * spacing))),
+  }));
+};
+
+const normalizeInterfaceSchema = (schema: TemplateInterfaceSchema): TemplateInterfaceSchema => ({
+  inputs: normalizePortOffsets(schema.inputs),
+  outputs: normalizePortOffsets(schema.outputs),
+});
+
+function SearchableConstraintSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+}) {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const [search, setSearch] = React.useState('');
+  const wrapperRef = React.useRef<HTMLDivElement>(null);
+
+  const capabilities = getAllCapabilities().map(c => ({ value: `cap:${c}`, label: c, group: 'cap' }));
+  const exactTypes = mathTypeCatalog.map(t => ({ value: `type:${t.id}`, label: t.label, group: 'type' }));
+  
+  const allOptions = [{ value: '', label: 'Any Type (不限制)', group: 'any' }, ...capabilities, ...exactTypes];
+  
+  const filteredOptions = allOptions.filter(o => 
+    o.label.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const currentLabel = allOptions.find(o => o.value === value)?.label || 'Any Type (不限制)';
+
+  // Handle click outside
+  React.useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div ref={wrapperRef} className="nodrag" style={{ position: 'relative', width: '100%' }}>
+      <input
+        type="text"
+        placeholder={isOpen ? "Type to search..." : currentLabel}
+        value={isOpen ? search : currentLabel}
+        className="project-tags-input"
+        style={{ width: '100%', fontSize: '0.7rem', padding: '4px', cursor: isOpen ? 'text' : 'pointer' }}
+        onFocus={() => {
+          setIsOpen(true);
+          setSearch('');
+        }}
+        onChange={(e) => setSearch(e.target.value)}
+      />
+      {isOpen && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+          background: 'rgba(10, 14, 24, 0.95)', border: '1px solid var(--border-node)',
+          borderRadius: '4px', marginTop: '2px', maxHeight: '180px', overflowY: 'auto',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+        }}>
+          {filteredOptions.map(o => (
+            <div
+              key={o.value}
+              style={{
+                padding: '6px 8px',
+                fontSize: '0.7rem',
+                cursor: 'pointer',
+                background: o.value === value ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+                color: o.group === 'cap' ? '#93c5fd' : o.group === 'any' ? '#d1d5db' : '#6ee7b7'
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = o.value === value ? 'rgba(59, 130, 246, 0.2)' : 'transparent')}
+              onClick={() => {
+                onChange(o.value);
+                setIsOpen(false);
+                setSearch('');
+              }}
+            >
+              <div style={{ fontWeight: o.value === value ? 'bold' : 'normal' }}>
+                {o.label}
+              </div>
+            </div>
+          ))}
+          {filteredOptions.length === 0 && (
+            <div style={{ padding: '6px 8px', fontSize: '0.7rem', color: 'var(--text-sub)' }}>
+              無符合結果
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export const ProjectNode = React.memo(function ProjectNode({ id, data, selected }: NodeProps<AppNode>) {
   const { setViewport, getNodes } = useReactFlow();
@@ -34,7 +165,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
   const [localTags, setLocalTags] = React.useState(Array.isArray(data.tags) ? data.tags.join(', ') : '');
   const [localVisibility, setLocalVisibility] = React.useState<WorkflowVisibility>(data.visibility || 'private');
   const [localBuilderDraft, setLocalBuilderDraft] = React.useState<CommunityNodeTemplate | undefined>(
-    data.builderDraft as CommunityNodeTemplate | undefined
+    stripLegacyInterfaceBlocks(data.builderDraft as CommunityNodeTemplate | undefined)
   );
   const [isExpanded, setIsExpanded] = React.useState(true);
   const [isPublishing, setIsPublishing] = React.useState(false);
@@ -48,6 +179,31 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     summary: localDesc || data.description || draft.summary,
     tags: parseTags(localTags),
   }), [data.description, data.label, localDesc, localName, localTags]);
+
+  const updateBuilderInterface = React.useCallback((updater: (schema: TemplateInterfaceSchema) => TemplateInterfaceSchema) => {
+    setLocalBuilderDraft((current) => {
+      if (!current) return current;
+      const nextSchema = normalizeInterfaceSchema(updater(getTemplateInterfaceSchema(current)));
+      return {
+        ...current,
+        interfaceSchema: nextSchema,
+        inputs: nextSchema.inputs.map(({ id: portId, label, position, type, offset }) => ({
+          id: portId,
+          label,
+          position,
+          type,
+          offset,
+        })),
+        outputs: nextSchema.outputs.map(({ id: portId, label, position, type, offset }) => ({
+          id: portId,
+          label,
+          position,
+          type,
+          offset,
+        })),
+      };
+    });
+  }, []);
 
   const updateProjectData = React.useCallback((patch: Partial<{
     label: string;
@@ -87,10 +243,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
       autoManagedTemplateNode: true,
       templateFields: Object.fromEntries(packagedDraft.fields.map(field => [field.id, field.defaultValue || ''])),
       templateSummary: packagedDraft.summary,
-      handles: [
-        ...packagedDraft.inputs.map(handle => ({ ...handle })),
-        ...packagedDraft.outputs.map(handle => ({ ...handle })),
-      ],
+      handles: getTemplateInternalHandles(packagedDraft).map(handle => ({ ...handle })),
     };
 
     const linkedDataSignature = JSON.stringify(linkedNodeData);
@@ -190,11 +343,11 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
   };
 
   const handleCreateBuilder = () => {
-    const draft = makeInitialDraft({
+    const draft = stripLegacyInterfaceBlocks(makeInitialDraft({
       title: (localName || data.label || 'Untitled Workflow').trim(),
       summary: localDesc || data.description || '',
       tags: parseTags(localTags),
-    });
+    })) as CommunityNodeTemplate;
 
     setLocalBuilderDraft(draft);
     updateProjectData({
@@ -210,8 +363,10 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
   };
 
   const handleDraftChange = (draft: CommunityNodeTemplate) => {
-    setLocalBuilderDraft(syncDraftWithLocalMetadata(draft));
+    setLocalBuilderDraft(stripLegacyInterfaceBlocks(syncDraftWithLocalMetadata(draft)));
   };
+
+  const activeInterfaceSchema = builderDraft ? getTemplateInterfaceSchema(builderDraft) : null;
 
   const handlePublish = async (draft: CommunityNodeTemplate) => {
     if (!user) {
@@ -312,7 +467,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
   };
 
   React.useEffect(() => {
-    const incoming = data.builderDraft as CommunityNodeTemplate | undefined;
+    const incoming = stripLegacyInterfaceBlocks(data.builderDraft as CommunityNodeTemplate | undefined);
     const incomingSignature = serializeDraft(incoming);
     lastSyncedDraftSignatureRef.current = incomingSignature;
     setLocalBuilderDraft((prev) => {
@@ -360,47 +515,50 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
   }, [data.label, data.description, data.tags, data.visibility, localDesc, localName, localTags, localVisibility]);
 
   return (
-    <div className={`project-node-container ${isExpanded ? 'expanded' : ''}`}>
-      <div className="project-header">
-        <div className="project-icon-wrapper">
-          <Icons.Package size={28} />
-        </div>
-        <div className="project-title-area">
-          <input
-            type="text"
-            className="project-name-input"
-            value={localName}
-            onChange={(e) => setLocalName(e.target.value)}
-            onBlur={() => saveWorkflowMetadata()}
-            placeholder={t('nodes.project.name_label') || 'Workflow Name'}
-          />
-          <div className="project-meta">
-            {activeFileId ? (
-              <span className="sync-status">
-                <Icons.Languages size={10} /> {t('nodes.project.last_sync') || 'Cloud Protected'}
-              </span>
-            ) : (
-              <span className="sync-status local">
-                <Icons.Moon size={10} /> {t('nodes.project.unsaved') || 'Local Session'}
-              </span>
-            )}
-            <span className="sync-status builder">
-              <Icons.Search size={10} /> Search-only node
-            </span>
-          </div>
-        </div>
-        <div className="project-ctrls">
-          <button className="focus-btn" onClick={handleFocus} title={t('nodes.project.view_label') || 'Focus Area'}>
-            <Icons.Grid size={16} />
+    <NodeFrame
+      id={id}
+      data={data}
+      selected={selected}
+      icon={<Icons.Package />}
+      defaultLabel={t('nodes.project.name_label') || 'Project Root'}
+      className="project-node"
+      minWidth={320}
+      minHeight={180}
+      headerExtras={
+        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+          <button 
+            onClick={handleFocus} 
+            title={t('nodes.project.view_label') || 'Focus Area'}
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-sub)', cursor: 'pointer', padding: '4px' }}
+          >
+            <Icons.Grid size={14} />
           </button>
-          <button className={`expand-btn ${isExpanded ? 'active' : ''}`} onClick={() => setIsExpanded(!isExpanded)}>
+          <button 
+            onClick={() => setIsExpanded(!isExpanded)}
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-sub)', cursor: 'pointer', padding: '4px' }}
+          >
             {isExpanded ? <Icons.Collapse size={14} /> : <Icons.Search size={14} />}
           </button>
         </div>
+      }
+    >
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', fontSize: '0.7rem', color: 'var(--text-sub)' }}>
+          {activeFileId ? (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--system-success)' }}>
+              <Icons.Languages size={10} /> {t('nodes.project.last_sync') || 'Cloud Protected'}
+            </span>
+          ) : (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--system-warning)' }}>
+              <Icons.Moon size={10} /> {t('nodes.project.unsaved') || 'Local Session'}
+            </span>
+          )}
+          <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <Icons.Search size={10} /> Search-only node
+          </span>
       </div>
 
       {isExpanded && (
-        <div className="project-body">
+        <div className="project-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div className="root-metadata">
             <label className="root-field">
               <span>{t('nodes.project.desc_label') || 'Description'}</span>
@@ -468,6 +626,211 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                 </button>
               </div>
 
+              {activeInterfaceSchema && (
+                <div style={{
+                  display: 'grid',
+                  gap: '16px',
+                  padding: '14px',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: '14px',
+                  background: 'rgba(255,255,255,0.03)',
+                  marginBottom: '14px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                    <div>
+                      <strong style={{ display: 'block', color: 'var(--text-main)' }}>Interface</strong>
+                      <p style={{ margin: '4px 0 0', color: 'var(--text-sub)', fontSize: '0.82rem' }}>
+                        先用這裡定義節點對外的 input / output。這一版先只支援 UI 建立。
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div style={{ display: 'grid', gap: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <strong style={{ fontSize: '0.86rem' }}>Inputs</strong>
+                        <button
+                          type="button"
+                          className="builder-refresh-btn"
+                          onClick={() => updateBuilderInterface((schema) => ({
+                            ...schema,
+                            inputs: [...schema.inputs, createPort('input', schema.inputs.length)],
+                          }))}
+                        >
+                          + Input
+                        </button>
+                      </div>
+                      {activeInterfaceSchema.inputs.length === 0 ? (
+                        <div style={{ color: 'var(--text-sub)', fontSize: '0.82rem' }}>尚未定義 input。</div>
+                      ) : activeInterfaceSchema.inputs.map((port, index) => (
+                        <div key={port.id} style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr auto',
+                          gap: '8px',
+                          alignItems: 'center',
+                          padding: '10px',
+                          border: '1px solid rgba(255,255,255,0.08)',
+                          borderRadius: '10px',
+                          background: 'rgba(0,0,0,0.16)'
+                        }}>
+                          <div style={{ display: 'grid', gap: '6px' }}>
+                            <input
+                              className="project-tags-input"
+                              value={port.label}
+                              onChange={(e) => {
+                                const nextLabel = e.target.value;
+                                updateBuilderInterface((schema) => ({
+                                  ...schema,
+                                  inputs: schema.inputs.map((item, itemIndex) => itemIndex === index ? {
+                                    ...item,
+                                    label: nextLabel,
+                                    id: slugifyPortId(nextLabel, item.id),
+                                  } : item),
+                                }));
+                              }}
+                              placeholder="input name"
+                            />
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-sub)' }}>
+                              <span>id: {port.id}</span>
+                            </div>
+                            <SearchableConstraintSelect
+                              value={port.typeConstraint || ''}
+                              onChange={(nextConstraint) => {
+                                updateBuilderInterface((schema) => ({
+                                  ...schema,
+                                  inputs: schema.inputs.map((item, itemIndex) => itemIndex === index ? {
+                                    ...item,
+                                    typeConstraint: nextConstraint,
+                                  } : item),
+                                }));
+                              }}
+                            />
+                            {port.typeConstraint?.startsWith('cap:') && (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
+                                {getTypesByCapability(port.typeConstraint.split(':')[1] as any).map(t => (
+                                  <span key={t} style={{ fontSize: '0.62rem', background: 'rgba(59, 130, 246, 0.15)', color: '#93c5fd', padding: '1px 5px', borderRadius: '4px', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+                                    {t}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {port.typeConstraint?.startsWith('type:') && (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
+                                <span style={{ fontSize: '0.62rem', background: 'rgba(16, 185, 129, 0.15)', color: '#6ee7b7', padding: '1px 5px', borderRadius: '4px', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                                  {port.typeConstraint.split(':')[1]}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            className="focus-btn"
+                            onClick={() => updateBuilderInterface((schema) => ({
+                              ...schema,
+                              inputs: schema.inputs.filter((_, itemIndex) => itemIndex !== index),
+                            }))}
+                            title="Remove input"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ display: 'grid', gap: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <strong style={{ fontSize: '0.86rem' }}>Outputs</strong>
+                        <button
+                          type="button"
+                          className="builder-refresh-btn"
+                          onClick={() => updateBuilderInterface((schema) => ({
+                            ...schema,
+                            outputs: [...schema.outputs, createPort('output', schema.outputs.length)],
+                          }))}
+                        >
+                          + Output
+                        </button>
+                      </div>
+                      {activeInterfaceSchema.outputs.length === 0 ? (
+                        <div style={{ color: 'var(--text-sub)', fontSize: '0.82rem' }}>尚未定義 output。</div>
+                      ) : activeInterfaceSchema.outputs.map((port, index) => (
+                        <div key={port.id} style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr auto',
+                          gap: '8px',
+                          alignItems: 'center',
+                          padding: '10px',
+                          border: '1px solid rgba(255,255,255,0.08)',
+                          borderRadius: '10px',
+                          background: 'rgba(0,0,0,0.16)'
+                        }}>
+                          <div style={{ display: 'grid', gap: '6px' }}>
+                            <input
+                              className="project-tags-input"
+                              value={port.label}
+                              onChange={(e) => {
+                                const nextLabel = e.target.value;
+                                updateBuilderInterface((schema) => ({
+                                  ...schema,
+                                  outputs: schema.outputs.map((item, itemIndex) => itemIndex === index ? {
+                                    ...item,
+                                    label: nextLabel,
+                                    id: slugifyPortId(nextLabel, item.id),
+                                  } : item),
+                                }));
+                              }}
+                              placeholder="output name"
+                            />
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-sub)' }}>
+                              <span>id: {port.id}</span>
+                            </div>
+                            <SearchableConstraintSelect
+                              value={port.typeConstraint || ''}
+                              onChange={(nextConstraint) => {
+                                updateBuilderInterface((schema) => ({
+                                  ...schema,
+                                  outputs: schema.outputs.map((item, itemIndex) => itemIndex === index ? {
+                                    ...item,
+                                    typeConstraint: nextConstraint,
+                                  } : item),
+                                }));
+                              }}
+                            />
+                            {port.typeConstraint?.startsWith('cap:') && (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
+                                {getTypesByCapability(port.typeConstraint.split(':')[1] as any).map(t => (
+                                  <span key={t} style={{ fontSize: '0.62rem', background: 'rgba(59, 130, 246, 0.15)', color: '#93c5fd', padding: '1px 5px', borderRadius: '4px', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+                                    {t}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {port.typeConstraint?.startsWith('type:') && (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
+                                <span style={{ fontSize: '0.62rem', background: 'rgba(16, 185, 129, 0.15)', color: '#6ee7b7', padding: '1px 5px', borderRadius: '4px', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                                  {port.typeConstraint.split(':')[1]}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            className="focus-btn"
+                            onClick={() => updateBuilderInterface((schema) => ({
+                              ...schema,
+                              outputs: schema.outputs.filter((_, itemIndex) => itemIndex !== index),
+                            }))}
+                            title="Remove output"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <CommunityNodeMaker
                 draft={builderDraft}
                 onChange={handleDraftChange}
@@ -482,6 +845,6 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         </div>
       )}
       <Handle type="source" position={Position.Right} id="name-out" style={INVISIBLE_HANDLE_STYLE} />
-    </div>
+    </NodeFrame>
   );
 });

@@ -1,13 +1,13 @@
 import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
 
-import useStore, { type NodeData, type AppState } from '../store/useStore';
-import { getMathEngine } from '../utils/MathEngine';
-import { Icons } from '../components/Icons';
-import { NodeFrame } from '../components/NodeFrame';
-import { FormulaSidebarArea } from '../components/FormulaSidebarArea';
-import { countRender } from '../components/DebugOverlay';
-import { MathInput } from '../components/MathInput';
+import useStore, { type NodeData, type AppState } from '../../store/useStore';
+import { getMathEngine } from '../../utils/MathEngine';
+import { Icons } from '../../components/Icons';
+import { NodeFrame } from '../../components/NodeFrame';
+import { FormulaSidebarArea } from '../../components/FormulaSidebarArea';
+import { countRender } from '../../components/DebugOverlay';
+import { MathInput } from '../../components/MathInput';
 
 export const GraphNode = memo(function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     countRender('GraphNode');
@@ -23,14 +23,14 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
     const formulaInStore = useStore((state: AppState) => state.nodes.find(n => n.id === id)?.data.formula || '');
 
     // Optimized selector: only re-render if the SPECIFIC nodes we are tracking change
-    const mergedSliderSids = React.useMemo(() => {
+    const pluggedSliderSids = React.useMemo(() => {
         if (!data.slots) return [];
         return Object.values(data.slots).filter(s => typeof s === 'string') as string[];
     }, [data.slots]);
 
-    const mergedSliderNodesStr = useStore((state: AppState) => {
-        if (mergedSliderSids.length === 0) return '';
-        return mergedSliderSids.map(sid => {
+    const pluggedSliderNodesStr = useStore((state: AppState) => {
+        if (pluggedSliderSids.length === 0) return '';
+        return pluggedSliderSids.map(sid => {
             const n = state.nodes.find(node => node.id === sid);
             return n ? `${n.id}::${n.data.value}::${n.data.nodeName || ''}` : '';
         }).join('|');
@@ -86,10 +86,10 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
         };
     }, []);
 
-    const getMergedParams = useCallback(() => {
+    const getPluggedParams = useCallback(() => {
         const params: Record<string, number> = {};
-        if (data.slots && mergedSliderNodesStr) {
-            const nodeStrs = mergedSliderNodesStr.split('|').filter(Boolean);
+        if (data.slots && pluggedSliderNodesStr) {
+            const nodeStrs = pluggedSliderNodesStr.split('|').filter(Boolean);
             Object.entries(data.slots).forEach(([key, sid]) => {
                 if (typeof sid === 'string') {
                     const foundInfo = nodeStrs.find(str => str.startsWith(`${sid}::`));
@@ -101,7 +101,7 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
             });
         }
         return params;
-    }, [data.slots, mergedSliderNodesStr]);
+    }, [data.slots, pluggedSliderNodesStr]);
 
     const evalFn = useCallback((formula: string): ((x: number) => number) | null => {
         try {
@@ -109,8 +109,8 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
             let expr: any = ce.parse(formula);
             if (expr.head === 'Equal') expr = expr.op2;
 
-            const mergedParams = getMergedParams();
-            const combinedVars = { ...globalVars, ...mergedParams };
+            const pluggedParams = getPluggedParams();
+            const combinedVars = { ...globalVars, ...pluggedParams };
 
             try {
                 const compiled: any = expr.compile?.();
@@ -129,8 +129,8 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
         } catch (e) { }
 
         try {
-            const mergedParams = getMergedParams();
-            const combinedVars: Record<string, number> = { ...mergedParams };
+            const pluggedParams = getPluggedParams();
+            const combinedVars: Record<string, number> = { ...pluggedParams };
             Object.keys(globalVars).forEach(k => { combinedVars[k] = Number(globalVars[k]) || 0; });
 
             let jsExpr = formula
@@ -177,16 +177,16 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
             if (typeof r === 'number') return (x: number) => fn(x, ...varValues);
         } catch (e) { }
         return null;
-    }, [globalVars, getMergedParams]);
+    }, [globalVars, getPluggedParams]);
 
     const evalFn3D = useCallback((formula: string): ((x: number, y: number) => number) | null => {
         // Strip leading "z =" if present
         const stripped = formula.replace(/^z\s*=\s*/, '').trim();
 
-        const mergedParams = getMergedParams();
+        const pluggedParams = getPluggedParams();
         const combinedVars: Record<string, number> = {};
         Object.keys(globalVars).forEach(k => { combinedVars[k] = Number(globalVars[k]) || 0; });
-        Object.entries(mergedParams).forEach(([k, v]) => { combinedVars[k] = v; });
+        Object.entries(pluggedParams).forEach(([k, v]) => { combinedVars[k] = v; });
 
         // --- Tier 1: CortexJS compile (works well with plain math, e.g. x^2+y^2) ---
         try {
@@ -239,7 +239,7 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
         } catch (e) { }
 
         return null;
-    }, [globalVars, getMergedParams]);
+    }, [globalVars, getPluggedParams]);
 
     const drawGraph = useCallback(() => {
         const canvas = canvasRef.current;

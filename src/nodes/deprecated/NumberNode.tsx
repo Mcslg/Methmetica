@@ -1,9 +1,9 @@
 import { memo } from 'react';
 import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
-import useStore, { type NodeData } from '../store/useStore';
-import { DynamicHandles } from './DynamicHandles';
-import { Icons } from '../components/Icons';
-import { MathInput } from '../components/MathInput';
+import useStore, { type NodeData } from '../../store/useStore';
+import { DynamicHandles } from '../DynamicHandles';
+import { Icons } from '../../components/Icons';
+import { MathInput } from '../../components/MathInput';
 
 export const NumberNode = memo(function NumberNode({ id, data }: NodeProps<Node<NodeData>>) {
   const updateNodeData = useStore.getState().updateNodeData;

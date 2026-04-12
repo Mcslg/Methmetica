@@ -1,7 +1,7 @@
 import { NodeResizer, type NodeProps, type Node } from '@xyflow/react';
-import useStore, { type AppState, type NodeData, type AppNode } from '../store/useStore';
-import { DynamicHandles } from './DynamicHandles';
-import { Icons } from '../components/Icons';
+import useStore, { type AppState, type NodeData, type AppNode } from '../../store/useStore';
+import { DynamicHandles } from '../DynamicHandles';
+import { Icons } from '../../components/Icons';
 
 export function ForEachNode({ id, data }: NodeProps<Node<NodeData>>) {
     const nodes = useStore((state: AppState) => state.nodes);

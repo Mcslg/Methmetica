@@ -1,11 +1,14 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { Icons } from './Icons';
+import { getTemplateInterfaceSchema, portToHandleSpec } from '../community/types';
 import type {
   CommunityNodeTemplate,
   TemplateBuilderBlock,
   TemplateBuilderBlockKind,
   TemplateHandleSpec,
+  TemplateInterfaceSchema,
+  TemplatePortSpec,
 } from '../community/types';
 
 const TOOLKIT: Array<{ kind: TemplateBuilderBlockKind; label: string; hint: string }> = [
@@ -15,6 +18,7 @@ const TOOLKIT: Array<{ kind: TemplateBuilderBlockKind; label: string; hint: stri
   { kind: 'toggle', label: 'Toggle', hint: '切換額外說明或替代方法' },
   { kind: 'math', label: 'Math', hint: '輸入數學公式區塊' },
 ];
+const ACTIVE_TOOLKIT = TOOLKIT.filter(item => item.kind !== 'input' && item.kind !== 'output');
 
 const BLOCK_KIND_META: Record<TemplateBuilderBlockKind, { color: string; icon: keyof typeof Icons; summaryLabel: string }> = {
   input: { color: '#4facfe', icon: 'Trigger', summaryLabel: 'Incoming interface' },
@@ -68,18 +72,41 @@ const blockToHandle = (block: TemplateBuilderBlock, index: number): TemplateHand
   return null;
 };
 
-export const buildTemplateFromBlocks = (draft: CommunityNodeTemplate): CommunityNodeTemplate => {
+const blockToPort = (block: TemplateBuilderBlock, index: number): TemplatePortSpec | null => {
+  const handle = blockToHandle(block, index);
+  if (!handle) return null;
+
+  return {
+    ...handle,
+    source: 'static',
+    valueKind: 'value',
+    derivesFrom: 'builderBlocks',
+    description: block.placeholder,
+  };
+};
+
+const buildInterfaceSchemaFromBlocks = (draft: CommunityNodeTemplate): TemplateInterfaceSchema => {
   const inputs = draft.builderBlocks
-    .map((block, index) => blockToHandle(block, index))
-    .filter((item): item is TemplateHandleSpec => Boolean(item && item.type === 'input'));
+    .map((block, index) => blockToPort(block, index))
+    .filter((item): item is TemplatePortSpec => Boolean(item && item.type === 'input'));
 
   const outputs = draft.builderBlocks
-    .map((block, index) => blockToHandle(block, index))
-    .filter((item): item is TemplateHandleSpec => Boolean(item && item.type === 'output'));
+    .map((block, index) => blockToPort(block, index))
+    .filter((item): item is TemplatePortSpec => Boolean(item && item.type === 'output'));
+
+  return { inputs, outputs };
+};
+
+export const buildTemplateFromBlocks = (draft: CommunityNodeTemplate): CommunityNodeTemplate => {
+  const derivedSchema = buildInterfaceSchemaFromBlocks(draft);
+  const interfaceSchema = draft.interfaceSchema ?? derivedSchema;
+  const inputs = interfaceSchema.inputs.map(portToHandleSpec);
+  const outputs = interfaceSchema.outputs.map(portToHandleSpec);
 
   return {
     ...draft,
     discovery: 'search-only',
+    interfaceSchema,
     fields: [],
     inputs,
     outputs,
@@ -98,7 +125,8 @@ const validateDraft = (draft: CommunityNodeTemplate): string | null => {
   }
 
   const blockIds = new Set<string>();
-  let interfaceCount = 0;
+  const interfaceSchema = getTemplateInterfaceSchema(draft);
+  const interfaceCount = interfaceSchema.inputs.length + interfaceSchema.outputs.length;
 
   for (const block of draft.builderBlocks) {
     if (blockIds.has(block.id)) return 'Block id 重複，請重新加入該 block。';
@@ -106,10 +134,6 @@ const validateDraft = (draft: CommunityNodeTemplate): string | null => {
 
     if (block.kind !== 'text' && !block.label.trim()) {
       return '每個 block 都需要 label。';
-    }
-
-    if (block.kind === 'input' || block.kind === 'output') {
-      interfaceCount += 1;
     }
   }
 
@@ -135,7 +159,7 @@ const BUILDER_BLOCK_REORDER_MIME = 'application/x-methmatica-builder-reorder';
 
 const readDraggedKind = (event: Pick<React.DragEvent, 'dataTransfer'>): TemplateBuilderBlockKind | null => {
   const raw = event.dataTransfer.getData(BUILDER_BLOCK_KIND_MIME) || event.dataTransfer.getData('text/plain');
-  if (TOOLKIT.some(item => item.kind === raw)) {
+  if (ACTIVE_TOOLKIT.some(item => item.kind === raw)) {
     return raw as TemplateBuilderBlockKind;
   }
 
@@ -393,9 +417,9 @@ export function CommunityNodeMaker({
       let angle = Math.atan2(dx, -dy) * 180 / Math.PI;
       if (angle < 0) angle += 360;
 
-      const angleSize = 360 / TOOLKIT.length;
+      const angleSize = 360 / ACTIVE_TOOLKIT.length;
       const index = Math.floor(angle / angleSize);
-      const item = TOOLKIT[index];
+      const item = ACTIVE_TOOLKIT[index];
       setPieSelection(item?.kind ?? null);
     };
 
@@ -442,7 +466,7 @@ export function CommunityNodeMaker({
     <div className="builder-toolbar nodrag" onPointerDown={stopNodeDragPropagation} onMouseDown={stopNodeDragPropagation}>
       <div className="panel-title">Builder toolkit</div>
       <div className="builder-toolbar-items">
-        {TOOLKIT.map(item => (
+        {ACTIVE_TOOLKIT.map(item => (
           <div
             key={item.kind}
             className={`toolkit-item nodrag ${draggingKind === item.kind ? 'is-dragging' : ''}`}
@@ -1055,13 +1079,13 @@ export function CommunityNodeMaker({
                 const center = 160;
                 const outer = 140;
                 const inner = 58;
-                const angleSize = 360 / TOOLKIT.length;
+                const angleSize = 360 / ACTIVE_TOOLKIT.length;
                 const polarToCartesian = (r: number, angle: number) => {
                   const rad = (angle - 90) * Math.PI / 180;
                   return { x: center + r * Math.cos(rad), y: center + r * Math.sin(rad) };
                 };
 
-                return TOOLKIT.map((item, index) => {
+                return ACTIVE_TOOLKIT.map((item, index) => {
                   const start = index * angleSize + 2;
                   const end = (index + 1) * angleSize - 2;
                   const sOut = polarToCartesian(outer, end);

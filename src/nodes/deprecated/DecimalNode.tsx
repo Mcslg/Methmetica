@@ -1,8 +1,8 @@
 import { type NodeProps, type Node, NodeResizer } from '@xyflow/react';
 import { useEffect, memo } from 'react';
-import useStore, { type AppState, type NodeData } from '../store/useStore';
-import { DynamicHandles } from './DynamicHandles';
-import { Icons } from '../components/Icons';
+import useStore, { type AppState, type NodeData } from '../../store/useStore';
+import { DynamicHandles } from '../DynamicHandles';
+import { Icons } from '../../components/Icons';
 
 export const DecimalNode = memo(function DecimalNode({ id, data }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);

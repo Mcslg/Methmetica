@@ -5,6 +5,9 @@ export type TemplateFieldKind = 'text' | 'textarea' | 'number' | 'select' | 'lin
 export type TemplateBuilderBlockKind = 'input' | 'output' | 'text' | 'toggle' | 'math';
 
 export type TemplateDiscoveryMode = 'search-only' | 'library-and-search';
+export type TemplatePortSource = 'static' | 'derived';
+export type TemplatePortValueKind = 'value' | 'trigger' | 'gate' | 'object' | 'formula-variable';
+export type TemplatePortDerivation = 'builderBlocks' | 'formulaVariables' | 'runtime';
 
 export type TemplateBuilderBlock = {
   id: string;
@@ -33,6 +36,20 @@ export type TemplateHandleSpec = {
   offset: number;
 };
 
+export type TemplatePortSpec = TemplateHandleSpec & {
+  source: TemplatePortSource;
+  valueKind: TemplatePortValueKind;
+  required?: boolean;
+  description?: string;
+  derivesFrom?: TemplatePortDerivation;
+  typeConstraint?: string; // 'type:${MathTypeId}' or 'cap:${MathCapability}'
+};
+
+export type TemplateInterfaceSchema = {
+  inputs: TemplatePortSpec[];
+  outputs: TemplatePortSpec[];
+};
+
 export type CommunityNodeTemplate = {
   id: string;
   title: string;
@@ -49,6 +66,8 @@ export type CommunityNodeTemplate = {
     height: number;
   };
   tags: string[];
+  interfaceSchema?: TemplateInterfaceSchema;
+  interfaceSchemaText?: string;
   fields: TemplateFieldSpec[];
   inputs: TemplateHandleSpec[];
   outputs: TemplateHandleSpec[];
@@ -103,3 +122,63 @@ export type WorkflowBlueprint = {
   edges: WorkflowGraphEdge[];
 };
 import type { CSSProperties } from 'react';
+
+export const clonePortSpec = (port: TemplatePortSpec): TemplatePortSpec => ({ ...port });
+
+export const cloneInterfaceSchema = (schema?: TemplateInterfaceSchema): TemplateInterfaceSchema | undefined => (
+  schema ? {
+    inputs: schema.inputs.map(clonePortSpec),
+    outputs: schema.outputs.map(clonePortSpec),
+  } : undefined
+);
+
+export const portToHandleSpec = (port: TemplatePortSpec): TemplateHandleSpec => ({
+  id: port.id,
+  label: port.label,
+  position: port.position,
+  type: port.type,
+  offset: port.offset,
+});
+
+export const getTemplateInterfaceSchema = (template: CommunityNodeTemplate): TemplateInterfaceSchema => (
+  template.interfaceSchema ?? {
+    inputs: template.inputs.map(handle => ({
+      ...handle,
+      source: 'static',
+      valueKind: 'value',
+    })),
+    outputs: template.outputs.map(handle => ({
+      ...handle,
+      source: 'static',
+      valueKind: 'value',
+    })),
+  }
+);
+
+export const getTemplateHandles = (template: CommunityNodeTemplate): TemplateHandleSpec[] => {
+  const schema = getTemplateInterfaceSchema(template);
+  return [
+    ...schema.inputs.map(portToHandleSpec),
+    ...schema.outputs.map(portToHandleSpec),
+  ];
+};
+
+export const getTemplateInternalHandles = (template: CommunityNodeTemplate): TemplateHandleSpec[] => {
+  const schema = getTemplateInterfaceSchema(template);
+  return [
+    ...schema.inputs.map(port => ({
+      id: port.id,
+      label: port.label,
+      position: 'right' as const,
+      type: 'output' as const,
+      offset: port.offset,
+    })),
+    ...schema.outputs.map(port => ({
+      id: port.id,
+      label: port.label,
+      position: 'left' as const,
+      type: 'input' as const,
+      offset: port.offset,
+    })),
+  ];
+};

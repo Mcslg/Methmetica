@@ -1,11 +1,11 @@
 import React from 'react';
 import { type Edge, type NodeProps } from '@xyflow/react';
-import useStore, { type AppNode } from '../store/useStore';
-import { NodeFrame } from '../components/NodeFrame';
-import { Icons } from '../components/Icons';
-import { getCommunityTemplateById, getCommunityWorkflowBlueprint } from '../community/catalog';
-import { getWorkflowBlueprintFromSupabase } from '../integrations/supabase/workflows';
-import type { CommunityNodeTemplate, TemplateBuilderBlock } from '../community/types';
+import useStore, { type AppNode } from '../../store/useStore';
+import { NodeFrame } from '../../components/NodeFrame';
+import { Icons } from '../../components/Icons';
+import { getCommunityTemplateById, getCommunityWorkflowBlueprint } from '../../community/catalog';
+import { getWorkflowBlueprintFromSupabase } from '../../integrations/supabase/workflows';
+import type { CommunityNodeTemplate, TemplateBuilderBlock } from '../../community/types';
 
 const openCommunityWorkflow = async (workflowId: string) => {
   const blueprint =

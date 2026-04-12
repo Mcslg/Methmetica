@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useReactFlow } from '@xyflow/react';
-import useStore, { type AppState } from '../store/useStore';
-import { useLanguage } from '../contexts/LanguageContext';
-import { Icons } from './Icons';
-import { generateDiffSteps, generateLimitSteps, type CalculusStep } from '../utils/CalculusSolver';
+import useStore, { type AppNode, type AppState } from '../../store/useStore';
+import { useLanguage } from '../../contexts/LanguageContext';
+import { Icons } from '../Icons';
+import { generateDiffSteps, generateLimitSteps, type CalculusStep } from '../../utils/deprecated/CalculusSolver';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 
@@ -13,7 +13,7 @@ interface CalculusStepsAreaProps {
 
 export const CalculusStepsArea: React.FC<CalculusStepsAreaProps> = ({ containerId }) => {
     const { t } = useLanguage();
-    const parentNode = useStore((state: AppState) => state.nodes.find(n => n.id === containerId));
+    const parentNode = useStore((state: AppState) => state.nodes.find((n: AppNode) => n.id === containerId));
     const handleEject = useStore((state: AppState) => state.handleEject);
     const isCtrlPressed = useStore((state: AppState) => state.isCtrlPressed);
     const setDraggingEjectPos = useStore((state: AppState) => state.setDraggingEjectPos);
