@@ -6,6 +6,7 @@ import TitleLogo from '../assets/Title.svg';
 import TitleDarkLogo from '../assets/Title_dark.svg';
 import { useLanguage } from '../contexts/LanguageContext';
 import * as driveService from '../utils/googleDriveService';
+import { pushRoute } from '../utils/navigation';
 
 export function Sidebar() {
     const { t, language, setLanguage } = useLanguage();
@@ -51,6 +52,8 @@ export function Sidebar() {
                 const data = JSON.parse(json);
                 if (data && Array.isArray(data.nodes) && Array.isArray(data.edges)) {
                     setGraph(data.nodes, data.edges);
+                    setActiveFileId(null);
+                    pushRoute({ view: 'editor', source: 'new' });
                 } else {
                     alert(t('common.invalid_file') || 'Invalid project file format.');
                 }
@@ -109,6 +112,7 @@ export function Sidebar() {
             if (!shouldLeave) return;
         }
         setCurrentView('home');
+        pushRoute({ view: 'home' });
     };
 
     const stopHold = () => {

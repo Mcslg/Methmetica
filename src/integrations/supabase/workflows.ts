@@ -141,6 +141,24 @@ export async function getWorkflowBlueprintFromSupabase(workflowId: string) {
   return rowToBlueprint(data as WorkflowRow);
 }
 
+export async function getWorkflowBlueprintFromSupabaseByRef(workflowRef: string) {
+  if (!supabase) return null;
+
+  const { data, error } = await withSupabaseTimeout(
+    supabase
+      .from('workflows')
+      .select('id, owner_id, slug, title, description, tags, visibility, status, workflow_json, published_at, updated_at, created_at')
+      .or(`id.eq.${workflowRef},slug.eq.${workflowRef}`)
+      .limit(1)
+      .maybeSingle(),
+    'Opening workflow by ref'
+  );
+
+  if (error) throw error;
+  if (!data) return null;
+  return rowToBlueprint(data as WorkflowRow);
+}
+
 export async function publishWorkflowToSupabase(payload: WorkflowPayload) {
   if (!supabase) throw new Error('Supabase is not configured.');
 

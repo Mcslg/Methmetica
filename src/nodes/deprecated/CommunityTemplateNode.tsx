@@ -1,23 +1,17 @@
 import React from 'react';
-import { type Edge, type NodeProps } from '@xyflow/react';
+import { type NodeProps } from '@xyflow/react';
 import useStore, { type AppNode } from '../../store/useStore';
 import { NodeFrame } from '../../components/NodeFrame';
 import { Icons } from '../../components/Icons';
-import { getCommunityTemplateById, getCommunityWorkflowBlueprint } from '../../community/catalog';
-import { getWorkflowBlueprintFromSupabase } from '../../integrations/supabase/workflows';
+import { getCommunityTemplateById } from '../../community/catalog';
 import type { CommunityNodeTemplate, TemplateBuilderBlock } from '../../community/types';
 
-const openCommunityWorkflow = async (workflowId: string) => {
-  const blueprint =
-    (await getWorkflowBlueprintFromSupabase(workflowId)) ??
-    getCommunityWorkflowBlueprint(workflowId);
-  if (!blueprint) return false;
-
-  const store = useStore.getState();
-  store.setGraph(blueprint.nodes as AppNode[], blueprint.edges as Edge[]);
-  store.setActiveFileId(null);
-  store.setCurrentView('editor');
-  return true;
+const openCommunityWorkflow = (workflowId: string) => {
+  const url = new URL(window.location.href);
+  url.searchParams.set('view', 'editor');
+  url.searchParams.set('source', 'public');
+  url.searchParams.set('id', workflowId);
+  window.open(url.toString(), '_blank', 'noopener,noreferrer');
 };
 
 export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({ id, data, selected }: NodeProps<AppNode>) {

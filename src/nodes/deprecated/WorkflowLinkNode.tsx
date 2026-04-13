@@ -1,23 +1,18 @@
 import useStore from '../../store/useStore';
 import { NodeFrame } from '../../components/NodeFrame';
 import { Icons } from '../../components/Icons';
-import { getCommunityWorkflowBlueprint } from '../../community/catalog';
-import { getWorkflowBlueprintFromSupabase } from '../../integrations/supabase/workflows';
 
 export function WorkflowLinkNode({ id, data, selected }: { id: string; data: any; selected?: boolean }) {
   const updateNodeData = useStore(state => state.updateNodeData);
 
-  const openTarget = async () => {
+  const openTarget = () => {
     const targetId = data.targetWorkflowId;
     if (!targetId) return;
-    const blueprint =
-      (await getWorkflowBlueprintFromSupabase(targetId)) ??
-      getCommunityWorkflowBlueprint(targetId);
-    if (!blueprint) return;
-    const store = useStore.getState();
-    store.setGraph(blueprint.nodes as any, blueprint.edges as any);
-    store.setActiveFileId(null);
-    store.setCurrentView('editor');
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', 'editor');
+    url.searchParams.set('source', 'public');
+    url.searchParams.set('id', targetId);
+    window.open(url.toString(), '_blank', 'noopener,noreferrer');
   };
 
   return (

@@ -14,6 +14,13 @@ import {
   listPublicWorkflows,
   runSupabaseHealthCheck,
 } from '../integrations/supabase/workflows';
+import { pushRoute } from '../utils/navigation';
+import {
+  createLocalDraft,
+  listLocalDrafts,
+  loadLocalDraft,
+  type LocalDraftSummary,
+} from '../utils/localDraftService';
 
 type DashboardTab = 'community' | 'private';
 
@@ -38,6 +45,7 @@ export function Dashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<DashboardTab>('private');
   const [publicWorkflows, setPublicWorkflows] = useState<CommunityWorkflowCard[]>(publicCommunityWorkflows);
+  const [localDrafts, setLocalDrafts] = useState<LocalDraftSummary[]>([]);
   const [isLoadingPublicWorkflows, setIsLoadingPublicWorkflows] = useState(false);
   const [publicWorkflowError, setPublicWorkflowError] = useState<string | null>(null);
   const [supabaseHealth, setSupabaseHealth] = useState<{
@@ -85,6 +93,10 @@ export function Dashboard() {
       setLoadingWorkflows(false);
     }
   }, [setLoadingWorkflows, setWorkflowList]);
+
+  useEffect(() => {
+    setLocalDrafts(listLocalDrafts());
+  }, []);
 
   useEffect(() => {
     let isCancelled = false;
@@ -215,6 +227,7 @@ export function Dashboard() {
     setGraph(blueprint.nodes as AppNode[], blueprint.edges as Edge[]);
     setActiveFileId(null);
     setCurrentView('editor');
+    pushRoute({ view: 'editor', source: 'public', id: workflowId });
   };
 
   const handleOpenWorkflow = async (file: WorkflowListItem) => {
@@ -224,6 +237,7 @@ export function Dashboard() {
         setGraph(data.nodes, data.edges);
         setActiveFileId(file.id);
         setCurrentView('editor');
+        pushRoute({ view: 'editor', source: 'drive', id: file.id });
       }
     } catch (err) {
       console.error('Failed to open workflow', err);
@@ -234,6 +248,18 @@ export function Dashboard() {
     setGraph([], []);
     setActiveFileId(null);
     setCurrentView('editor');
+    const draftId = createLocalDraft();
+    setLocalDrafts(listLocalDrafts());
+    pushRoute({ view: 'editor', source: 'draft', id: draftId });
+  };
+
+  const handleOpenLocalDraft = (draftId: string) => {
+    const draft = loadLocalDraft(draftId);
+    if (!draft) return;
+    setGraph(draft.nodes as AppNode[], draft.edges as Edge[]);
+    setActiveFileId(null);
+    setCurrentView('editor');
+    pushRoute({ view: 'editor', source: 'draft', id: draftId });
   };
 
   const handleDeleteWorkflow = async (e: React.MouseEvent, fileId: string, fileName: string) => {
@@ -257,6 +283,9 @@ export function Dashboard() {
 
   const filteredWorkflows = workflowList.filter(w =>
     w.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+  const filteredLocalDrafts = localDrafts.filter(d =>
+    d.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -328,7 +357,7 @@ export function Dashboard() {
           </div>
           <div className="hero-stats">
             <div className="hero-stat">
-              <strong>{workflowList.length}</strong>
+              <strong>{workflowList.length + localDrafts.length}</strong>
               <span>Private drafts</span>
             </div>
             <div className="hero-stat">
@@ -462,6 +491,39 @@ export function Dashboard() {
                 )}
               </div>
             </div>
+
+            <div className="private-copy">
+              <h3>Local Browser Drafts</h3>
+              <p>未登入也能存草稿在目前瀏覽器，會有專屬 URL。</p>
+            </div>
+
+            {filteredLocalDrafts.length > 0 ? (
+              <div className="workflow-grid">
+                {filteredLocalDrafts.map(draft => (
+                  <div key={draft.id} className="workflow-card" onClick={() => handleOpenLocalDraft(draft.id)}>
+                    <div className="card-top">
+                      <div className="card-icon-box" style={{ background: 'rgba(96, 165, 250, 0.12)', color: '#60a5fa' }}>
+                        <Icons.Text size={20} />
+                      </div>
+                    </div>
+                    <div className="card-body">
+                      <h3>{draft.title}</h3>
+                      <p className="card-meta">Updated: {new Date(draft.updatedAt).toLocaleString()}</p>
+                    </div>
+                    <div className="card-footer">
+                      <span className="status-pill">Local</span>
+                      <span className="node-count">Ref: {draft.id.slice(0, 12)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <Icons.Text size={40} style={{ opacity: 0.15, marginBottom: 12 }} />
+                <h3>No local drafts yet</h3>
+                <p>點上方 New Workflow 建立第一個本機草稿。</p>
+              </div>
+            )}
 
             {isLoadingWorkflows ? (
               <div className="loading-state">

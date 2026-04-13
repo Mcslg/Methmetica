@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ReactFlow, Background, Controls, ReactFlowProvider, useReactFlow, BackgroundVariant } from '@xyflow/react';
+import { ReactFlow, Background, Controls, ReactFlowProvider, useReactFlow, BackgroundVariant, type Edge } from '@xyflow/react';
 import { useShallow } from 'zustand/react/shallow';
 import '@xyflow/react/dist/style.css';
 
@@ -15,6 +15,12 @@ import { Dashboard } from './components/Dashboard';
 import { DebugOverlay, countRender } from './components/DebugOverlay';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { AuthBootstrap } from './components/AuthBootstrap';
+import { getCommunityWorkflowBlueprint, getCommunityWorkflowBySlug } from './community/catalog';
+import { isSupabaseConfigured } from './integrations/supabase/client';
+import { getWorkflowBlueprintFromSupabaseByRef } from './integrations/supabase/workflows';
+import * as driveService from './utils/googleDriveService';
+import { loadLocalDraft, saveLocalDraft } from './utils/localDraftService';
+import { type AppRoute, parseRouteFromLocation, readEditorSnapshotFromHistory, replaceRoute } from './utils/navigation';
 
 type PaneMenuEvent = {
   preventDefault: () => void;
@@ -36,7 +42,8 @@ function Flow() {
     nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, addNodes, removeNode,
     handleProximitySnap, updatePluginHint, setAltPressed, setCtrlPressed, theme,
     isSidebarOpen, setDeletingHover, draggingEjectPos, hoveredNodeId,
-    setHoveredNodeId, updateNodeDimensions, isAltPressed, undo, redo, takeSnapshot, sliceEdges
+    setHoveredNodeId, updateNodeDimensions, isAltPressed, undo, redo, takeSnapshot, sliceEdges,
+    heldConnection, setHeldConnection
   } = useStore(useShallow(state => ({
     nodes: state.nodes,
     edges: state.edges,
@@ -61,7 +68,9 @@ function Flow() {
     undo: state.undo,
     redo: state.redo,
     takeSnapshot: state.takeSnapshot,
-    sliceEdges: state.sliceEdges
+    sliceEdges: state.sliceEdges,
+    heldConnection: state.heldConnection,
+    setHeldConnection: state.setHeldConnection
   })));
   const communityTemplates = useStore(state => state.communityTemplates);
   const pluginHint = useStore(state => state.pluginHint);
@@ -543,7 +552,28 @@ function Flow() {
         onEdgeMouseLeave={() => {
           if (isExplainMode) setDataTooltip(null);
         }}
-        onClick={closeMenus}
+        onClick={(e) => {
+          // [RECONNECT] If holding a sliced connection, try to plug it in or drop it
+          if (heldConnection) {
+            const target = e.target as HTMLElement;
+            const handleEl = target.closest('.react-flow__handle');
+            if (handleEl) {
+              const targetNodeId = handleEl.getAttribute('data-nodeid');
+              const targetHandleId = handleEl.getAttribute('data-id');
+              
+              if (targetNodeId && targetHandleId) {
+                onConnect({
+                  source: heldConnection.nodeId,
+                  sourceHandle: heldConnection.handleId,
+                  target: targetNodeId,
+                  targetHandle: targetHandleId
+                });
+              }
+            }
+            setHeldConnection(null);
+          }
+          closeMenus();
+        }}
 
         fitView
         colorMode={theme}
@@ -712,6 +742,41 @@ function Flow() {
         document.body
       )}
 
+      {/* [NEW] Held Connection (Sticky Wire) */}
+      {heldConnection && (() => {
+          const sourceNode = nodes.find(n => n.id === heldConnection.nodeId);
+          if (!sourceNode) return null;
+          const tipFlowPos = lastFlowPos ?? { x: sourceNode.position.x, y: sourceNode.position.y };
+          const tipScreenPos = flowToScreenPosition(tipFlowPos);
+          
+          // Use current mouse pos (we need a screen position for the SVG overlay)
+          // We can track current client position or convert flow position back
+          const sourcePos = flowToScreenPosition({ 
+            x: sourceNode.position.x + (sourceNode.measured?.width ?? 200) / 2, 
+            y: sourceNode.position.y + (sourceNode.measured?.height ?? 100) / 2 
+          });
+
+          return createPortal(
+            <svg style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 99998, width: '100vw', height: '100vh' }}>
+              <defs>
+                 <filter id="held-glow"><feGaussianBlur stdDeviation="3"/><feComposite in="SourceGraphic" operator="over"/></filter>
+              </defs>
+              <path 
+                className="held-wire-path"
+                d={`M ${sourcePos.x} ${sourcePos.y} C ${(sourcePos.x + tipScreenPos.x) / 2} ${sourcePos.y}, ${(sourcePos.x + tipScreenPos.x) / 2} ${tipScreenPos.y}, ${tipScreenPos.x} ${tipScreenPos.y}`}
+                fill="none"
+                stroke="var(--accent)"
+                strokeWidth="2.5"
+                strokeDasharray="5,5"
+                filter="url(#held-glow)"
+                style={{ opacity: 0.6 }}
+              />
+              <circle cx={tipScreenPos.x} cy={tipScreenPos.y} r="4" fill="var(--accent)" />
+            </svg>,
+            document.body
+          );
+      })()}
+
       {/* [NEW] Blade Trail Effect */}
       <svg style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 99999, width: '100vw', height: '100vh' }}>
         <defs>
@@ -805,15 +870,137 @@ function Flow() {
 function App() {
   const currentView = useStore(state => state.currentView);
   const theme = useStore(state => state.theme);
+  const setCurrentView = useStore(state => state.setCurrentView);
+  const setGraph = useStore(state => state.setGraph);
+  const setActiveFileId = useStore(state => state.setActiveFileId);
+  const nodes = useStore(state => state.nodes);
+  const edges = useStore(state => state.edges);
+  const routeTokenRef = useRef(0);
+  const [isRouteResolving, setIsRouteResolving] = useState(true);
 
   useEffect(() => {
     document.body.setAttribute('data-theme', theme);
   }, [theme]);
 
+  const applyRoute = useCallback(async (route: AppRoute, historyState?: unknown) => {
+    const token = ++routeTokenRef.current;
+    setIsRouteResolving(true);
+
+    if (route.view === 'home') {
+      setCurrentView('home');
+      setIsRouteResolving(false);
+      return;
+    }
+
+    const shouldRestoreSnapshot = route.source === 'new' || route.source === 'draft';
+    const snapshot = shouldRestoreSnapshot
+      ? readEditorSnapshotFromHistory(historyState ?? window.history.state)
+      : null;
+    if (snapshot) {
+      setGraph(snapshot.nodes as AppNode[], snapshot.edges as Edge[]);
+      setActiveFileId(snapshot.activeFileId);
+      setCurrentView('editor');
+      setIsRouteResolving(false);
+      return;
+    }
+
+    if (route.source === 'new') {
+      setCurrentView('editor');
+      setIsRouteResolving(false);
+      return;
+    }
+
+    try {
+      if (route.source === 'public' && route.id) {
+        const blueprint =
+          (isSupabaseConfigured ? await getWorkflowBlueprintFromSupabaseByRef(route.id) : null) ??
+          getCommunityWorkflowBlueprint(route.id) ??
+          (() => {
+            const localBySlug = getCommunityWorkflowBySlug(route.id!);
+            return localBySlug ? getCommunityWorkflowBlueprint(localBySlug.id) : null;
+          })();
+        if (!blueprint) throw new Error(`Workflow ${route.id} not found`);
+        if (token !== routeTokenRef.current) return;
+        setGraph(blueprint.nodes as AppNode[], blueprint.edges as Edge[]);
+        setActiveFileId(null);
+        setCurrentView('editor');
+        return;
+      }
+
+      if (route.source === 'drive' && route.id) {
+        const data = await driveService.loadWorkflow(route.id);
+        if (!data || !Array.isArray(data.nodes) || !Array.isArray(data.edges)) {
+          throw new Error(`Workflow ${route.id} is invalid`);
+        }
+        if (token !== routeTokenRef.current) return;
+        setGraph(data.nodes, data.edges);
+        setActiveFileId(route.id);
+        setCurrentView('editor');
+        return;
+      }
+
+      if (route.source === 'draft' && route.id) {
+        const draft = loadLocalDraft(route.id);
+        if (!draft) {
+          throw new Error(`Draft ${route.id} is missing`);
+        }
+        if (token !== routeTokenRef.current) return;
+        setGraph(draft.nodes as AppNode[], draft.edges as Edge[]);
+        setActiveFileId(null);
+        setCurrentView('editor');
+      }
+    } catch (err) {
+      console.error('Failed to open route workflow', err);
+      if (token !== routeTokenRef.current) return;
+      setCurrentView('home');
+      replaceRoute({ view: 'home' });
+    } finally {
+      if (token === routeTokenRef.current) {
+        setIsRouteResolving(false);
+      }
+    }
+  }, [setActiveFileId, setCurrentView, setGraph]);
+
+  useEffect(() => {
+    const initialRoute = parseRouteFromLocation(window.location);
+    replaceRoute(initialRoute);
+    void applyRoute(initialRoute, window.history.state);
+
+    const handlePopState = (event: PopStateEvent) => {
+      void applyRoute(parseRouteFromLocation(window.location), event.state);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [applyRoute]);
+
+  useEffect(() => {
+    if (currentView !== 'editor') return;
+    const route = parseRouteFromLocation(window.location);
+    if (route.view !== 'editor' || route.source !== 'draft' || !route.id) return;
+    const timer = window.setTimeout(() => {
+      saveLocalDraft(route.id!, { nodes, edges });
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [currentView, edges, nodes]);
+
   return (
     <LanguageProvider>
       <AuthBootstrap />
-      {currentView === 'home' ? (
+      {isRouteResolving ? (
+        <div style={{
+          width: '100vw',
+          height: '100vh',
+          display: 'grid',
+          placeItems: 'center',
+          background: 'var(--bg-page)',
+          color: 'var(--text-sub)'
+        }}>
+          Loading workflow...
+        </div>
+      ) : currentView === 'home' ? (
         <Dashboard />
       ) : (
         <ReactFlowProvider>

@@ -143,6 +143,8 @@ export type AppState = {
     theme: 'light' | 'dark';
     setTheme: (theme: 'light' | 'dark') => void;
     sliceEdges: (start: { x: number, y: number }, end: { x: number, y: number }) => void;
+    heldConnection: { nodeId: string, handleId: string, handleType: 'source' | 'target' } | null;
+    setHeldConnection: (conn: AppState['heldConnection']) => void;
     isSidebarOpen: boolean;
     setSidebarOpen: (open: boolean) => void;
     isDeletingHover: boolean;
@@ -211,6 +213,14 @@ const initialNodes: AppNode[] = [
         deletable: false,
     }
 ];
+
+const hasCommunityRuntimePlan = (node: AppNode, state: AppState) => {
+    if (node.type !== 'communityTemplateNode') return false;
+    const template =
+        (node.data.templateDraft as CommunityNodeTemplate | undefined) ??
+        state.communityTemplates.find(item => item.id === node.data.templateId);
+    return Boolean(template?.runtimePlan);
+};
 
 const useStore = create<AppState>()(
     persist(
@@ -327,10 +337,26 @@ const useStore = create<AppState>()(
 
                 if (edgesToRemove.length > 0) {
                     get().takeSnapshot();
+                    
+                    // [RECONNECT] Store the last sliced edge's source to 'hand-held'
+                    const lastEdge = edges.find(e => e.id === edgesToRemove[edgesToRemove.length - 1]);
+                    if (lastEdge) {
+                        set({ 
+                            heldConnection: { 
+                                nodeId: lastEdge.source, 
+                                handleId: lastEdge.sourceHandle || 'h-out', 
+                                handleType: 'source' 
+                            } 
+                        });
+                    }
+
                     set({ edges: edges.filter(e => !edgesToRemove.includes(e.id)) });
                     get().evaluateGraph();
                 }
             },
+
+            heldConnection: null,
+            setHeldConnection: (heldConnection) => set({ heldConnection }),
 
             undoStack: [],
             redoStack: [],
@@ -791,6 +817,7 @@ const useStore = create<AppState>()(
                 node.type === 'calculateNode' || 
                 node.type === 'gateNode' || 
                 node.type === 'rangeNode' ||
+                (node.type === 'communityTemplateNode' && hasCommunityRuntimePlan({ ...node, data: nextData }, get())) ||
                 (node.type === 'codeNode' && nextData.autoRun)
             ) {
                 get().executeNode(nodeId);
@@ -1064,6 +1091,7 @@ const useStore = create<AppState>()(
         nodes.forEach(n => nodeMap.set(n.id, n));
         let hasChanged = false;
         let processedCount = 0;
+        const autoExecutableCommunityNodeIds = new Set<string>();
 
         const processNode = (nodeId: string) => {
             const node = nodeMap.get(nodeId);
@@ -1223,7 +1251,11 @@ const useStore = create<AppState>()(
 
             if (isUpdated) {
                 hasChanged = true;
-                nodeMap.set(node.id, { ...node, data: updatedData });
+                const updatedNode = { ...node, data: updatedData };
+                nodeMap.set(node.id, updatedNode);
+                if (hasCommunityRuntimePlan(updatedNode, get())) {
+                    autoExecutableCommunityNodeIds.add(node.id);
+                }
             }
         };
 
@@ -1254,6 +1286,7 @@ const useStore = create<AppState>()(
 
         if (hasChanged) {
             set({ nodes: nodes.map(n => nodeMap.get(n.id) || n) });
+            autoExecutableCommunityNodeIds.forEach(id => get().executeNode(id));
         }
 
     },
