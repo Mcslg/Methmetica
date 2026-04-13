@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ReactFlow, Background, Controls, ReactFlowProvider, useReactFlow, BackgroundVariant } from '@xyflow/react';
 import { useShallow } from 'zustand/react/shallow';
@@ -6,8 +6,9 @@ import '@xyflow/react/dist/style.css';
 
 import useStore, { type AppNode } from './store/useStore';
 import { nodeTypes, getNodeDefinition, buildNodeCatalog } from './nodes/registry';
-import { getTemplateInternalHandles } from './community/types';
+import { getTemplateHandles } from './community/types';
 import { Sidebar } from './components/Sidebar';
+import { ExplainOverlay } from './components/ExplainOverlay';
 import { FloatingPalette } from './components/FloatingPalette';
 import { Icons } from './components/Icons';
 import { Dashboard } from './components/Dashboard';
@@ -29,70 +30,13 @@ type NodeMenuEvent = PaneMenuEvent & {
 type AddNodeAtCenterEvent = CustomEvent<{ type: string; templateId?: string }>;
 type ConnectStartPayload = { nodeId: string | null; handleId: string | null; handleType: string | null };
 type TouchTargetEvent = React.TouchEvent<HTMLElement>;
-type ExplainSide = 'left' | 'right' | 'top' | 'bottom';
-type ExplainPluginOpportunity = {
-  sourceType: string;
-  side: ExplainSide;
-  title: string;
-  detail: string;
-};
-
-const EXPLAIN_SIDE_LABELS = {
-  en: { left: 'Left', right: 'Right', top: 'Top', bottom: 'Bottom' },
-  'zh-TW': { left: '左側', right: '右側', top: '上方', bottom: '下方' },
-} as const;
-
-const EXPLAIN_SIDE_ARROWS: Record<ExplainSide, string> = {
-  left: '←',
-  right: '→',
-  top: '↑',
-  bottom: '↓',
-};
-
-function getExplainPluginOpportunities(node: AppNode, language: 'en' | 'zh-TW'): ExplainPluginOpportunity[] {
-  const slots = node.data.slots || {};
-  const isZh = language === 'zh-TW';
-  const items: ExplainPluginOpportunity[] = [];
-  const add = (sourceType: string, side: ExplainSide, title: string, detail: string, enabled = true) => {
-    if (enabled) items.push({ sourceType, side, title, detail });
-  };
-
-  if (node.type === 'graphNode') {
-    add('textNode', 'left', isZh ? '插入公式側欄' : 'Plug in formula sidebar', isZh ? '把 Notebook 插到左側，變成圖形的公式輸入區。' : 'Plug a Notebook into the left edge to turn it into the graph formula sidebar.', !slots.formulaSidebar);
-    add('sliderNode', 'left', isZh ? '加入參數滑桿' : 'Attach parameter slider', isZh ? '把 Slider 貼到左側，讓圖形用該變數控制參數。' : 'Drop a Slider on the left edge to expose its variable as a graph parameter.');
-    add('textNode', 'top', isZh ? '加入節點註解' : 'Attach note', isZh ? '把 Notebook 貼到上方，作為圖形的註解區。' : 'Drop a Notebook on the top edge to use it as a note for the graph.', !slots.comment);
-  }
-
-  if (node.type === 'textNode') {
-    add('sliderNode', 'left', isZh ? '嵌入滑桿' : 'Embed slider', isZh ? '把 Slider 貼到邊緣，直接嵌進 Notebook 文字區上方。' : 'Drop a Slider onto the Notebook edge to embed it inline above the editor.');
-    add('buttonNode', 'right', isZh ? '嵌入觸發按鈕' : 'Embed trigger button', isZh ? '把 Trigger 貼到邊緣，讓它成為 Notebook 內建按鈕。' : 'Drop a Trigger onto the Notebook edge to make it an embedded action button.');
-    add('gateNode', 'right', isZh ? '嵌入 Gate' : 'Embed gate', isZh ? '把 Gate 貼到邊緣，讓 Notebook 可以直接控制觸發通道。' : 'Drop a Gate onto the Notebook edge to embed gate control in the note.');
-    add('calculateNode', 'right', isZh ? '插入計算結果' : 'Insert calculation result', isZh ? '把 Calculate 貼到邊緣，把結果當作可引用內容插進 Notebook。' : 'Drop a Calculate node onto the edge to insert its result into the Notebook.');
-    add('balanceNode', 'right', isZh ? '插入平衡步驟' : 'Insert balance steps', isZh ? '把 Balance 貼到邊緣，把等式操作結果帶進 Notebook。' : 'Drop a Balance node onto the edge to insert equivalence steps into the Notebook.');
-    add('calculusNode', 'right', isZh ? '插入微積分步驟' : 'Insert calculus steps', isZh ? '把 Calculus 貼到邊緣，把推導或步驟嵌進 Notebook。' : 'Drop a Calculus node onto the edge to insert derivation steps into the Notebook.');
-    add('appendNode', 'bottom', isZh ? '加入追加器' : 'Attach logger', isZh ? '把 Logger 貼到底部，Notebook 會成為它的追加目標。' : 'Drop a Logger on the bottom edge to make this Notebook its append target.', !slots.appender);
-  }
-
-  if (node.type === 'calculateNode' || node.type === 'solveNode' || node.type === 'balanceNode' || node.type === 'calculusNode') {
-    add('textNode', 'right', isZh ? '掛上結果視窗' : 'Attach result panel', isZh ? '把 Notebook 貼到右側，用來顯示該節點的輸出或步驟。' : 'Drop a Notebook on the right edge to show this node’s result or steps.', !slots.resultText);
-    add('sliderNode', 'right', isZh ? '加入輸入變數' : 'Attach variable slider', isZh ? '把 Slider 貼到右側，讓它成為這個節點的內建變數。' : 'Drop a Slider on the right edge to use it as an internal variable for this node.');
-    add('textNode', 'top', isZh ? '加入節點註解' : 'Attach note', isZh ? '把 Notebook 貼到上方，作為這個節點的註解。' : 'Drop a Notebook on the top edge to use it as a note for this node.', !slots.comment);
-  }
-
-  if (node.type === 'gateNode' || node.type === 'rangeNode') {
-    add('textNode', 'top', isZh ? '加入節點註解' : 'Attach note', isZh ? '把 Notebook 貼到上方，作為這個節點的註解。' : 'Drop a Notebook on the top edge to use it as a note for this node.', !slots.comment);
-  }
-
-  return items;
-}
-
 function Flow() {
   const { t, language } = useLanguage();
   const {
     nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, addNodes, removeNode,
     handleProximitySnap, updatePluginHint, setAltPressed, setCtrlPressed, theme,
     isSidebarOpen, setDeletingHover, draggingEjectPos, hoveredNodeId,
-    setHoveredNodeId, updateNodeDimensions, isAltPressed, undo, redo, takeSnapshot
+    setHoveredNodeId, updateNodeDimensions, isAltPressed, undo, redo, takeSnapshot, sliceEdges
   } = useStore(useShallow(state => ({
     nodes: state.nodes,
     edges: state.edges,
@@ -116,7 +60,8 @@ function Flow() {
     isAltPressed: state.isAltPressed,
     undo: state.undo,
     redo: state.redo,
-    takeSnapshot: state.takeSnapshot
+    takeSnapshot: state.takeSnapshot,
+    sliceEdges: state.sliceEdges
   })));
   const communityTemplates = useStore(state => state.communityTemplates);
   const pluginHint = useStore(state => state.pluginHint);
@@ -129,16 +74,39 @@ function Flow() {
   const connectingNodeRef = useRef<{ nodeId: string, handleId: string, handleType: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isShiftPressed, setIsShiftPressed] = useState(false);
-  const [idleTooltip, setIdleTooltip] = useState<{ x: number, y: number } | null>(null);
+  const [isCtrlPressed, setIsCtrlPressedState] = useState(false);
+  const [lastFlowPos, setLastFlowPos] = useState<{ x: number, y: number } | null>(null);
+  const [bladeTrail, setBladeTrail] = useState<{ x: number, y: number, id: number }[]>([]);
+  const [idleTooltip, setIdleTooltip] = useState<{ x: number, y: number, text?: React.ReactNode } | null>(null);
+  const [dataTooltip, setDataTooltip] = useState<{ x: number, y: number, text: React.ReactNode } | null>(null);
   const [isExplainMode, setIsExplainMode] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const idleTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
+    const handleCustomTooltip = (e: CustomEvent) => {
+      if (!isExplainMode) {
+          setDataTooltip(null);
+          return;
+      }
+      if (e.detail) {
+        setDataTooltip(e.detail);
+      } else {
+        setDataTooltip(null);
+      }
+    };
+    window.addEventListener('setTooltip', handleCustomTooltip as EventListener);
+    return () => window.removeEventListener('setTooltip', handleCustomTooltip as EventListener);
+  }, [isExplainMode]);
+
+  useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Shift') setIsShiftPressed(e.type === 'keydown');
       if (e.key === 'Alt') setAltPressed(e.type === 'keydown');
-      if (e.key === 'Control' || e.key === 'Meta') setCtrlPressed(e.type === 'keydown');
+      if (e.key === 'Control' || e.key === 'Meta') {
+        setCtrlPressed(e.type === 'keydown');
+        setIsCtrlPressedState(e.type === 'keydown');
+      }
       if (e.type === 'keydown' && e.key.toLowerCase() === 'm' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         const target = e.target as HTMLElement | null;
         const tagName = target?.tagName;
@@ -224,69 +192,7 @@ function Flow() {
     return searchQuery.trim().length > 0;
   });
 
-  const explainNode = useMemo(
-    () => nodes.find(node => node.id === hoveredNodeId) ?? null,
-    [hoveredNodeId, nodes]
-  );
-  const explainDefinition = explainNode ? getNodeDefinition(explainNode.type || '') : null;
-  const explainOpportunities = useMemo(
-    () => (explainNode ? getExplainPluginOpportunities(explainNode, language) : []),
-    [explainNode, language]
-  );
-  const explainSides = Array.from(new Set(explainOpportunities.map(item => item.side)));
-  const explainSideLabels = EXPLAIN_SIDE_LABELS[language];
-  const explainNodeRect = useMemo(() => {
-    if (!isExplainMode || !explainNode) return null;
-    const width = explainNode.measured?.width || explainNode.width || 200;
-    const height = explainNode.measured?.height || explainNode.height || 100;
-    
-    // Transform coordinates properly taking into account the zoom scale
-    const topLeft = flowToScreenPosition({ x: explainNode.position.x, y: explainNode.position.y });
-    const bottomRight = flowToScreenPosition({ x: explainNode.position.x + width, y: explainNode.position.y + height });
-    
-    return { 
-       left: topLeft.x, 
-       top: topLeft.y, 
-       width: bottomRight.x - topLeft.x, 
-       height: bottomRight.y - topLeft.y 
-    };
-  }, [explainNode, flowToScreenPosition, isExplainMode]);
-  const explainDescription = explainDefinition?.metadata.desc || explainNode?.data.templateSummary || '';
-  const explainTitle = explainNode?.data.label || explainDefinition?.metadata.label || explainNode?.type || '';
-  const explainCategory = explainDefinition?.metadata.category || '';
-  const explainInfoWidth = 260;
-  const explainSlotsWidth = 320;
-  const explainPanelHeight = 420;
-
-  const explainPositions = useMemo(() => {
-    if (!isExplainMode || !explainNodeRect || typeof window === 'undefined') return null;
-
-    // Ideal positions: sandwich the node
-    let leftPanelX = explainNodeRect.left - explainInfoWidth - 24;
-    let rightPanelX = explainNodeRect.left + explainNodeRect.width + 24;
-
-    // Bounds check
-    const isLeftSafe = leftPanelX >= 20;
-    const isRightSafe = rightPanelX + explainSlotsWidth <= window.innerWidth - 20;
-
-    // If sandwich is impossible, stack them on the side that has more space
-    if (!isLeftSafe && !isRightSafe) {
-      leftPanelX = 20;
-      rightPanelX = leftPanelX + explainInfoWidth + 16;
-    } else if (!isLeftSafe) {
-      leftPanelX = rightPanelX;
-      rightPanelX += explainInfoWidth + 16;
-    } else if (!isRightSafe) {
-      rightPanelX = leftPanelX;
-      leftPanelX -= explainSlotsWidth + 16;
-    }
-
-    const top = Math.min(
-      Math.max(20, explainNodeRect.top - 16),
-      Math.max(20, window.innerHeight - explainPanelHeight - 20)
-    );
-    return { infoPos: { x: leftPanelX, y: top }, slotsPos: { x: rightPanelX, y: top } };
-  }, [explainNodeRect, isExplainMode]);
+  const explainNodeId = isExplainMode ? hoveredNodeId : null;
 
   const onPaneContextMenu = useCallback((e: MouseEvent | React.MouseEvent | PaneMenuEvent) => {
     e.preventDefault();
@@ -359,7 +265,7 @@ function Flow() {
     const position = screenToFlowPosition({ x: posSource.x, y: posSource.y });
     const def = getNodeDefinition(type);
     const template = templateId ? communityTemplates.find(t => t.id === templateId) : null;
-    const handles = template ? getTemplateInternalHandles(template).map(handle => ({
+    const handles = template ? getTemplateHandles(template).map(handle => ({
       id: handle.id,
       type: handle.type,
       position: handle.position,
@@ -522,6 +428,23 @@ function Flow() {
 
           if (idleTooltip) setIdleTooltip(null);
           if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+
+          const currentFlowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+          
+          // [SLICING] Handle Shift + Command slicing
+          if (isShiftPressed && isCtrlPressed) {
+            if (lastFlowPos) {
+              sliceEdges(lastFlowPos, currentFlowPos);
+            }
+            setLastFlowPos(currentFlowPos);
+            
+            // Add to trail for visual effect
+            setBladeTrail(prev => [...prev.slice(-15), { ...currentFlowPos, id: Date.now() }]);
+          } else {
+            if (lastFlowPos) setLastFlowPos(null);
+            if (bladeTrail.length > 0) setBladeTrail([]);
+          }
+
           const target = e.target as HTMLElement;
           if (target.classList.contains('react-flow__pane') && !paneMenu && !radialMenu && !nodeMenu) {
             const { clientX, clientY } = e;
@@ -582,6 +505,44 @@ function Flow() {
         onNodeContextMenu={onNodeContextMenu}
         onNodeMouseEnter={(_e, node) => setHoveredNodeId(node.id)}
         onNodeMouseLeave={() => setHoveredNodeId(null)}
+        onEdgeMouseEnter={(e, edge) => {
+          if (!isExplainMode) return;
+          const sourceNode = useStore.getState().nodes.find(n => n.id === edge.source);
+          if (sourceNode) {
+            let val = sourceNode.data.value;
+            let type = 'Any';
+            if (edge.sourceHandle) {
+               val = sourceNode.data.outputs?.[edge.sourceHandle] ?? val;
+               const typedVal = sourceNode.data.typedOutputs?.[edge.sourceHandle];
+               if (typedVal) type = typedVal.type;
+               else if (!isNaN(Number(val))) type = 'Number';
+               else if (typeof val === 'string') type = 'String';
+            }
+            setDataTooltip({
+                x: e.clientX,
+                y: e.clientY - 40,
+                text: (
+                    <div style={{ textAlign: 'left', minWidth: isShiftPressed ? '180px' : 'auto' }}>
+                        <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>{isShiftPressed ? 'Full Metadata' : 'Data transmitted:'}</div>
+                        <div style={{ fontFamily: 'monospace', fontWeight: 'bold', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>
+                             {isShiftPressed ? JSON.stringify(val, null, 2) : String(val ?? 'undefined')}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--accent)', marginTop: 2 }}>{type}</div>
+                        {isShiftPressed && (
+                             <div style={{ fontSize: '0.65rem', opacity: 0.5, marginTop: 8, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 4 }}>
+                                Source: {edge.source}<br/>
+                                Handle: {edge.sourceHandle || 'default'}
+                             </div>
+                        )}
+                        {!isShiftPressed && <div style={{ fontSize: '0.6rem', opacity: 0.4, marginTop: 4 }}>Hold Shift for metadata</div>}
+                    </div>
+                )
+            });
+          }
+        }}
+        onEdgeMouseLeave={() => {
+          if (isExplainMode) setDataTooltip(null);
+        }}
         onClick={closeMenus}
 
         fitView
@@ -605,7 +566,10 @@ function Flow() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && filteredLibrary.length > 0) handleAddNode(filteredLibrary[0].type);
+                if (e.key === 'Enter' && filteredLibrary.length > 0) {
+                  const firstItem = filteredLibrary[0];
+                  handleAddNode(firstItem.type, undefined, undefined, firstItem.templateId);
+                }
                 else if (e.key === 'Escape') setPaneMenu(null);
               }}
             />
@@ -616,7 +580,7 @@ function Flow() {
                 <React.Fragment key={cat}>
                   <div className="command-category">{t(`categories.${cat.toLowerCase()}`)}</div>
                   {filteredLibrary.filter(n => n.category === cat).map(item => (
-                    <div key={item.type} className="command-item" onClick={() => handleAddNode(item.type)}>
+                    <div key={item.templateId || item.type} className="command-item" onClick={() => handleAddNode(item.type, undefined, undefined, item.templateId)}>
                       <div className="command-icon" style={{ '--theme-color': item.color } as React.CSSProperties}>{item.icon}</div>
                       <div className="command-info"><span className="command-label">{item.label}</span><span className="command-desc">{item.desc}</span></div>
                     </div>
@@ -728,227 +692,12 @@ function Flow() {
         </span>
       </div>
 
-      {isExplainMode && explainNodeRect && createPortal(
-        <div
-          style={{
-            position: 'fixed',
-            left: explainNodeRect.left - 8,
-            top: explainNodeRect.top - 8,
-            width: explainNodeRect.width + 16,
-            height: explainNodeRect.height + 16,
-            borderRadius: 24,
-            pointerEvents: 'none',
-            zIndex: 99990,
-            boxShadow: [
-              explainSides.includes('top') ? 'inset 0 4px 0 rgba(74, 222, 128, 0.95)' : '',
-              explainSides.includes('right') ? 'inset -4px 0 0 rgba(74, 222, 128, 0.95)' : '',
-              explainSides.includes('bottom') ? 'inset 0 -4px 0 rgba(74, 222, 128, 0.95)' : '',
-              explainSides.includes('left') ? 'inset 4px 0 0 rgba(74, 222, 128, 0.95)' : '',
-            ].filter(Boolean).join(', '),
-            background: 'rgba(74, 222, 128, 0.04)',
-            outline: '1px solid rgba(74, 222, 128, 0.18)',
-          }}
-        >
-          {explainSides.map((side) => {
-            const markerStyle: React.CSSProperties = {
-              position: 'absolute',
-              color: '#4ade80',
-              fontSize: '1rem',
-              fontWeight: 800,
-              textShadow: '0 0 10px rgba(74, 222, 128, 0.55)',
-            };
-            if (side === 'top') Object.assign(markerStyle, { top: -14, left: '50%', transform: 'translateX(-50%)' });
-            if (side === 'right') Object.assign(markerStyle, { right: -14, top: '50%', transform: 'translateY(-50%)' });
-            if (side === 'bottom') Object.assign(markerStyle, { bottom: -14, left: '50%', transform: 'translateX(-50%)' });
-            if (side === 'left') Object.assign(markerStyle, { left: -14, top: '50%', transform: 'translateY(-50%)' });
-            return <div key={side} style={markerStyle}>{EXPLAIN_SIDE_ARROWS[side]}</div>;
-          })}
-        </div>,
-        document.body
-      )}
-
-      {isExplainMode && explainPositions && explainNode && createPortal(
-        <>
-          {/* Left Panel: Information */}
-          <div
-            style={{
-              position: 'fixed',
-              left: explainPositions.infoPos.x,
-              top: explainPositions.infoPos.y,
-              width: explainInfoWidth,
-              maxHeight: explainPanelHeight,
-              overflowY: 'auto',
-              zIndex: 99995,
-              borderRadius: 24,
-              border: '1px solid var(--border-node)',
-              background: theme === 'dark'
-                ? 'linear-gradient(180deg, rgba(15, 20, 15, 0.98), rgba(10, 12, 10, 0.96))'
-                : 'linear-gradient(180deg, #ffffff, #fdfcf7)',
-              backdropFilter: 'blur(20px)',
-              color: 'var(--text-main)',
-              boxShadow: theme === 'dark' ? '0 28px 60px rgba(0,0,0,0.6)' : 'var(--node-shadow)',
-              padding: '24px 20px',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-              <div
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 12,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: 'var(--bg-input)',
-                  color: explainDefinition?.metadata.color || 'var(--text-main)',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-                }}
-              >
-                {explainDefinition?.metadata.icon || <Icons.Comment />}
-              </div>
-              <div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>{explainTitle}</div>
-                <div style={{ fontSize: '0.72rem', opacity: 0.55, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                  {explainCategory}
-                </div>
-              </div>
-            </div>
-
-            <div style={{ fontSize: '0.9rem', lineHeight: 1.65, opacity: 0.85, marginBottom: 20 }}>
-              {explainDescription || (language === 'zh-TW' ? '這個節點目前沒有額外說明。' : 'No extra description is available for this node yet.')}
-            </div>
-
-            <div
-              style={{
-                borderRadius: 16,
-                padding: '16px 16px 14px',
-                background: 'var(--accent-light)',
-                border: '1px solid var(--border-input)',
-              }}
-            >
-              <div style={{ fontSize: '0.72rem', opacity: 0.6, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>
-                {language === 'zh-TW' ? '探索與擴充' : 'Explore & Extend'}
-              </div>
-              <div style={{ fontSize: '0.85rem', lineHeight: 1.6 }}>
-                {language === 'zh-TW'
-                  ? '綠色的發光邊框表示強大的「插槽」。將右側的插件拖曳到邊緣，或是直接點擊即可快速擴充功能。'
-                  : 'Green glowing edges represent powerful "slots". Drag nodes to the edge or click the plugins on the right to extend functionality.'}
-              </div>
-            </div>
-          </div>
-
-          {/* Right Panel: Pluggable Slots */}
-          <div
-            style={{
-              position: 'fixed',
-              left: explainPositions.slotsPos.x,
-              top: explainPositions.slotsPos.y,
-              width: explainSlotsWidth,
-              maxHeight: explainPanelHeight,
-              overflowY: 'auto',
-              zIndex: 99995,
-              borderRadius: 24,
-              border: '1px solid var(--border-node)',
-              background: theme === 'dark'
-                ? 'linear-gradient(180deg, rgba(8, 22, 12, 0.96), rgba(8, 11, 10, 0.96))'
-                : 'linear-gradient(180deg, #f0fdf4, #ffffff)',
-              backdropFilter: 'blur(20px)',
-              color: 'var(--text-main)',
-              boxShadow: theme === 'dark' ? '0 28px 60px rgba(0,0,0,0.6)' : 'var(--node-shadow)',
-              padding: '24px 20px',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <div style={{ fontSize: '0.8rem', opacity: 0.62, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                {language === 'zh-TW' ? '可搭配的插件' : 'Pluggable Plugins'}
-              </div>
-              <div style={{ fontSize: '0.78rem', color: '#4ade80', fontWeight: 700, background: 'rgba(74, 222, 128, 0.15)', padding: '2px 8px', borderRadius: 12 }}>
-                {explainOpportunities.length} {language === 'zh-TW' ? '可用' : 'Slots'}
-              </div>
-            </div>
-
-            {explainOpportunities.length > 0 ? explainOpportunities.map((item, index) => {
-              const sourceDefinition = getNodeDefinition(item.sourceType);
-              return (
-                <div
-                  key={`${item.sourceType}-${item.side}-${index}`}
-                  style={{
-                    padding: '14px',
-                    borderRadius: 16,
-                    marginBottom: 12,
-                    background: theme === 'dark' ? 'rgba(74, 222, 128, 0.05)' : 'rgba(74, 222, 128, 0.08)',
-                    border: `1px solid ${theme === 'dark' ? 'rgba(74, 222, 128, 0.16)' : 'rgba(74, 222, 128, 0.3)'}`,
-                    borderLeft: item.side === 'left' ? '4px solid #4ade80' : `1px solid ${theme === 'dark' ? 'rgba(74, 222, 128, 0.16)' : 'rgba(74, 222, 128, 0.3)'}`,
-                    borderRight: item.side === 'right' ? '4px solid #4ade80' : undefined,
-                    borderTop: item.side === 'top' ? '4px solid #4ade80' : undefined,
-                    borderBottom: item.side === 'bottom' ? '4px solid #4ade80' : undefined,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 8px 20px rgba(74, 222, 128, 0.15)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
-                  onClick={() => {
-                    // Get current target block flow position
-                    const nodeLeft = explainNode.position.x;
-                    const nodeTop = explainNode.position.y;
-                    const nodeW = explainNode.measured?.width || explainNode.width || 200;
-                    const nodeH = explainNode.measured?.height || explainNode.height || 100;
-
-                    // Calculate where the new node should drop (Flow coordinates)
-                    let customPos = { x: nodeLeft, y: nodeTop };
-                    if (item.side === 'left') customPos = { x: nodeLeft - 240, y: nodeTop };
-                    if (item.side === 'right') customPos = { x: nodeLeft + nodeW + 40, y: nodeTop };
-                    if (item.side === 'top') customPos = { x: nodeLeft, y: nodeTop - 150 };
-                    if (item.side === 'bottom') customPos = { x: nodeLeft, y: nodeTop + nodeH + 40 };
-
-                    // Add node via command (Convert back to Screen so handleAddNode can handle it)
-                    handleAddNode(item.sourceType, undefined, flowToScreenPosition(customPos));
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                      <span style={{ color: sourceDefinition?.metadata.color || '#4ade80', display: 'inline-flex', alignItems: 'center', background: 'var(--bg-input)', padding: 6, borderRadius: 8 }}>
-                        {sourceDefinition?.metadata.icon || <Icons.Grid />}
-                      </span>
-                      <span style={{ fontWeight: 700, fontSize: '0.92rem' }}>{item.title}</span>
-                    </div>
-                    <span style={{ color: '#4ade80', fontSize: '0.76rem', fontWeight: 700, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
-                      {EXPLAIN_SIDE_ARROWS[item.side]} {explainSideLabels[item.side]}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: '0.82rem', lineHeight: 1.55, opacity: 0.82 }}>
-                    {item.detail}
-                  </div>
-                </div>
-              );
-            }) : (
-              <div
-                style={{
-                  padding: '16px',
-                  borderRadius: 16,
-                  background: 'var(--bg-input)',
-                  border: '1px dashed var(--border-input)',
-                  fontSize: '0.84rem',
-                  lineHeight: 1.6,
-                  opacity: 0.82,
-                  textAlign: 'center'
-                }}
-              >
-                {language === 'zh-TW'
-                  ? '這個節點目前沒有可擴充的插槽。'
-                  : 'This node currently has no expandable slots.'}
-              </div>
-            )}
-          </div>
-        </>
-        , document.body
-      )}
+      <ExplainOverlay 
+        isOpen={isExplainMode} 
+        targetNodeId={explainNodeId} 
+        isDataTooltipActive={!!dataTooltip} 
+        onAddNode={handleAddNode} 
+      />
 
       {draggingEjectPos && createPortal(
         <svg style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 99999, width: '100vw', height: '100vh' }}>
@@ -962,6 +711,28 @@ function Flow() {
         </svg>,
         document.body
       )}
+
+      {/* [NEW] Blade Trail Effect */}
+      <svg style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 99999, width: '100vw', height: '100vh' }}>
+        <defs>
+          <filter id="blade-glow"><feGaussianBlur stdDeviation="2.5" result="blur"/><feComposite in="SourceGraphic" in2="blur" operator="over"/></filter>
+        </defs>
+        {bladeTrail.length > 1 && (
+          <path 
+            d={bladeTrail.map((p, i) => {
+              const screenP = flowToScreenPosition(p);
+              return `${i === 0 ? 'M' : 'L'} ${screenP.x} ${screenP.y}`;
+            }).join(' ')}
+            fill="none"
+            stroke="#ff3e00"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            filter="url(#blade-glow)"
+            style={{ opacity: 0.8, transition: 'opacity 0.2s' }}
+          />
+        )}
+      </svg>
 
       {pluginHint && (() => {
         const targetNode = nodes.find(n => n.id === pluginHint.targetId);
@@ -998,6 +769,28 @@ function Flow() {
           document.body
         );
       })()}
+
+      {dataTooltip && createPortal(
+        <div style={{
+            position: 'fixed',
+            left: dataTooltip.x,
+            top: dataTooltip.y,
+            transform: 'translateX(-50%) translateY(-100%)',
+            background: 'var(--bg-node)',
+            border: '1px solid var(--border-node)',
+            padding: '8px 12px',
+            borderRadius: '12px',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.12)',
+            zIndex: 100000,
+            pointerEvents: 'none',
+            color: 'var(--text-main)',
+            backdropFilter: 'blur(10px)',
+            transition: 'opacity 0.2s',
+        }}>
+            {dataTooltip.text}
+        </div>,
+        document.body
+      )}
 
       <style>{`
         @keyframes eject-flow { from { stroke-dashoffset: 28; } to { stroke-dashoffset: 0; } }

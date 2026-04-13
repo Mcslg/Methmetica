@@ -70,14 +70,6 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
       }}
     >
       <div className="community-template-body">
-        <div className="community-template-summary">{template.summary}</div>
-
-        <div className="community-template-pill-row">
-          <span className="community-template-pill" style={{ borderColor: template.accent, color: template.accent }}>{template.category}</span>
-          <span className="community-template-pill">{template.visibility}</span>
-          <span className="community-template-pill">v{template.version}</span>
-        </div>
-
         {template.builderBlocks.length > 0 && (
           <div className="community-template-fields">
             {template.builderBlocks.map((block: TemplateBuilderBlock) => {
@@ -117,25 +109,6 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
           display: flex;
           flex-direction: column;
           gap: 12px;
-        }
-        .community-template-summary {
-          color: var(--text-main);
-          font-size: 0.9rem;
-          line-height: 1.5;
-        }
-        .community-template-pill-row {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 6px;
-        }
-        .community-template-pill {
-          border: 1px solid var(--border-node);
-          border-radius: 999px;
-          padding: 2px 8px;
-          font-size: 0.68rem;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          color: var(--text-sub);
         }
         .community-template-fields {
           display: grid;

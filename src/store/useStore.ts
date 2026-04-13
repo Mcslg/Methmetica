@@ -103,7 +103,8 @@ export type NodeData = {
     autoManagedTemplateNode?: boolean;
     readOnlyPreview?: boolean;
     supabaseWorkflowId?: string;
-    visibility?: WorkflowVisibility;
+     visibility?: WorkflowVisibility;
+    autoRun?: boolean; // For nodes that can toggle automatic execution
 };
 
 export type AppNode = Node<NodeData>;
@@ -141,6 +142,7 @@ export type AppState = {
     setCtrlPressed: (pressed: boolean) => void;
     theme: 'light' | 'dark';
     setTheme: (theme: 'light' | 'dark') => void;
+    sliceEdges: (start: { x: number, y: number }, end: { x: number, y: number }) => void;
     isSidebarOpen: boolean;
     setSidebarOpen: (open: boolean) => void;
     isDeletingHover: boolean;
@@ -262,6 +264,72 @@ const useStore = create<AppState>()(
                 }));
                 // Evaluate graph so calculation nodes re-run immediately with the new global var
                 get().evaluateGraph();
+            },
+
+            sliceEdges: (start, end) => {
+                const { edges, nodes } = get();
+                const edgesToRemove: string[] = [];
+
+                // Helper: Line-Line intersection
+                const intersect = (p1: any, p2: any, p3: any, p4: any) => {
+                    const det = (p2.x - p1.x) * (p4.y - p3.y) - (p2.y - p1.y) * (p4.x - p3.x);
+                    if (det === 0) return false;
+                    const lambda = ((p4.y - p3.y) * (p4.x - p1.x) + (p3.x - p4.x) * (p4.y - p1.y)) / det;
+                    const gamma = ((p1.y - p2.y) * (p4.x - p1.x) + (p2.x - p1.x) * (p4.y - p1.y)) / det;
+                    return (0 < lambda && lambda < 1) && (0 < gamma && gamma < 1);
+                };
+
+                // Simple Bézier sampler
+                const getBezierPoint = (t: number, p0: any, p1: any, p2: any, p3: any) => {
+                    const cx = 3 * (p1.x - p0.x);
+                    const bx = 3 * (p2.x - p1.x) - cx;
+                    const ax = p3.x - p0.x - cx - bx;
+                    const cy = 3 * (p1.y - p0.y);
+                    const by = 3 * (p2.y - p1.y) - cy;
+                    const ay = p3.y - p0.y - cy - by;
+                    const x = (ax * Math.pow(t, 3)) + (bx * Math.pow(t, 2)) + (cx * t) + p0.x;
+                    const y = (ay * Math.pow(t, 3)) + (by * Math.pow(t, 2)) + (cy * t) + p0.y;
+                    return { x, y };
+                };
+
+                edges.forEach(edge => {
+                    const sourceNode = nodes.find(n => n.id === edge.source);
+                    const targetNode = nodes.find(n => n.id === edge.target);
+                    if (!sourceNode || !targetNode) return;
+
+                    // Approximation of React Flow's edge paths
+                    // We'll use 10 samples to check for intersection
+                    const p0 = { 
+                        x: sourceNode.position.x + (sourceNode.measured?.width ?? 200) / 2, 
+                        y: sourceNode.position.y + (sourceNode.measured?.height ?? 100) / 2 
+                    };
+                    const p3 = { 
+                        x: targetNode.position.x + (targetNode.measured?.width ?? 200) / 2, 
+                        y: targetNode.position.y + (targetNode.measured?.height ?? 100) / 2 
+                    };
+                    
+                    // For better accuracy, we should use handle positions, but even center-to-center bounding box helps.
+                    // React Flow's default Bézier usually has control points offset horizontally or vertically.
+                    const dx = Math.abs(p3.x - p0.x);
+                    const p1 = { x: p0.x + dx / 2, y: p0.y };
+                    const p2 = { x: p3.x - dx / 2, y: p3.y };
+
+                    let prevPoint = p0;
+                    for (let i = 1; i <= 10; i++) {
+                        const currPoint = getBezierPoint(i / 10, p0, p1, p2, p3);
+                        if (intersect(start, end, prevPoint, currPoint)) {
+                            edgesToRemove.push(edge.id);
+                            break;
+                        }
+                        prevPoint = currPoint;
+                    }
+                });
+
+                if (edgesToRemove.length > 0) {
+                    get().takeSnapshot();
+                    set({ edges: edges.filter(e => !edgesToRemove.includes(e.id)) });
+                    get().evaluateGraph();
+                }
             },
 
             undoStack: [],
@@ -709,8 +777,26 @@ const useStore = create<AppState>()(
         }
 
         // Trigger execution for nodes that should auto-run on data change
-        if (node.type === 'numberNode' || node.type === 'functionNode' || node.type === 'calculateNode' || node.type === 'gateNode' || node.type === 'rangeNode') {
-            get().executeNode(nodeId);
+        const isExecutionTrigger = 
+            normalizedPatch.code !== undefined || 
+            normalizedPatch.input !== undefined || 
+            normalizedPatch.inputs !== undefined || 
+            normalizedPatch.formula !== undefined ||
+            normalizedPatch.rangeDef !== undefined;
+
+        if (isExecutionTrigger) {
+            if (
+                node.type === 'numberNode' || 
+                node.type === 'functionNode' || 
+                node.type === 'calculateNode' || 
+                node.type === 'gateNode' || 
+                node.type === 'rangeNode' ||
+                (node.type === 'codeNode' && nextData.autoRun)
+            ) {
+                get().executeNode(nodeId);
+            } else {
+                get().evaluateGraph();
+            }
         } else {
             get().evaluateGraph();
         }

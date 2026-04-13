@@ -64,6 +64,17 @@ const transformGlobalDeclarations = (code: string) =>
         return `${indent}const ${name} = helpers.setGlobal('${normalizedName}', (${expression}));`;
     });
 
+const buildOutputCollectionTrailer = (outputNames: string[]) => {
+    if (outputNames.length === 0) return '';
+
+    const assignments = outputNames.map(name => {
+        const quotedName = JSON.stringify(name);
+        return `if (typeof ${name} !== 'undefined') outputs[${quotedName}] = ${name};`;
+    }).join('\n');
+
+    return `\n${assignments}`;
+};
+
 const buildInputs = (node: AppNode) => {
     const inputs: Record<string, unknown> = {};
     const handleMap = new Map((node.data.handles || []).map(handle => [handle.id, handle.label || handle.id]));
@@ -137,8 +148,8 @@ export const executeCodeNode = async (node: AppNode, state: AppState): Promise<v
     let baseCode = node.data.code?.trim() || defaultCode;
     
     // [NEW] Extract input & output declarations
-    const INPUT_DECLARATION_REGEX = /^\s*input\s+([A-Za-z_$][\w$]*)\s+as\s+\[([a-zA-Z_]+)\]\s*$/gm;
-    const OUTPUT_DECLARATION_REGEX = /^\s*output\s+([A-Za-z_$][\w$]*)\s+as\s+\[([a-zA-Z_]+)\]\s*$/gm;
+    const INPUT_DECLARATION_REGEX = /^\s*input\s+([A-Za-z_$][\w$]*)\s+as\s+([\[\]a-zA-Z_]+)\s*$/gm;
+    const OUTPUT_DECLARATION_REGEX = /^\s*output\s+([A-Za-z_$][\w$]*)\s+as\s+([\[\]a-zA-Z_]+)\s*$/gm;
     
     const declaredVars: string[] = [];
     const outputDeclarations: Record<string, string> = {};
@@ -155,7 +166,8 @@ export const executeCodeNode = async (node: AppNode, state: AppState): Promise<v
     // Inject destructured variables
     const preamble = declaredVars.length > 0 ? `const { ${declaredVars.join(', ')} } = inputs;\n` : '';
     
-    const code = transformGlobalDeclarations(preamble + strippedCode);
+    const outputNames = Object.keys(outputDeclarations);
+    const code = transformGlobalDeclarations(preamble + strippedCode + buildOutputCollectionTrailer(outputNames));
     const inputs = buildInputs(node);
     const typedInputs = buildTypedInputs(node);
     const globals = buildGlobals(state);
@@ -219,25 +231,44 @@ export const executeCodeNode = async (node: AppNode, state: AppState): Promise<v
             }
         });
 
-        state.updateNodeData(node.id, {
-            value: resultText,
-            error: errorText || undefined,
-            outputs: newOutputs,
-            typedOutputs: newTypedOutputs
-        });
-        state.evaluateGraph();
+        // Only update if something actually changed to prevent infinite loops and spam
+        const currentData = node.data;
+        const hasDataChanged = 
+            currentData.value !== resultText ||
+            currentData.error !== (errorText || undefined) ||
+            JSON.stringify(currentData.outputs) !== JSON.stringify(newOutputs) ||
+            JSON.stringify(currentData.typedOutputs) !== JSON.stringify(newTypedOutputs);
+
+        if (hasDataChanged) {
+            state.updateNodeData(node.id, {
+                value: resultText,
+                error: errorText || undefined,
+                outputs: newOutputs,
+                typedOutputs: newTypedOutputs
+            });
+            state.evaluateGraph();
+        }
     } catch (error) {
         const message = typeof error === 'string' ? error : (error instanceof Error ? error.message : String(error));
-        state.updateNodeData(node.id, {
-            value: '',
-            error: message,
-            outputs: {
-                'h-result': '',
-                'h-error': message,
-            },
-            typedOutputs: {}
-        });
-        state.evaluateGraph();
+        const currentData = node.data;
+        const newOutputs = {
+            'h-result': '',
+            'h-error': message,
+        };
+        
+        const hasErrorChanged = 
+            currentData.error !== message ||
+            JSON.stringify(currentData.outputs) !== JSON.stringify(newOutputs);
+
+        if (hasErrorChanged) {
+            state.updateNodeData(node.id, {
+                value: '',
+                error: message,
+                outputs: newOutputs,
+                typedOutputs: {}
+            });
+            state.evaluateGraph();
+        }
     }
 };
 
@@ -249,8 +280,8 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
 
     // [NEW] Sync handles based on input/output declarations
     useEffect(() => {
-        const INPUT_DECLARATION_REGEX = /^\s*input\s+([A-Za-z_$][\w$]*)\s+as\s+\[([a-zA-Z_]+)\]\s*$/gm;
-        const OUTPUT_DECLARATION_REGEX = /^\s*output\s+([A-Za-z_$][\w$]*)\s+as\s+\[([a-zA-Z_]+)\]\s*$/gm;
+        const INPUT_DECLARATION_REGEX = /^\s*input\s+([A-Za-z_$][\w$]*)\s+as\s+([\[\]a-zA-Z_]+)\s*$/gm;
+        const OUTPUT_DECLARATION_REGEX = /^\s*output\s+([A-Za-z_$][\w$]*)\s+as\s+([\[\]a-zA-Z_]+)\s*$/gm;
         
         const newInputs: { name: string, type: string }[] = [];
         Array.from(currentCode.matchAll(INPUT_DECLARATION_REGEX)).forEach(match => newInputs.push({ name: match[1], type: match[2] }));
@@ -258,6 +289,7 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
         const newOutputs: { name: string, type: string }[] = [];
         Array.from(currentCode.matchAll(OUTPUT_DECLARATION_REGEX)).forEach(match => newOutputs.push({ name: match[1], type: match[2] }));
 
+        const hasReturn = /\breturn\b/.test(currentCode);
         const currentHandles = data.handles || [];
         
         let newInputHandles: any[] = [];
@@ -269,7 +301,9 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
                     type: 'input',
                     position: 'left',
                     offset: (index + 1) * spacing,
-                    label: inp.name
+                    label: inp.name,
+                    declaredType: inp.type,
+                    description: `Custom input variable: ${inp.name}`
                 };
             });
         } else {
@@ -286,18 +320,18 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
                     type: 'output',
                     position: 'right',
                     offset: (index + 1) * spacing,
-                    label: out.name
+                    label: out.name,
+                    declaredType: out.type,
+                    description: `Declared custom output: ${out.name}`
                 };
             });
         }
 
-        const baseOutputHandles = currentHandles.filter((h: any) => h.type === 'output' && (h.id === 'h-result' || h.id === 'h-error'));
-        if (baseOutputHandles.length === 0) {
-            baseOutputHandles.push(
-                { id: 'h-result', type: 'output', position: 'right', offset: 33 },
-                { id: 'h-error', type: 'output', position: 'right', offset: 66 }
-            );
+        const baseOutputHandles: any[] = [];
+        if (hasReturn) {
+            baseOutputHandles.push({ id: 'h-result', type: 'output', position: 'right', offset: 33, description: 'The value returned by the code' });
         }
+        baseOutputHandles.push({ id: 'h-error', type: 'output', position: 'right', offset: 66, description: 'Any runtime errors captured' });
 
         const nextHandles = [...newInputHandles, ...newOutputHandles, ...baseOutputHandles];
 
@@ -306,6 +340,14 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
             requestAnimationFrame(() => updateNodeData(id, { handles: nextHandles }));
         }
     }, [currentCode, id, updateNodeData, data.handles]);
+
+    useEffect(() => {
+        if (data.autoRun && (data.inputSignature || currentCode)) {
+            // Delay slightly to ensure store has settled
+            const timer = setTimeout(() => executeNode(id), 50);
+            return () => clearTimeout(timer);
+        }
+    }, [data.inputSignature, currentCode, data.autoRun, id, executeNode]);
 
     return (
         <NodeFrame
@@ -319,18 +361,38 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
             minHeight={220}
             onManualRun={() => executeNode(id, true)}
             headerExtras={
-                <button
-                    onClick={() => executeNode(id, true)}
-                    className="variant-toggle"
-                    style={{
-                        fontSize: '0.6rem',
-                        padding: '2px 6px',
-                        background: 'var(--accent)',
-                        color: '#fff'
-                    }}
-                >
-                    RUN
-                </button>
+                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    <button
+                        onClick={() => updateNodeData(id, { autoRun: !data.autoRun })}
+                        className="variant-toggle"
+                        style={{
+                            fontSize: '0.6rem',
+                            padding: '2px 6px',
+                            background: data.autoRun ? 'var(--accent)' : 'rgba(255,255,255,0.1)',
+                            color: data.autoRun ? '#fff' : 'rgba(255,255,255,0.5)',
+                            border: '1px solid currentColor',
+                            borderRadius: '4px',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        AUTO
+                    </button>
+                    <button
+                        onClick={() => executeNode(id, true)}
+                        className="variant-toggle"
+                        style={{
+                            fontSize: '0.6rem',
+                            padding: '2px 6px',
+                            background: 'var(--bg-input)',
+                            color: 'var(--text-main)',
+                            border: '1px solid var(--border-input)',
+                            borderRadius: '4px',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        RUN
+                    </button>
+                </div>
             }
             customHandleDescriptions={{
                 'h-in': 'Generic input value',

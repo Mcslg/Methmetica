@@ -9,24 +9,24 @@ Code Node 是 Methmetica 中最強大的邏輯節點，它提供了一層接近�
 你可以在程式碼的最上方使用宣告語法，節點會**自動即時生成**對應的連接孔 (Handles)。
 
 ### 輸入宣告 `input`
-語法：`input [變數名稱] as [[型別名稱]]`
+語法：`input [變數名稱] as [型別名稱]` (陣列型別請用 `[型別]`)
 *   **自動解構**：宣告後，你可以在後續程式碼直接使用 `[變數名稱]`，不需透過 `inputs.x`。
 *   **範例**：
     ```javascript
-    input x as [real]
-    input y as [real]
+    input x as real
+    input y as [real] // y 是一個實數陣列
     
-    return x + y; // 直接使用 x 和 y
+    return x; 
     ```
 
 ### 輸出宣告 `output`
-語法：`output [變數名稱] as [[型別名稱]]`
+語法：`output [變數名稱] as [型別名稱]`
 *   **多重輸出**：除了預設的 `Result` 輸出外，你可以定義多個命名輸出孔。
 *   **賦值方式**：使用系統注入的 `outputs` 物件進行賦值。
 *   **範例**：
     ```javascript
-    output quotient as [integer]
-    output remainder as [integer]
+    output quotient as integer
+    output remainder as integer
     
     outputs.quotient = Math.floor(a / b);
     outputs.remainder = a % b;

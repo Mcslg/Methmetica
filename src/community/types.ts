@@ -1,3 +1,7 @@
+import type { Edge } from '@xyflow/react';
+import type { CSSProperties } from 'react';
+import type { AppNode } from '../store/useStore';
+
 export type WorkflowVisibility = 'public' | 'private' | 'core';
 
 export type TemplateFieldKind = 'text' | 'textarea' | 'number' | 'select' | 'link';
@@ -68,6 +72,7 @@ export type CommunityNodeTemplate = {
   tags: string[];
   interfaceSchema?: TemplateInterfaceSchema;
   interfaceSchemaText?: string;
+  runtimePlan?: BuiltWorkflowNode;
   fields: TemplateFieldSpec[];
   inputs: TemplateHandleSpec[];
   outputs: TemplateHandleSpec[];
@@ -121,7 +126,13 @@ export type WorkflowBlueprint = {
   nodes: WorkflowGraphNode[];
   edges: WorkflowGraphEdge[];
 };
-import type { CSSProperties } from 'react';
+
+export type BuiltWorkflowNode = {
+  bridgeNodeId: string;
+  interfaceSchema: TemplateInterfaceSchema;
+  nodes: AppNode[];
+  edges: Edge[];
+};
 
 export const clonePortSpec = (port: TemplatePortSpec): TemplatePortSpec => ({ ...port });
 

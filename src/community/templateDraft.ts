@@ -11,6 +11,7 @@ const slugify = (value: string) => value
 export const cloneTemplate = (template: CommunityNodeTemplate): CommunityNodeTemplate => ({
   ...template,
   interfaceSchema: cloneInterfaceSchema(template.interfaceSchema),
+  runtimePlan: template.runtimePlan ? JSON.parse(JSON.stringify(template.runtimePlan)) : undefined,
   fields: template.fields.map(field => ({ ...field })),
   inputs: template.inputs.map(handle => ({ ...handle })),
   outputs: template.outputs.map(handle => ({ ...handle })),

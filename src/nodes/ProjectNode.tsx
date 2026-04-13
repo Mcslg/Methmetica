@@ -11,6 +11,7 @@ import { makeInitialDraft, syncDraftWithWorkflowMetadata } from '../community/te
 import { publishWorkflowToSupabase } from '../integrations/supabase/workflows';
 import { getUserRole } from '../integrations/supabase/auth';
 import { mathTypeCatalog, getAllCapabilities, getTypesByCapability } from '../config/mathTypeCatalog';
+import { buildWorkflowNode, runBuiltWorkflowNode } from '../utils/workflowTestRunner';
 
 const parseTags = (value: string) => value
   .split(',')
@@ -60,6 +61,28 @@ const normalizeInterfaceSchema = (schema: TemplateInterfaceSchema): TemplateInte
   inputs: normalizePortOffsets(schema.inputs),
   outputs: normalizePortOffsets(schema.outputs),
 });
+
+const attachRuntimePlan = (
+  draft: CommunityNodeTemplate,
+  params: { nodes: AppNode[]; edges: any[]; bridgeNodeId?: string | null }
+): CommunityNodeTemplate => {
+  if (!params.bridgeNodeId) return draft;
+
+  return {
+    ...draft,
+    runtimePlan: buildWorkflowNode({
+      sourceNodes: params.nodes,
+      sourceEdges: params.edges,
+      bridgeNodeId: params.bridgeNodeId,
+      interfaceSchema: getTemplateInterfaceSchema(draft),
+    }),
+  };
+};
+
+const stripRuntimePlan = (draft: CommunityNodeTemplate): CommunityNodeTemplate => {
+  const { runtimePlan: _runtimePlan, ...rest } = draft;
+  return rest;
+};
 
 function SearchableConstraintSelect({
   value,
@@ -152,6 +175,8 @@ function SearchableConstraintSelect({
 export const ProjectNode = React.memo(function ProjectNode({ id, data, selected }: NodeProps<AppNode>) {
   const { setViewport, getNodes } = useReactFlow();
   const updateNodeData = useStore(state => state.updateNodeData);
+  const nodes = useStore(state => state.nodes);
+  const edges = useStore(state => state.edges);
   const activeFileId = useStore(state => state.activeFileId);
   const upsertCommunityTemplate = useStore(state => state.upsertCommunityTemplate);
   const user = useStore(state => state.user);
@@ -167,6 +192,10 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
   const [localBuilderDraft, setLocalBuilderDraft] = React.useState<CommunityNodeTemplate | undefined>(
     stripLegacyInterfaceBlocks(data.builderDraft as CommunityNodeTemplate | undefined)
   );
+  const [testInputs, setTestInputs] = React.useState<Record<string, string>>({});
+  const [testOutputs, setTestOutputs] = React.useState<Record<string, string>>({});
+  const [testStatus, setTestStatus] = React.useState('');
+  const [testTrace, setTestTrace] = React.useState<string[]>([]);
   const [isExpanded, setIsExpanded] = React.useState(true);
   const [isPublishing, setIsPublishing] = React.useState(false);
   const builderDraft = localBuilderDraft;
@@ -227,13 +256,14 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
       node => node.type === 'communityTemplateNode' && node.data?.builderSourceId === id && node.data?.autoManagedTemplateNode
     );
     const linkedTemplateNode = state.nodes.find(node => node.id === linkedTemplateNodeId) || managedTemplateNodes[0];
-    const packagedDraft = buildTemplateFromBlocks({
+    const packagedBase = buildTemplateFromBlocks({
       ...draft,
       slug: draft.slug || draft.id,
       version: draft.version || '1.0.0',
       discovery: 'search-only',
       visibility,
     });
+    const packagedDraft = stripRuntimePlan(packagedBase);
 
     const linkedNodeData = {
       label: packagedDraft.title || 'Community Template',
@@ -366,7 +396,58 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     setLocalBuilderDraft(stripLegacyInterfaceBlocks(syncDraftWithLocalMetadata(draft)));
   };
 
-  const activeInterfaceSchema = builderDraft ? getTemplateInterfaceSchema(builderDraft) : null;
+  const activeInterfaceSchema = React.useMemo(
+    () => builderDraft ? getTemplateInterfaceSchema(builderDraft) : null,
+    [builderDraft]
+  );
+
+  React.useEffect(() => {
+    if (!activeInterfaceSchema) return;
+
+    setTestInputs((current) => {
+      const next: Record<string, string> = {};
+      activeInterfaceSchema.inputs.forEach((port) => {
+        next[port.id] = current[port.id] ?? '';
+      });
+      return next;
+    });
+
+    setTestOutputs((current) => {
+      const next: Record<string, string> = {};
+      activeInterfaceSchema.outputs.forEach((port) => {
+        next[port.id] = current[port.id] ?? '';
+      });
+      return next;
+    });
+  }, [activeInterfaceSchema]);
+
+  const handleRunBehaviorTest = React.useCallback(async () => {
+    if (!activeInterfaceSchema) return;
+    const bridgeNodeId = linkedTemplateNodeId || nodes.find(node =>
+      node.type === 'communityTemplateNode' &&
+      node.data?.builderSourceId === id &&
+      node.data?.autoManagedTemplateNode
+    )?.id;
+
+    if (!bridgeNodeId) {
+      setTestStatus('找不到 template bridge node。請先建立 Builder Root。');
+      return;
+    }
+
+    setTestStatus('Running test...');
+    setTestTrace([]);
+    const builtNode = buildWorkflowNode({
+        sourceNodes: nodes,
+        sourceEdges: edges,
+        bridgeNodeId,
+        interfaceSchema: activeInterfaceSchema,
+      });
+    setLocalBuilderDraft((current) => current ? { ...current, runtimePlan: builtNode } : current);
+    const result = await runBuiltWorkflowNode(builtNode, testInputs);
+    setTestOutputs(result.outputs);
+    setTestStatus(result.error || 'Test complete.');
+    setTestTrace(result.trace);
+  }, [activeInterfaceSchema, edges, id, linkedTemplateNodeId, nodes, testInputs]);
 
   const handlePublish = async (draft: CommunityNodeTemplate) => {
     if (!user) {
@@ -401,13 +482,19 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     });
 
     try {
-      const packaged = buildTemplateFromBlocks({
+      const packagedBase = buildTemplateFromBlocks({
         ...syncedDraft,
         version: syncedDraft.version || '1.0.0',
         discovery: 'search-only',
         visibility: localVisibility,
       });
       const { nodes, edges } = useStore.getState();
+      const bridgeNodeId = linkedTemplateNodeId || nodes.find(node =>
+        node.type === 'communityTemplateNode' &&
+        node.data?.builderSourceId === id &&
+        node.data?.autoManagedTemplateNode
+      )?.id || `builder-template-${id}`;
+      const packaged = attachRuntimePlan(packagedBase, { nodes, edges, bridgeNodeId });
 
       const publishedNodes = nodes.map(node => (
         node.id === id
@@ -423,6 +510,14 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                 supabaseWorkflowId: data.supabaseWorkflowId,
               },
             }
+          : node.type === 'communityTemplateNode' && node.data?.builderSourceId === id && node.data?.autoManagedTemplateNode && node.data?.templateDraft
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  templateDraft: stripRuntimePlan(node.data.templateDraft as CommunityNodeTemplate),
+                },
+              }
           : node
       ));
 
@@ -824,6 +919,162 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                           >
                             ×
                           </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeInterfaceSchema && (
+                <div style={{
+                  display: 'grid',
+                  gap: '14px',
+                  padding: '14px',
+                  border: '1px solid rgba(56, 189, 248, 0.18)',
+                  borderRadius: '16px',
+                  background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(255,255,255,0.03))',
+                  marginBottom: '14px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                    <div>
+                      <strong style={{ display: 'block', color: 'var(--text-main)' }}>Test Node Behavior</strong>
+                      <p style={{ margin: '4px 0 0', color: 'var(--text-sub)', fontSize: '0.82rem' }}>
+                        外部使用視角的測試卡。這版先支援 bridge → CodeNode → bridge 的最小 workflow runtime。
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="builder-refresh-btn"
+                      onClick={handleRunBehaviorTest}
+                    >
+                      Run Test
+                    </button>
+                  </div>
+                  {testStatus && (
+                    <div style={{ color: testStatus.includes('找不到') || testStatus.includes('只支援') ? '#fca5a5' : 'var(--text-sub)', fontSize: '0.78rem' }}>
+                      {testStatus}
+                    </div>
+                  )}
+                  {testTrace.length > 0 && (
+                    <div style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: '6px',
+                      alignItems: 'center',
+                      color: 'var(--text-sub)',
+                      fontSize: '0.74rem'
+                    }}>
+                      <span>Trace:</span>
+                      {testTrace.map((item, index) => (
+                        <React.Fragment key={`${item}-${index}`}>
+                          {index > 0 && <span>→</span>}
+                          <span style={{
+                            padding: '2px 7px',
+                            border: '1px solid rgba(56,189,248,0.24)',
+                            borderRadius: '999px',
+                            color: '#93c5fd',
+                            background: 'rgba(56,189,248,0.08)'
+                          }}>
+                            {item}
+                          </span>
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{
+                    position: 'relative',
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(120px, 1fr) minmax(180px, 1.1fr) minmax(120px, 1fr)',
+                    gap: '14px',
+                    alignItems: 'center',
+                    padding: '12px',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: '18px',
+                    background: 'rgba(0,0,0,0.18)'
+                  }}>
+                    <div style={{ display: 'grid', gap: '10px' }}>
+                      {activeInterfaceSchema.inputs.length === 0 ? (
+                        <div style={{ color: 'var(--text-sub)', fontSize: '0.78rem' }}>No external inputs</div>
+                      ) : activeInterfaceSchema.inputs.map((port) => (
+                        <label
+                          key={port.id}
+                          className="nodrag"
+                          style={{
+                            display: 'grid',
+                            gap: '5px',
+                            padding: '8px',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: '12px',
+                            background: 'rgba(255,255,255,0.03)'
+                          }}
+                        >
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-sub)', fontSize: '0.72rem' }}>
+                            <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#38bdf8', boxShadow: '0 0 0 3px rgba(56,189,248,0.16)' }} />
+                            {port.label}
+                          </span>
+                          <input
+                            className="project-tags-input nodrag"
+                            value={testInputs[port.id] || ''}
+                            onChange={(event) => setTestInputs((current) => ({ ...current, [port.id]: event.target.value }))}
+                            placeholder={`value for ${port.label}`}
+                          />
+                        </label>
+                      ))}
+                    </div>
+
+                    <div style={{
+                      minHeight: '140px',
+                      display: 'grid',
+                      placeItems: 'center',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: '18px',
+                      background: 'radial-gradient(circle at 50% 0%, rgba(56,189,248,0.16), rgba(255,255,255,0.04) 58%, rgba(0,0,0,0.18))',
+                      boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.03)'
+                    }}>
+                      <div style={{ textAlign: 'center', display: 'grid', gap: '6px', padding: '16px' }}>
+                        <Icons.Package size={28} />
+                        <strong style={{ color: 'var(--text-main)' }}>{builderDraft.title || 'Community Template'}</strong>
+                        <span style={{ color: 'var(--text-sub)', fontSize: '0.76rem' }}>
+                          External preview node
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gap: '10px' }}>
+                      {activeInterfaceSchema.outputs.length === 0 ? (
+                        <div style={{ color: 'var(--text-sub)', fontSize: '0.78rem' }}>No external outputs</div>
+                      ) : activeInterfaceSchema.outputs.map((port) => (
+                        <div
+                          key={port.id}
+                          style={{
+                            display: 'grid',
+                            gap: '5px',
+                            padding: '8px',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: '12px',
+                            background: 'rgba(255,255,255,0.03)'
+                          }}
+                        >
+                          <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px', color: 'var(--text-sub)', fontSize: '0.72rem' }}>
+                            {port.label}
+                            <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#f59e0b', boxShadow: '0 0 0 3px rgba(245,158,11,0.16)' }} />
+                          </span>
+                          <pre style={{
+                            margin: 0,
+                            minHeight: '31px',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
+                            fontSize: '0.75rem',
+                            color: testOutputs[port.id] ? 'var(--text-main)' : 'var(--text-sub)',
+                            background: 'rgba(0,0,0,0.2)',
+                            border: '1px solid rgba(255,255,255,0.06)',
+                            borderRadius: '10px',
+                            padding: '8px'
+                          }}>
+                            {testOutputs[port.id] || 'Run test to preview'}
+                          </pre>
                         </div>
                       ))}
                     </div>

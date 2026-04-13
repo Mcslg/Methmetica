@@ -65,7 +65,14 @@ self.onmessage = async (e: MessageEvent) => {
         );
 
         // 使用 await 執行結果 (傳入的是拆箱後的資料)
-        const rawResult = await executor(unboxedInputs, typedInputs || {}, customOutputs, globals, helpers);
+        let rawResult = await executor(unboxedInputs, typedInputs || {}, customOutputs, globals, helpers);
+
+        if (rawResult === undefined) {
+            const outputKeys = Object.keys(customOutputs);
+            if (outputKeys.length === 1) {
+                rawResult = customOutputs[outputKeys[0]];
+            }
+        }
 
         // [NEW] 自動裝箱 (Boxing): 根據宣告將結果包裝回 MathValue
         const boxValue = (val: any, name: string) => {

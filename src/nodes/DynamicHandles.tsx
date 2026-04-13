@@ -394,6 +394,28 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                             [h.position === 'top' || h.position === 'bottom' ? 'left' : 'top']: `${h.offset}%`,
                         }}
                         onContextMenu={(e) => e.preventDefault()}
+                        onMouseEnter={(e) => {
+                            const desc = (h as any).description || customDescriptions[h.id] || panelItems[h.type]?.desc || 'Any generic data';
+                            const inferredType = (h as any).declaredType ? `Type: ${(h as any).declaredType}` : (h.type === 'input' ? 'Receives: Auto-casted' : h.type === 'output' ? 'Emits: Result Data' : 'Gate Trigger');
+                            const rect = (e.target as HTMLElement).getBoundingClientRect();
+                            window.dispatchEvent(new CustomEvent('setTooltip', {
+                                detail: {
+                                    x: rect.x + 15,
+                                    y: rect.y - 40,
+                                    text: (
+                                        <div style={{ textAlign: 'left' }}>
+                                            <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>{h.type.toUpperCase()} PIN</div>
+                                            <div style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{h.label || h.id}</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--accent)', marginTop: 2 }}>{inferredType}</div>
+                                            <div style={{ fontSize: '0.7rem', opacity: 0.8, marginTop: 4 }}>{desc}</div>
+                                        </div>
+                                    )
+                                }
+                            }));
+                        }}
+                        onMouseLeave={() => {
+                            window.dispatchEvent(new CustomEvent('setTooltip', { detail: null }));
+                        }}
                         onMouseDown={(e: React.MouseEvent) => {
                             if (e.button === 2) {
                                 onHandleContextMenu(e, h);

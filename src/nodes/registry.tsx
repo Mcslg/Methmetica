@@ -12,7 +12,9 @@ import { ProjectNode } from './ProjectNode';
 import { CommunityTemplateNode } from './deprecated/CommunityTemplateNode';
 import { WorkflowLinkNode } from './deprecated/WorkflowLinkNode';
 import { CodeNode, executeCodeNode } from './CodeNode';
-import type { CommunityNodeTemplate } from '../community/types';
+import { getTemplateInterfaceSchema, type CommunityNodeTemplate } from '../community/types';
+import { getCommunityTemplateById } from '../community/catalog';
+import { runBuiltWorkflowNode } from '../utils/workflowTestRunner';
 import {
     dataNodeHandles,
     toolNodeHandles,
@@ -76,6 +78,46 @@ const mathExecute = async (node: AppNode, state: AppState) => {
         nodes: state.nodes,
         edges: state.edges
     });
+};
+
+const executeCommunityTemplateNode = async (node: AppNode, state: AppState) => {
+    const template =
+        (node.data.templateDraft as CommunityNodeTemplate | undefined) ??
+        state.communityTemplates.find(item => item.id === node.data.templateId) ??
+        getCommunityTemplateById(node.data.templateId || '') as CommunityNodeTemplate | undefined;
+
+    if (!template) {
+        state.updateNodeData(node.id, {
+            error: '找不到這個 published node template。',
+            outputs: {},
+        }, { skipGraphEval: true });
+        state.evaluateGraph();
+        return;
+    }
+
+    if (!template.runtimePlan) {
+        state.updateNodeData(node.id, {
+            error: '這個 published node 還沒有 runtimePlan。請從 Builder 重新 Publish 一次。',
+            outputs: {},
+        }, { skipGraphEval: true });
+        state.evaluateGraph();
+        return;
+    }
+
+    const interfaceSchema = getTemplateInterfaceSchema(template);
+    const runtimeInputs = Object.fromEntries(
+        interfaceSchema.inputs.map(port => [port.id, node.data.inputs?.[port.id] ?? ''])
+    );
+    const result = await runBuiltWorkflowNode(template.runtimePlan, runtimeInputs);
+    const primaryOutput = interfaceSchema.outputs[0]?.id;
+
+    state.updateNodeData(node.id, {
+        error: result.error,
+        outputs: result.outputs,
+        value: primaryOutput ? result.outputs[primaryOutput] ?? '' : JSON.stringify(result.outputs),
+        status: result.error ? 'Runtime failed' : `Runtime ok${result.trace.length > 0 ? `: ${result.trace.join(' -> ')}` : ''}`,
+    }, { skipGraphEval: true });
+    state.evaluateGraph();
 };
 
 export const nodeRegistry: NodeDefinition[] = [
@@ -226,7 +268,8 @@ export const nodeRegistry: NodeDefinition[] = [
         defaultHandles: [
             { id: 'h-in', type: 'input', position: 'left', offset: 42, label: 'in' },
             { id: 'h-out', type: 'output', position: 'right', offset: 42, label: 'out' },
-        ]
+        ],
+        execute: executeCommunityTemplateNode
     }
 ];
 
