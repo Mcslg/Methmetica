@@ -5,6 +5,8 @@ import useStore from '../store/useStore';
 import { getNodeDefinition } from '../nodes/registry';
 import { Icons } from './Icons';
 import { useLanguage } from '../contexts/LanguageContext';
+import { getCommunityTemplateById } from '../community/catalog';
+import { getTemplateInterfaceSchema, type CommunityNodeTemplate } from '../community/types';
 
 const EXPLAIN_SIDE_LABELS: Record<string, Record<string, string>> = {
   'en': { left: 'LEFT', right: 'RIGHT', top: 'TOP', bottom: 'BOTTOM' },
@@ -50,6 +52,7 @@ export const ExplainOverlay: React.FC<ExplainOverlayProps> = ({
   const { language } = useLanguage();
   const theme = useStore(state => state.theme);
   const nodes = useStore(state => state.nodes);
+  const communityTemplates = useStore(state => state.communityTemplates);
   const { flowToScreenPosition } = useReactFlow();
   const viewport = useViewport(); // triggers re-render on zoom/pan
 
@@ -59,6 +62,14 @@ export const ExplainOverlay: React.FC<ExplainOverlayProps> = ({
   );
 
   const explainDefinition = explainNode ? getNodeDefinition(explainNode.type || '') : null;
+  const explainTemplate = useMemo(() => {
+    if (!explainNode || explainNode.type !== 'communityTemplateNode') return null;
+    return (
+      (explainNode.data.templateDraft as CommunityNodeTemplate | undefined) ??
+      communityTemplates.find(template => template.id === explainNode.data.templateId) ??
+      getCommunityTemplateById(explainNode.data.templateId || '') as CommunityNodeTemplate | null
+    );
+  }, [communityTemplates, explainNode]);
 
   const explainOpportunities = useMemo(
     () => (explainNode ? getExplainPluginOpportunities(explainNode, language) : []),
@@ -84,9 +95,27 @@ export const ExplainOverlay: React.FC<ExplainOverlayProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [explainNode, flowToScreenPosition, isOpen, viewport]);
 
-  const explainDescription = explainDefinition?.metadata.desc || explainNode?.data.templateSummary || '';
-  const explainTitle = explainNode?.data.label || explainDefinition?.metadata.label || explainNode?.type || '';
-  const explainCategory = explainDefinition?.metadata.category || '';
+  const explainDescription = explainTemplate?.summary || explainNode?.data.templateSummary || explainDefinition?.metadata.desc || '';
+  const explainTitle = explainNode?.data.label || explainTemplate?.title || explainDefinition?.metadata.label || explainNode?.type || '';
+  const explainCategory = explainTemplate?.category || explainDefinition?.metadata.category || '';
+  const explainRuntime = useMemo(() => {
+    if (!explainNode || !explainTemplate) return null;
+    const interfaceSchema = getTemplateInterfaceSchema(explainTemplate);
+    const outputPorts = interfaceSchema.outputs;
+    const outputEntries = outputPorts.length > 0
+      ? outputPorts.map(port => [port.id, explainNode.data.outputs?.[port.id] ?? ''] as const)
+      : Object.entries(explainNode.data.outputs || {});
+    const hasOutputValues = outputEntries.some(([, value]) => String(value).length > 0);
+
+    return {
+      hasRuntimePlan: Boolean(explainTemplate.runtimePlan),
+      status: explainNode.data.status,
+      error: explainNode.data.error,
+      outputPorts,
+      outputEntries,
+      hasOutputValues,
+    };
+  }, [explainNode, explainTemplate]);
   const explainInfoWidth = 260;
   const explainSlotsWidth = 320;
   const explainPanelHeight = 420;
@@ -238,24 +267,61 @@ export const ExplainOverlay: React.FC<ExplainOverlayProps> = ({
           {explainDescription || (language === 'zh-TW' ? '這個節點目前沒有額外說明。' : 'No extra description is available for this node yet.')}
         </div>
 
-        {/* Explore hint */}
-        <div
-          style={{
-            borderRadius: 14,
-            padding: '14px 16px',
-            background: isDark ? 'rgba(74, 222, 128, 0.07)' : 'rgba(74, 222, 128, 0.1)',
-            border: `1px solid ${greenDivider}`,
-          }}
-        >
-          <div style={{ fontSize: '0.7rem', opacity: 0.55, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 7 }}>
-            {language === 'zh-TW' ? '探索與擴充' : 'Explore & Extend'}
+        {explainRuntime && (
+          <div
+            style={{
+              borderRadius: 14,
+              padding: '14px 16px',
+              background: explainRuntime.error
+                ? 'rgba(248, 113, 113, 0.1)'
+                : isDark ? 'rgba(74, 222, 128, 0.07)' : 'rgba(74, 222, 128, 0.1)',
+              border: `1px solid ${explainRuntime.error ? 'rgba(248, 113, 113, 0.42)' : greenDivider}`,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ fontSize: '0.7rem', opacity: 0.55, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                {explainRuntime.hasRuntimePlan ? 'Runtime ready' : 'No runtime plan'}
+              </div>
+              {explainRuntime.status && (
+                <div style={{ fontSize: '0.68rem', opacity: 0.62, textAlign: 'right' }}>
+                  {explainRuntime.status}
+                </div>
+              )}
+            </div>
+            {explainRuntime.error ? (
+              <pre
+                style={{
+                  margin: 0,
+                  color: '#fecaca',
+                  fontFamily: "'IBM Plex Mono', 'SFMono-Regular', monospace",
+                  fontSize: '0.76rem',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {explainRuntime.error}
+              </pre>
+            ) : (
+              <div style={{ display: 'grid', gap: 7 }}>
+                {explainRuntime.outputEntries.length === 0 ? (
+                  <div style={{ fontSize: '0.8rem', opacity: 0.7 }}>
+                    {language === 'zh-TW' ? '沒有宣告輸出。' : 'No outputs declared.'}
+                  </div>
+                ) : explainRuntime.outputEntries.map(([outputId, value]) => {
+                  const port = explainRuntime.outputPorts.find(item => item.id === outputId);
+                  return (
+                    <div key={outputId} style={{ display: 'grid', gridTemplateColumns: 'minmax(72px, 0.42fr) minmax(0, 1fr)', gap: 8, alignItems: 'start' }}>
+                      <span style={{ fontSize: '0.76rem', opacity: 0.64 }}>{port?.label || outputId}</span>
+                      <code style={{ fontFamily: "'IBM Plex Mono', 'SFMono-Regular', monospace", fontSize: '0.76rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                        {String(value || (explainRuntime.hasOutputValues ? '' : 'Waiting...'))}
+                      </code>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-          <div style={{ fontSize: '0.83rem', lineHeight: 1.6 }}>
-            {language === 'zh-TW'
-              ? '點擊右側的插件可以快速在節點旁新增對應的功能節點。'
-              : 'Click a plugin on the right to instantly add the corresponding node next to this one.'}
-          </div>
-        </div>
+        )}
       </div>
 
       {/* ── Right Panel: Pluggable Slots ── */}

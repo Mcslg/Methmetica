@@ -10,6 +10,7 @@ import { getTemplateHandles } from './community/types';
 import { Sidebar } from './components/Sidebar';
 import { ExplainOverlay } from './components/ExplainOverlay';
 import { FloatingPalette } from './components/FloatingPalette';
+import { WorkflowHeader } from './components/WorkflowHeader';
 import { Icons } from './components/Icons';
 import { Dashboard } from './components/Dashboard';
 import { DebugOverlay, countRender } from './components/DebugOverlay';
@@ -36,6 +37,24 @@ type NodeMenuEvent = PaneMenuEvent & {
 type AddNodeAtCenterEvent = CustomEvent<{ type: string; templateId?: string }>;
 type ConnectStartPayload = { nodeId: string | null; handleId: string | null; handleType: string | null };
 type TouchTargetEvent = React.TouchEvent<HTMLElement>;
+const annotatePublicWorkflowNodes = (
+  nodes: AppNode[],
+  meta?: { ownerId?: string; authorName?: string },
+) => nodes.map(node => (
+  node.type === 'projectNode'
+    ? {
+        ...node,
+        data: {
+          ...node.data,
+          workflowSource: 'public' as const,
+          readOnlyPreview: true,
+          ownerId: meta?.ownerId ?? node.data.ownerId,
+          authorName: meta?.authorName ?? node.data.authorName,
+        },
+      }
+    : node
+));
+
 function Flow() {
   const { t, language } = useLanguage();
   const {
@@ -110,11 +129,15 @@ function Flow() {
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Shift') setIsShiftPressed(e.type === 'keydown');
+      if (e.key === 'Shift') {
+        setIsShiftPressed(e.type === 'keydown');
+        if (e.type === 'keyup') setBladeTrail([]);
+      }
       if (e.key === 'Alt') setAltPressed(e.type === 'keydown');
       if (e.key === 'Control' || e.key === 'Meta') {
         setCtrlPressed(e.type === 'keydown');
         setIsCtrlPressedState(e.type === 'keydown');
+        if (e.type === 'keyup') setBladeTrail([]);
       }
       if (e.type === 'keydown' && e.key.toLowerCase() === 'm' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         const target = e.target as HTMLElement | null;
@@ -379,6 +402,40 @@ function Flow() {
     return () => window.removeEventListener('add-node-at-center', handleAddAtCenter);
   }, [handleAddNode]);
 
+  // [RECONNECT] Global click interceptor to ensure we don't miss clicks on handles due to event propagation limits
+  useEffect(() => {
+    if (!heldConnection) return;
+    
+    const handleGlobalClick = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const elAtPoint = document.elementFromPoint(e.clientX, e.clientY);
+      const handleEl = elAtPoint?.closest('.react-flow__handle');
+      
+      if (handleEl) {
+        const targetNodeId = handleEl.getAttribute('data-nodeid');
+        const targetHandleId = handleEl.getAttribute('data-handleid');
+        
+        if (targetNodeId && targetHandleId) {
+          onConnect({
+            source: heldConnection.nodeId,
+            sourceHandle: heldConnection.handleId,
+            target: targetNodeId,
+            targetHandle: targetHandleId
+          });
+        }
+      }
+      setHeldConnection(null);
+    };
+
+    window.addEventListener('click', handleGlobalClick, { capture: true, once: true });
+    
+    return () => {
+      window.removeEventListener('click', handleGlobalClick, { capture: true });
+    };
+  }, [heldConnection, onConnect, setHeldConnection]);
+
 
   const handleDeleteNode = () => { if (nodeMenu) { removeNode(nodeMenu.nodeId); setNodeMenu(null); } };
   const handleDuplicateNode = () => {
@@ -440,15 +497,14 @@ function Flow() {
 
           const currentFlowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
           
-          // [SLICING] Handle Shift + Command slicing
-          if (isShiftPressed && isCtrlPressed) {
-            if (lastFlowPos) {
-              sliceEdges(lastFlowPos, currentFlowPos);
-            }
+          // [SLICING / HELD] Tracker
+          if ((isShiftPressed && isCtrlPressed) || heldConnection) {
             setLastFlowPos(currentFlowPos);
-            
-            // Add to trail for visual effect
-            setBladeTrail(prev => [...prev.slice(-15), { ...currentFlowPos, id: Date.now() }]);
+
+            if (isShiftPressed && isCtrlPressed) {
+               if (lastFlowPos) sliceEdges(lastFlowPos, currentFlowPos);
+               setBladeTrail(prev => [...prev.slice(-15), { ...currentFlowPos, id: Date.now() }]);
+            }
           } else {
             if (lastFlowPos) setLastFlowPos(null);
             if (bladeTrail.length > 0) setBladeTrail([]);
@@ -552,28 +608,7 @@ function Flow() {
         onEdgeMouseLeave={() => {
           if (isExplainMode) setDataTooltip(null);
         }}
-        onClick={(e) => {
-          // [RECONNECT] If holding a sliced connection, try to plug it in or drop it
-          if (heldConnection) {
-            const target = e.target as HTMLElement;
-            const handleEl = target.closest('.react-flow__handle');
-            if (handleEl) {
-              const targetNodeId = handleEl.getAttribute('data-nodeid');
-              const targetHandleId = handleEl.getAttribute('data-id');
-              
-              if (targetNodeId && targetHandleId) {
-                onConnect({
-                  source: heldConnection.nodeId,
-                  sourceHandle: heldConnection.handleId,
-                  target: targetNodeId,
-                  targetHandle: targetHandleId
-                });
-              }
-            }
-            setHeldConnection(null);
-          }
-          closeMenus();
-        }}
+        onClick={closeMenus}
 
         fitView
         colorMode={theme}
@@ -581,6 +616,7 @@ function Flow() {
         <Background color={theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(14, 47, 11, 0.08)'} gap={18} variant={BackgroundVariant.Dots} />
         <Controls position="bottom-right" />
       </ReactFlow>
+      <WorkflowHeader />
 
       {paneMenu && (
         <div
@@ -742,37 +778,43 @@ function Flow() {
         document.body
       )}
 
+
       {/* [NEW] Held Connection (Sticky Wire) */}
       {heldConnection && (() => {
           const sourceNode = nodes.find(n => n.id === heldConnection.nodeId);
           if (!sourceNode) return null;
-          const tipFlowPos = lastFlowPos ?? { x: sourceNode.position.x, y: sourceNode.position.y };
-          const tipScreenPos = flowToScreenPosition(tipFlowPos);
           
-          // Use current mouse pos (we need a screen position for the SVG overlay)
-          // We can track current client position or convert flow position back
           const sourcePos = flowToScreenPosition({ 
             x: sourceNode.position.x + (sourceNode.measured?.width ?? 200) / 2, 
             y: sourceNode.position.y + (sourceNode.measured?.height ?? 100) / 2 
           });
 
+          // Tip position follows mouse precisely across screen space
+          const tipScreenPos = lastFlowPos ? flowToScreenPosition(lastFlowPos) : { x: 0, y: 0 };
+
           return createPortal(
-            <svg style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 99998, width: '100vw', height: '100vh' }}>
-              <defs>
-                 <filter id="held-glow"><feGaussianBlur stdDeviation="3"/><feComposite in="SourceGraphic" operator="over"/></filter>
-              </defs>
-              <path 
-                className="held-wire-path"
-                d={`M ${sourcePos.x} ${sourcePos.y} C ${(sourcePos.x + tipScreenPos.x) / 2} ${sourcePos.y}, ${(sourcePos.x + tipScreenPos.x) / 2} ${tipScreenPos.y}, ${tipScreenPos.x} ${tipScreenPos.y}`}
-                fill="none"
-                stroke="var(--accent)"
-                strokeWidth="2.5"
-                strokeDasharray="5,5"
-                filter="url(#held-glow)"
-                style={{ opacity: 0.6 }}
-              />
-              <circle cx={tipScreenPos.x} cy={tipScreenPos.y} r="4" fill="var(--accent)" />
-            </svg>,
+            <>
+              <svg style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 99998, width: '100vw', height: '100vh' }}>
+                <defs>
+                   <filter id="held-glow"><feGaussianBlur stdDeviation="3"/><feComposite in="SourceGraphic" operator="over"/></filter>
+                </defs>
+                <path 
+                  className="held-wire-path"
+                  d={`M ${sourcePos.x} ${sourcePos.y} C ${(sourcePos.x + tipScreenPos.x) / 2} ${sourcePos.y}, ${(sourcePos.x + tipScreenPos.x) / 2} ${tipScreenPos.y}, ${tipScreenPos.x} ${tipScreenPos.y}`}
+                  fill="none"
+                  stroke="var(--accent)"
+                  strokeWidth="2.5"
+                  strokeDasharray="5,5"
+                  filter="url(#held-glow)"
+                  style={{ opacity: 0.8 }}
+                />
+                <circle cx={tipScreenPos.x} cy={tipScreenPos.y} r="5" fill="var(--accent)" filter="url(#held-glow)" />
+              </svg>
+              {/* UI Indicator */}
+              <div style={{ position: 'fixed', left: tipScreenPos.x + 20, top: tipScreenPos.y + 20, background: 'var(--accent)', color: 'white', padding: '4px 10px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 700, pointerEvents: 'none', zIndex: 100000, boxShadow: '0 4px 15px rgba(0,0,0,0.2)' }}>
+                {language === 'zh-TW' ? '點擊連結目標' : 'Click to connect'}
+              </div>
+            </>,
             document.body
           );
       })()}
@@ -921,7 +963,7 @@ function App() {
           })();
         if (!blueprint) throw new Error(`Workflow ${route.id} not found`);
         if (token !== routeTokenRef.current) return;
-        setGraph(blueprint.nodes as AppNode[], blueprint.edges as Edge[]);
+        setGraph(annotatePublicWorkflowNodes(blueprint.nodes as AppNode[], blueprint.meta), blueprint.edges as Edge[]);
         setActiveFileId(null);
         setCurrentView('editor');
         return;

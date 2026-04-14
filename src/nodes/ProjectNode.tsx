@@ -9,6 +9,7 @@ import type { CommunityNodeTemplate, TemplateInterfaceSchema, TemplatePortSpec, 
 import { getTemplateInternalHandles, getTemplateInterfaceSchema } from '../community/types';
 import { makeInitialDraft, syncDraftWithWorkflowMetadata } from '../community/templateDraft';
 import { publishWorkflowToSupabase } from '../integrations/supabase/workflows';
+import { publishNodeTemplateToSupabase } from '../integrations/supabase/nodeTemplates';
 import { getUserRole } from '../integrations/supabase/auth';
 import { mathTypeCatalog, getAllCapabilities, getTypesByCapability } from '../config/mathTypeCatalog';
 import { buildWorkflowNode, runBuiltWorkflowNode } from '../utils/workflowTestRunner';
@@ -240,6 +241,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     tags: string[];
     visibility: WorkflowVisibility;
     builderDraft: CommunityNodeTemplate;
+    hasPublishedTemplate: boolean;
     publishStatus: string;
     linkedTemplateNodeId: string;
     supabaseWorkflowId: string;
@@ -450,30 +452,6 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
   }, [activeInterfaceSchema, edges, id, linkedTemplateNodeId, nodes, testInputs]);
 
   const handlePublish = async (draft: CommunityNodeTemplate) => {
-    if (!user) {
-      updateProjectData({
-        publishStatus: '先登入，才能把這條工作流發布到公開社群。',
-      });
-      return;
-    }
-
-    let effectiveUser = user;
-
-    if (localVisibility === 'core' && !['trusted_editor', 'admin'].includes(user.role)) {
-      const fetchedRole = await getUserRole(user.id);
-      if (fetchedRole !== user.role) {
-        effectiveUser = { ...user, role: fetchedRole };
-        setUser(effectiveUser);
-      }
-
-      if (!['trusted_editor', 'admin'].includes(fetchedRole)) {
-        updateProjectData({
-          publishStatus: '只有 trusted_editor 或 admin 能發布 core workflow。先改成 public，或提升身份後再發布。',
-        });
-        return;
-      }
-    }
-
     setIsPublishing(true);
     const syncedDraft = syncDraftWithWorkflowMetadata(draft, {
       title: (localName || data.label || draft.title).trim() || draft.title,
@@ -496,6 +474,52 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
       )?.id || `builder-template-${id}`;
       const packaged = attachRuntimePlan(packagedBase, { nodes, edges, bridgeNodeId });
 
+      if (localVisibility === 'private') {
+        const localTemplate = {
+          ...packaged,
+          relatedWorkflowIds: [...(packaged.relatedWorkflowIds || [])],
+        };
+
+        upsertCommunityTemplate(localTemplate);
+        setLocalBuilderDraft(localTemplate);
+        updateProjectData({
+          label: localTemplate.title,
+          description: localTemplate.summary,
+          tags: localTemplate.tags,
+          visibility: localVisibility,
+          builderDraft: localTemplate,
+          hasPublishedTemplate: true,
+          publishStatus: `已在本機更新 private 節點 "${localTemplate.title}"，不會寫入資料庫。`,
+        });
+        syncLinkedTemplateNode(localTemplate, localVisibility);
+        setTimeout(() => markCurrentGraphSaved(), 0);
+        return;
+      }
+
+      if (!user) {
+        updateProjectData({
+          publishStatus: '先登入，才能把這條工作流發布到公開社群。',
+        });
+        return;
+      }
+
+      let effectiveUser = user;
+
+      if (localVisibility === 'core' && !['trusted_editor', 'admin'].includes(user.role)) {
+        const fetchedRole = await getUserRole(user.id);
+        if (fetchedRole !== user.role) {
+          effectiveUser = { ...user, role: fetchedRole };
+          setUser(effectiveUser);
+        }
+
+        if (!['trusted_editor', 'admin'].includes(fetchedRole)) {
+          updateProjectData({
+            publishStatus: '只有 trusted_editor 或 admin 能發布 core workflow。先改成 public，或提升身份後再發布。',
+          });
+          return;
+        }
+      }
+
       const publishedNodes = nodes.map(node => (
         node.id === id
           ? {
@@ -507,6 +531,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                 tags: packaged.tags,
                 visibility: localVisibility,
                 builderDraft: packaged,
+                hasPublishedTemplate: true,
                 supabaseWorkflowId: data.supabaseWorkflowId,
               },
             }
@@ -537,6 +562,13 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         relatedWorkflowIds: Array.from(new Set([...(packaged.relatedWorkflowIds || []), blueprint.card.id])),
       };
 
+      await publishNodeTemplateToSupabase({
+        template: publishedTemplate,
+        sourceWorkflowId: blueprint.card.id,
+        sourceWorkflowSlug: blueprint.card.slug,
+        workflowVisibility: localVisibility,
+      });
+
       upsertCommunityTemplate(publishedTemplate);
       setLocalBuilderDraft(publishedTemplate);
       updateProjectData({
@@ -545,6 +577,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         tags: publishedTemplate.tags,
         visibility: localVisibility,
         builderDraft: publishedTemplate,
+        hasPublishedTemplate: true,
         supabaseWorkflowId: blueprint.card.id,
         publishStatus: `已發布 "${publishedTemplate.title}" 到公開社群，可透過右鍵搜尋找到，也會出現在 Public Workflows。`,
       });
@@ -560,6 +593,20 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
       setIsPublishing(false);
     }
   };
+
+  React.useEffect(() => {
+    const handleSidebarPublish = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectNodeId?: string }>).detail;
+      if (detail?.projectNodeId && detail.projectNodeId !== id) return;
+
+      const draft = localBuilderDraft || stripLegacyInterfaceBlocks(data.builderDraft as CommunityNodeTemplate | undefined);
+      if (!draft || isPublishing) return;
+      handlePublish(draft);
+    };
+
+    window.addEventListener('publish-project-template', handleSidebarPublish);
+    return () => window.removeEventListener('publish-project-template', handleSidebarPublish);
+  }, [data.builderDraft, handlePublish, id, isPublishing, localBuilderDraft]);
 
   React.useEffect(() => {
     const incoming = stripLegacyInterfaceBlocks(data.builderDraft as CommunityNodeTemplate | undefined);
@@ -655,6 +702,17 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
       {isExpanded && (
         <div className="project-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div className="root-metadata">
+            <label className="root-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t('nodes.project.name_label') || 'Project Name'}</span>
+              <input
+                type="text"
+                className="project-name-input"
+                value={localName}
+                onChange={(e) => setLocalName(e.target.value)}
+                onBlur={() => saveWorkflowMetadata()}
+                placeholder={t('nodes.project.name_placeholder') || 'Enter workflow name...'}
+              />
+            </label>
             <label className="root-field">
               <span>{t('nodes.project.desc_label') || 'Description'}</span>
               <textarea
@@ -1089,6 +1147,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                 publishLabel={isPublishing ? '發布中...' : '發布此工作流為節點'}
                 status={publishStatus}
                 hideMetadataFields
+                hidePublishAction
                 showDetachedToolkit={selected}
               />
             </div>

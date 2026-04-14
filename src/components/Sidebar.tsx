@@ -7,6 +7,7 @@ import TitleDarkLogo from '../assets/Title_dark.svg';
 import { useLanguage } from '../contexts/LanguageContext';
 import * as driveService from '../utils/googleDriveService';
 import { pushRoute } from '../utils/navigation';
+import { forkWorkflowToLocalDraft } from '../utils/workflowFork';
 
 export function Sidebar() {
     const { t, language, setLanguage } = useLanguage();
@@ -21,6 +22,12 @@ export function Sidebar() {
     const [syncStatus, setSyncStatus] = React.useState<'idle' | 'success' | 'error'>('idle');
     const holdTimerRef = useRef<any>(null);
     const isDirty = createGraphSignature(nodes, edges) !== savedGraphSignature;
+    const projectRoot = nodes.find(node => node.type === 'projectNode');
+    const hasBuilderDraft = Boolean(projectRoot?.data.builderDraft);
+    const hasPublishedTemplate = Boolean(projectRoot?.data.hasPublishedTemplate || projectRoot?.data.supabaseWorkflowId);
+    const isCurrentUserOwner = Boolean(projectRoot?.data.ownerId && user?.id === projectRoot.data.ownerId);
+    const isForkablePublicWorkflow = Boolean(projectRoot?.data.readOnlyPreview && !isCurrentUserOwner);
+    const publishTemplateLabel = isForkablePublicWorkflow ? 'Fork' : hasPublishedTemplate ? '更新' : '發布';
 
     const onDragStart = (event: React.DragEvent, nodeType: string, templateId?: string) => {
         const payload = templateId ? JSON.stringify({ type: nodeType, templateId }) : nodeType;
@@ -104,6 +111,17 @@ export function Sidebar() {
         }
     };
 
+    const handlePublishTemplate = () => {
+        if (isForkablePublicWorkflow) {
+            forkWorkflowToLocalDraft({ nodes, edges, user, setGraph, setActiveFileId });
+            return;
+        }
+        if (!projectRoot || !hasBuilderDraft) return;
+        window.dispatchEvent(new CustomEvent('publish-project-template', {
+            detail: { projectNodeId: projectRoot.id },
+        }));
+    };
+
     const handleBackToHome = () => {
         if (isDirty) {
             const shouldLeave = window.confirm(
@@ -181,6 +199,18 @@ export function Sidebar() {
                             <span>Unsaved changes</span>
                         </div>
                     )}
+                    <button
+                        className="sidebar-btn"
+                        onClick={handlePublishTemplate}
+                        disabled={!hasBuilderDraft && !isForkablePublicWorkflow}
+                        title={
+                            isForkablePublicWorkflow
+                                ? 'Fork 這個公開工作流成為你的本機副本'
+                                : hasBuilderDraft ? `${publishTemplateLabel}此工作流為節點` : '先在 Project Node 建立節點 Builder'
+                        }
+                    >
+                        <Icons.Package /> {publishTemplateLabel}
+                    </button>
                     <button className="sidebar-btn" onClick={handleSave}>
                         <Icons.Save /> {t('sidebar.save_export')}
                     </button>
@@ -211,14 +241,6 @@ export function Sidebar() {
                         <span>{t('sidebar.edges_count')}:</span>
                         <span>{edges.length}</span>
                     </div>
-                    <button className="sidebar-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} style={{ marginTop: '8px' }}>
-                        {theme === 'dark' ? <Icons.Sun /> : <Icons.Moon />}
-                        {theme === 'dark' ? t('sidebar.theme_toggle_light') || 'Light Mode' : t('sidebar.theme_toggle_dark') || 'Dark Mode'}
-                    </button>
-                    <button className="sidebar-btn" onClick={() => setLanguage(language === 'en' ? 'zh-TW' : 'en')} style={{ marginTop: '4px' }}>
-                        <Icons.Languages />
-                        {language === 'en' ? '繁體中文' : 'English'}
-                    </button>
                 </div>
 
                 <input
@@ -228,6 +250,23 @@ export function Sidebar() {
                     accept=".json"
                     onChange={handleLoad}
                 />
+
+                <div className="sidebar-footer" style={{ marginTop: 'auto', display: 'flex', gap: '8px' }}>
+                    <button 
+                        className="sidebar-btn icon-only" 
+                        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                        title={theme === 'dark' ? t('sidebar.theme_toggle_light') : t('sidebar.theme_toggle_dark')}
+                    >
+                        {theme === 'dark' ? <Icons.Sun /> : <Icons.Moon />}
+                    </button>
+                    <button 
+                        className="sidebar-btn icon-only" 
+                        onClick={() => setLanguage(language === 'en' ? 'zh-TW' : 'en')}
+                        title={language === 'en' ? '繁體中文' : 'English'}
+                    >
+                        <Icons.Languages />
+                    </button>
+                </div>
 
                 {isDeletingHover && (
                     <div className="delete-overlay">
@@ -529,6 +568,13 @@ export function Sidebar() {
                     background: #dc2626;
                     border-color: #ef4444;
                     color: white;
+                }
+                .sidebar-btn.icon-only {
+                    justify-content: center;
+                    width: 44px;
+                    height: 44px;
+                    padding: 0;
+                    flex: 1;
                 }
                 .spinner-small {
                     width: 14px;

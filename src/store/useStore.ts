@@ -86,6 +86,9 @@ export type NodeData = {
     limitPoint?: string; // For CalculusNode limit target (e.g. x -> a)
     description?: string; // For ProjectNode metadata
     tags?: string[]; // Shared workflow/tag metadata for builder root
+    ownerId?: string;
+    authorName?: string;
+    workflowSource?: 'local' | 'public' | 'drive' | 'draft';
     templateId?: string; // For reusable community template nodes
     templateDraft?: CommunityNodeTemplate;
     templateFields?: Record<string, string>;
@@ -97,6 +100,7 @@ export type NodeData = {
     targetWorkflowTitle?: string;
     callout?: string;
     builderDraft?: CommunityNodeTemplate;
+    hasPublishedTemplate?: boolean;
     publishStatus?: string;
     linkedTemplateNodeId?: string;
     builderSourceId?: string;

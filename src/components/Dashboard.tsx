@@ -14,6 +14,7 @@ import {
   listPublicWorkflows,
   runSupabaseHealthCheck,
 } from '../integrations/supabase/workflows';
+import { listPublicNodeTemplates } from '../integrations/supabase/nodeTemplates';
 import { pushRoute } from '../utils/navigation';
 import {
   createLocalDraft,
@@ -23,6 +24,24 @@ import {
 } from '../utils/localDraftService';
 
 type DashboardTab = 'community' | 'private';
+
+const annotatePublicWorkflowNodes = (
+  nodes: AppNode[],
+  meta?: { ownerId?: string; authorName?: string },
+) => nodes.map(node => (
+  node.type === 'projectNode'
+    ? {
+        ...node,
+        data: {
+          ...node.data,
+          workflowSource: 'public' as const,
+          readOnlyPreview: true,
+          ownerId: meta?.ownerId ?? node.data.ownerId,
+          authorName: meta?.authorName ?? node.data.authorName,
+        },
+      }
+    : node
+));
 
 export function Dashboard() {
   const { t } = useLanguage();
@@ -40,6 +59,7 @@ export function Dashboard() {
     isLoadingWorkflows,
     setLoadingWorkflows,
     setActiveFileId,
+    setCommunityTemplates,
   } = useStore();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -148,9 +168,17 @@ export function Dashboard() {
       setIsLoadingPublicWorkflows(true);
       setPublicWorkflowError(null);
       try {
-        const workflows = await listPublicWorkflows();
+        const [workflows, nodeTemplates] = await Promise.all([
+          listPublicWorkflows(),
+          listPublicNodeTemplates(),
+        ]);
         if (!isCancelled) {
           setPublicWorkflows(workflows);
+          const currentTemplates = useStore.getState().communityTemplates;
+          setCommunityTemplates([
+            ...nodeTemplates,
+            ...currentTemplates.filter(existing => !nodeTemplates.some(template => template.id === existing.id)),
+          ]);
         }
       } catch (err) {
         console.error('Failed to load public workflows', err);
@@ -170,7 +198,7 @@ export function Dashboard() {
     return () => {
       isCancelled = true;
     };
-  }, []);
+  }, [setCommunityTemplates]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -224,7 +252,7 @@ export function Dashboard() {
       (isSupabaseConfigured ? await getWorkflowBlueprintFromSupabase(workflowId) : null) ??
       getCommunityWorkflowBlueprint(workflowId);
     if (!blueprint) return;
-    setGraph(blueprint.nodes as AppNode[], blueprint.edges as Edge[]);
+    setGraph(annotatePublicWorkflowNodes(blueprint.nodes as AppNode[], blueprint.meta), blueprint.edges as Edge[]);
     setActiveFileId(null);
     setCurrentView('editor');
     pushRoute({ view: 'editor', source: 'public', id: workflowId });

@@ -60,6 +60,7 @@ export const zhTW = {
     project: {
       title: "專案資訊",
       name_label: "工作流名稱",
+      name_placeholder: "請輸入工作流名稱...",
       icon_label: "圖示",
       view_label: "聚焦視角",
       unsaved: "未同步至雲端",

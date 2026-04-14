@@ -125,6 +125,10 @@ export type WorkflowBlueprint = {
   card: CommunityWorkflowCard;
   nodes: WorkflowGraphNode[];
   edges: WorkflowGraphEdge[];
+  meta?: {
+    ownerId?: string;
+    authorName?: string;
+  };
 };
 
 export type BuiltWorkflowNode = {

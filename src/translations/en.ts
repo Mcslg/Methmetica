@@ -60,6 +60,7 @@ export const en = {
     project: {
       title: "Project Metadata",
       name_label: "Workflow Name",
+      name_placeholder: "Enter workflow name...",
       icon_label: "Icon",
       view_label: "Focus Area",
       unsaved: "Local Session",

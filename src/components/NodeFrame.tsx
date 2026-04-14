@@ -148,7 +148,7 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
                                 color: 'inherit',
                                 fontSize: 'inherit',
                                 fontWeight: 'inherit',
-                                width: `${Math.max((data.label || defaultLabel).length + 1, 3)}ch`,
+                                width: `${Math.max((data.label ?? defaultLabel).length + 1, 3)}ch`,
                                 minWidth: '40px',
                                 maxWidth: '180px',
                                 padding: '0',
@@ -156,7 +156,7 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
                                 outline: 'none',
                                 cursor: 'text'
                             }}
-                            value={data.label || defaultLabel}
+                            value={data.label ?? defaultLabel}
                             onChange={(e) => updateNodeData(id, { label: e.target.value })}
                             onFocus={(e) => {
                                 if (e.target.value === defaultLabel) {
@@ -164,7 +164,7 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
                                 }
                             }}
                             onBlur={(e) => {
-                                if (e.target.value === '') {
+                                if (e.target.value.trim() === '') {
                                     updateNodeData(id, { label: defaultLabel });
                                 }
                             }}

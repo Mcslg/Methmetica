@@ -151,6 +151,7 @@ interface CommunityNodeMakerProps {
   publishLabel?: string;
   status?: string;
   hideMetadataFields?: boolean;
+  hidePublishAction?: boolean;
   showDetachedToolkit?: boolean;
 }
 
@@ -177,6 +178,7 @@ export function CommunityNodeMaker({
   publishLabel = 'Publish template',
   status,
   hideMetadataFields = false,
+  hidePublishAction = false,
   showDetachedToolkit = false,
 }: CommunityNodeMakerProps) {
   const [draggingKind, setDraggingKind] = React.useState<TemplateBuilderBlockKind | null>(null);
@@ -687,19 +689,25 @@ export function CommunityNodeMaker({
           </div>
         </div>
 
-        <div className="maker-actions">
-          <button
-            className="new-workflow-btn nodrag"
-            onClick={() => onPublish(packagedDraft)}
-            disabled={Boolean(validationError)}
-            title={validationError || publishLabel}
-            onPointerDown={stopNodeDragPropagation}
-            onMouseDown={stopNodeDragPropagation}
-          >
-            <Icons.Save /> {publishLabel}
-          </button>
+        {!hidePublishAction && (
+          <div className="maker-actions">
+            <button
+              className="new-workflow-btn nodrag"
+              onClick={() => onPublish(packagedDraft)}
+              disabled={Boolean(validationError)}
+              title={validationError || publishLabel}
+              onPointerDown={stopNodeDragPropagation}
+              onMouseDown={stopNodeDragPropagation}
+            >
+              <Icons.Save /> {publishLabel}
+            </button>
+            <div className="maker-status">{validationError || status}</div>
+          </div>
+        )}
+
+        {hidePublishAction && (validationError || status) && (
           <div className="maker-status">{validationError || status}</div>
-        </div>
+        )}
 
         <div className="builder-footer-note">
           <strong>Template node lives on the main canvas.</strong>

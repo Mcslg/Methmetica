@@ -104,6 +104,10 @@ const rowToBlueprint = (row: WorkflowRow): WorkflowBlueprint => ({
   card: rowToCard(row),
   nodes: normalizeNodes(row.workflow_json?.nodes ?? []),
   edges: normalizeEdges(row.workflow_json?.edges ?? []),
+  meta: {
+    ownerId: row.owner_id,
+    authorName: row.workflow_json?.meta?.authorName || FALLBACK_AUTHOR,
+  },
 });
 
 export async function listPublicWorkflows() {
