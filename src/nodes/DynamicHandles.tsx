@@ -365,6 +365,13 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
     };
 
     const canAddAny = allowedTypes.length > 0;
+    const getScopeHandleStyle = (handle: CustomHandle, role: 'source' | 'target'): React.CSSProperties => {
+        const shiftPx = role === 'source' ? -6 : 6;
+        if (handle.position === 'top' || handle.position === 'bottom') {
+            return { left: `calc(${handle.offset}% + ${shiftPx}px)` };
+        }
+        return { top: `calc(${handle.offset}% + ${shiftPx}px)` };
+    };
 
     return (
         <div
@@ -393,35 +400,35 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                 // Hide input handles on the left if connected on the left
                 if (h.type === 'input' && h.position === 'left' && touchingEdges.left) return null;
                 if (h.type === 'scope') {
-                    const handleStyle = {
-                        [h.position === 'top' || h.position === 'bottom' ? 'left' : 'top']: `${h.offset}%`
-                    };
-
+                    const isScopeInput = h.id.endsWith('-in');
                     return (
-                        <React.Fragment key={h.id}>
+                        isScopeInput ? (
                             <Handle
-                                id={`${h.id}-source`}
-                                type="source"
-                                position={getPositionLiteral(h.position)}
-                                isConnectable={!cmdPressed}
-                                className={`${getShapeClass(h.type)} handle-${h.type} ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
-                                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onHandleContextMenu(e, h); }}
-                                onMouseDown={(e) => onHandleMouseDown(e, h)}
-                                style={{ ...handleStyle, zIndex: 2 }}
-                            />
-                            <Handle
+                                key={h.id}
                                 id={`${h.id}-target`}
                                 type="target"
                                 position={getPositionLiteral(h.position)}
                                 isConnectable={!cmdPressed}
-                                className={`${getShapeClass(h.type)} handle-${h.type} ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
+                                className={`${getShapeClass(h.type)} handle-${h.type} handle-scope-in ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
                                 onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onHandleContextMenu(e, h); }}
                                 onMouseDown={(e) => onHandleMouseDown(e, h)}
-                                style={{ ...handleStyle, zIndex: 1 }}
+                                style={{ ...getScopeHandleStyle(h, 'target'), zIndex: 1 }}
+                            />
+                        ) : (
+                            <Handle
+                                key={h.id}
+                                id={`${h.id}-source`}
+                                type="source"
+                                position={getPositionLiteral(h.position)}
+                                isConnectable={!cmdPressed}
+                                className={`${getShapeClass(h.type)} handle-${h.type} handle-scope-out ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
+                                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onHandleContextMenu(e, h); }}
+                                onMouseDown={(e) => onHandleMouseDown(e, h)}
+                                style={{ ...getScopeHandleStyle(h, 'source'), zIndex: 2 }}
                             >
                                 <div style={{ transform: `rotate(${getRotation(h.type, h.position)}deg)`, display: 'flex' }}>◎</div>
                             </Handle>
-                        </React.Fragment>
+                        )
                     );
                 }
 

@@ -58,7 +58,7 @@ const annotatePublicWorkflowNodes = (
 function Flow() {
   const { t, language } = useLanguage();
   const {
-    nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, addNodes, removeNode,
+    nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, addNodes, removeNode, addHandle,
     handleProximitySnap, updatePluginHint, setAltPressed, setCtrlPressed, theme,
     isSidebarOpen, setDeletingHover, draggingEjectPos, hoveredNodeId,
     setHoveredNodeId, updateNodeDimensions, isAltPressed, undo, redo, takeSnapshot, sliceEdges,
@@ -72,6 +72,7 @@ function Flow() {
     addNode: state.addNode,
     addNodes: state.addNodes,
     removeNode: state.removeNode,
+    addHandle: state.addHandle,
     handleProximitySnap: state.handleProximitySnap,
     updatePluginHint: state.updatePluginHint,
     setAltPressed: state.setAltPressed,
@@ -465,9 +466,97 @@ function Flow() {
     connectingNodeRef.current = { nodeId, handleId, handleType };
   }, []);
 
-  const onConnectEnd = useCallback(() => {
+  const onConnectEnd = useCallback((event: MouseEvent | TouchEvent, connectionState: any) => {
+    const connectStart = connectingNodeRef.current;
     connectingNodeRef.current = null;
-  }, []);
+    if (!connectStart) return;
+
+    // If the connection already landed on a valid existing handle, React Flow already handled it.
+    if (connectionState?.isValid && connectionState?.toHandle) return;
+
+    const getClientPosition = (evt: MouseEvent | TouchEvent) => {
+      if ('touches' in evt) {
+        const touch = evt.changedTouches?.[0] || evt.touches?.[0];
+        return touch ? { x: touch.clientX, y: touch.clientY } : null;
+      }
+      return { x: evt.clientX, y: evt.clientY };
+    };
+
+    const clientPos = getClientPosition(event);
+    if (!clientPos) return;
+
+    const hitNodeFromDom = document
+      .elementFromPoint(clientPos.x, clientPos.y)
+      ?.closest('.react-flow__node');
+    const toNodeId =
+      connectionState?.toNode?.id ||
+      (hitNodeFromDom instanceof HTMLElement ? hitNodeFromDom.getAttribute('data-id') : null);
+
+    if (!toNodeId || toNodeId === connectStart.nodeId) return;
+
+    const targetNode = nodes.find((n) => n.id === toNodeId);
+    if (!targetNode || !Array.isArray(targetNode.data?.handles)) return;
+
+    const sourceNode = nodes.find((n) => n.id === connectStart.nodeId);
+    const startHandleBaseId = connectStart.handleId.replace(/-(source|target)$/, '');
+    const startCustomHandle = sourceNode?.data?.handles?.find((h) => h.id === startHandleBaseId);
+
+    const isScopeStart = startCustomHandle?.type === 'scope';
+    // Auto-create handle on node body is currently scoped to gray "scope" handle only.
+    if (!isScopeStart) return;
+    const requestedHandleType = 'scope';
+
+    const nodeEl = document.querySelector(`[data-id="${toNodeId}"]`);
+    if (!(nodeEl instanceof HTMLElement)) return;
+    const rect = nodeEl.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    const relX = Math.max(0, Math.min(rect.width, clientPos.x - rect.left));
+    const relY = Math.max(0, Math.min(rect.height, clientPos.y - rect.top));
+    const dTop = relY;
+    const dBottom = rect.height - relY;
+    const dLeft = relX;
+    const dRight = rect.width - relX;
+    const minDist = Math.min(dTop, dBottom, dLeft, dRight);
+    const side: 'top' | 'bottom' | 'left' | 'right' =
+      minDist === dTop ? 'top' :
+      minDist === dBottom ? 'bottom' :
+      minDist === dLeft ? 'left' : 'right';
+    const offsetBase = (side === 'top' || side === 'bottom')
+      ? (relX / rect.width) * 100
+      : (relY / rect.height) * 100;
+    const offset = Math.max(5, Math.min(95, offsetBase));
+
+    // Use a non "h-auto-" prefix so TextNode's DOM-sync logic won't treat it as temporary and remove it.
+    const newHandleId = `h-drop-${requestedHandleType}-${Date.now()}-${Math.floor(Math.random() * 1000)}-in`;
+    addHandle(toNodeId, {
+      id: newHandleId,
+      type: requestedHandleType,
+      position: side,
+      offset,
+    });
+
+    // Wait one frame so React Flow internals pick up the newly created handle.
+    requestAnimationFrame(() => {
+      if (connectStart.handleType === 'source') {
+        const targetHandle = requestedHandleType === 'scope' ? `${newHandleId}-target` : newHandleId;
+        onConnect({
+          source: connectStart.nodeId,
+          sourceHandle: connectStart.handleId,
+          target: toNodeId,
+          targetHandle,
+        });
+      } else {
+        const sourceHandle = requestedHandleType === 'scope' ? `${newHandleId}-source` : newHandleId;
+        onConnect({
+          source: toNodeId,
+          sourceHandle,
+          target: connectStart.nodeId,
+          targetHandle: connectStart.handleId,
+        });
+      }
+    });
+  }, [addHandle, nodes, onConnect]);
 
   countRender('Flow (App.tsx)');
 

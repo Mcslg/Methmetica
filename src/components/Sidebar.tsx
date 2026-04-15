@@ -31,8 +31,9 @@ export function Sidebar() {
     const isForkablePublicWorkflow = Boolean(projectRoot?.data.readOnlyPreview && !isCurrentUserOwner);
     const publishTemplateLabel = isForkablePublicWorkflow ? 'Fork' : hasPublishedTemplate ? '更新' : '發布';
     const currentRoute = parseRouteFromLocation(window.location);
+    const isEditorRoute = currentRoute.view === 'editor';
     const canDeleteWorkflow =
-        (currentRoute.view === 'editor' && currentRoute.source === 'draft' && Boolean(currentRoute.id)) ||
+        (isEditorRoute && currentRoute.source === 'draft' && Boolean(currentRoute.id)) ||
         Boolean(activeFileId);
 
     const onDragStart = (event: React.DragEvent, nodeType: string, templateId?: string) => {
@@ -120,7 +121,7 @@ export function Sidebar() {
     const handlePublishTemplate = () => {
         if (isForkablePublicWorkflow) {
             forkWorkflowToLocalDraft({ nodes, edges, user, setGraph, setActiveFileId });
-            if (currentRoute.source === 'public' && currentRoute.id) {
+            if (isEditorRoute && currentRoute.source === 'public' && currentRoute.id) {
                 void setWorkflowInteraction(currentRoute.id, 'fork', true).catch((error) => {
                     console.warn('[sidebar] failed to record workflow fork:', error);
                 });

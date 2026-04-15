@@ -358,6 +358,10 @@ math-field::part(virtual-keyboard-toggle) {
   stroke: var(--edge-data) !important;
 }
 
+.scope-edge .react-flow__edge-path {
+  stroke: #8a8a8a !important;
+}
+
 .react-flow__edge.selected .react-flow__edge-path {
   stroke-width: 3;
   filter: brightness(1.2);
@@ -1464,13 +1468,14 @@ math-field::part(virtual-keyboard-toggle) {
 }
 
 .handle-scope {
-    background-color: #888888 !important;
-    border-color: #555555 !important;
+    --handle-color: #8a8a8a;
+    background: var(--bg-page) !important;
+    border-color: var(--handle-color) !important;
 }
 
 .handle-scope > div {
-    color: #000;
+    color: var(--handle-color);
     font-size: 8px;
     font-weight: 800;
-    margin-top: 2px;
+    line-height: 1;
 }

@@ -719,13 +719,17 @@ const useStore = create<AppState>()(
 
     onConnect: (connection: Connection) => {
         get().takeSnapshot(); // Snapshot BEFORE connecting
+        const isScopeEdge = Boolean(
+            connection.sourceHandle?.endsWith('-source') ||
+            connection.targetHandle?.endsWith('-target')
+        );
         const newEdge = {
             ...connection,
             type: 'default',
-            className: 'data-edge',
+            className: isScopeEdge ? 'scope-edge' : 'data-edge',
             style: {
                 strokeWidth: 2,
-                stroke: '#3d5a80'
+                stroke: isScopeEdge ? '#8a8a8a' : '#3d5a80'
             }
         };
 

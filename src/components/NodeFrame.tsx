@@ -84,6 +84,7 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
             .map(([edge]) => `edge-touch-${edge}`)
             .join(' ')
         : '';
+    const resolvedOverflowX = (contentStyle?.overflowX ?? contentStyle?.overflow ?? 'hidden') as React.CSSProperties['overflowX'];
 
     return (
         <div
@@ -360,7 +361,7 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
                 flexGrow: 1,
                 padding: '4px 8px',
                 overflowY: 'auto',
-                overflowX: contentStyle?.overflowX || contentStyle?.overflow || 'hidden',
+                overflowX: resolvedOverflowX,
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '4px',
