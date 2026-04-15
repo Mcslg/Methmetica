@@ -44,7 +44,7 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
       icon={<Icons.Package />}
       defaultLabel={template.title}
       minWidth={template.size.width}
-      minHeight={template.size.height}
+      minHeight={120}
       className={`community-template-node template-${template.source}`}
       headerExtras={
         <button

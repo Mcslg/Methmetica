@@ -307,8 +307,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         type: 'communityTemplateNode',
         position: linkedPosition,
         width: packagedDraft.size.width,
-        height: packagedDraft.size.height,
-        style: { width: packagedDraft.size.width, height: packagedDraft.size.height },
+        style: { width: packagedDraft.size.width },
         selected: true,
         data: linkedNodeData,
       } as AppNode);
@@ -666,6 +665,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
       className="project-node"
       minWidth={320}
       minHeight={180}
+      contentStyle={{ overflow: 'visible' }}
       headerExtras={
         <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
           <button 

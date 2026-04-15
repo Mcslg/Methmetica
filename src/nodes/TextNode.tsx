@@ -66,6 +66,7 @@ export const TextNodeContext = React.createContext<{
     handleEject: (name: string, pos?: { x: number, y: number }) => void;
     inputs?: Record<string, string>;
     typedInputs?: Record<string, MathValue>;
+    handles?: CustomHandle[];
 }>({
     nodeId: '',
     isHandleActive: () => false,
@@ -599,6 +600,21 @@ const MathPill = TiptapNode.create({
                         }
                     }
 
+                    // Inject variables from connected scope handles
+                    if (ctx.inputs) {
+                        for (const [handleId, remoteScopeJSON] of Object.entries(ctx.inputs)) {
+                            try {
+                                const h = ctx.handles?.find((h: CustomHandle) => h.id === handleId.replace('-target', '').replace('-source', ''));
+                                if (h?.type === 'scope') {
+                                    const remoteVars = JSON.parse(remoteScopeJSON);
+                                    for (const [k, v] of Object.entries(remoteVars)) {
+                                        localVars[k] = ce.parse(String(v)).evaluate();
+                                    }
+                                }
+                            } catch (e) { }
+                        }
+                    }
+
                     ce.pushScope();
                     Object.entries(localVars).forEach(([k, v]) => ce.assign(k, v));
 
@@ -710,7 +726,7 @@ const MathPill = TiptapNode.create({
                 return null;
             }, [displayVal]);
 
-            const html = useMemo(() => {
+            const renderedMath = useMemo(() => {
                 let textToRender = displayVal;
 
                 // Simultaneous Equations / Vertical Stack Handling
@@ -753,13 +769,19 @@ const MathPill = TiptapNode.create({
                 }
 
                 try {
-                    return katex.renderToString(textToRender, {
+                    return {
+                        html: katex.renderToString(textToRender, {
                         throwOnError: false,
                         displayMode: false,
                         output: 'html' // Disable MathML to stop double-selection logic in browsers
-                    });
+                        }),
+                        isSafeHtml: true
+                    };
                 } catch (e) {
-                    return textToRender;
+                    return {
+                        html: textToRender,
+                        isSafeHtml: false
+                    };
                 }
             }, [displayVal, sequenceData, isExpanded]);
 
@@ -953,16 +975,31 @@ const MathPill = TiptapNode.create({
                         {displayVal}
                     </span>
 
-                    <span
-                        dangerouslySetInnerHTML={{ __html: html }}
-                        style={{
-                            pointerEvents: 'none',
-                            userSelect: 'none', // Strictly unselectable so text is never mixed
-                            lineHeight: 1,
-                            zIndex: 1,
-                            position: 'relative'
-                        }}
-                    />
+                    {renderedMath.isSafeHtml ? (
+                        <span
+                            dangerouslySetInnerHTML={{ __html: renderedMath.html }}
+                            style={{
+                                pointerEvents: 'none',
+                                userSelect: 'none', // Strictly unselectable so text is never mixed
+                                lineHeight: 1,
+                                zIndex: 1,
+                                position: 'relative'
+                            }}
+                        />
+                    ) : (
+                        <span
+                            style={{
+                                pointerEvents: 'none',
+                                userSelect: 'none',
+                                lineHeight: 1,
+                                zIndex: 1,
+                                position: 'relative',
+                                whiteSpace: 'pre-wrap'
+                            }}
+                        >
+                            {renderedMath.html}
+                        </span>
+                    )}
 
                     {sequenceData && sequenceData.length > 4 && (
                         <span
@@ -1400,6 +1437,40 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
             }
         });
 
+        // ── EXTRACT ALL LOCAL VARIABLES FOR SCOPE SHARES ──
+        if (finalHandles.some(h => h.type === 'scope') && editor) {
+            try {
+                const ce = getMathEngine();
+                const nodeScope: Record<string, string> = {};
+                editor.state.doc.descendants((n) => {
+                    if (n.type.name === 'mathPill' && n.attrs.name && n.attrs.value) {
+                        try {
+                            nodeScope[n.attrs.name] = ce.parse(n.attrs.value).evaluate().toString();
+                        } catch(e){}
+                    }
+                    return true;
+                });
+                
+                // Add slider variables
+                if (data.slots) {
+                    for (const slotKey in data.slots) {
+                        const absorbedNode: any = data.slots[slotKey];
+                        if (absorbedNode?.type === 'sliderNode') {
+                            try {
+                                const varName = absorbedNode.data.nodeName || slotKey;
+                                nodeScope[varName] = ce.parse(String(absorbedNode.data.value || 0)).evaluate().toString();
+                            } catch(e){}
+                        }
+                    }
+                }
+                
+                const scopeStr = JSON.stringify(nodeScope);
+                finalHandles.filter(h => h.type === 'scope').forEach(h => {
+                    newOutputs[`${h.id}-source`] = scopeStr;
+                });
+            } catch(e){}
+        }
+
         const roundOff = (h: CustomHandle) => ({ ...h, offset: Math.round(h.offset * 10) / 10 });
         const currentHandleSummary = JSON.stringify((data.handles || []).map(roundOff));
         const newHandleSummary = JSON.stringify(finalHandles.map(roundOff));
@@ -1534,8 +1605,9 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
         triggerSync,
         handleEject,
         inputs: data.inputs,
-        typedInputs: data.typedInputs
-    }), [id, data.slots, isHandleActive, toggleHandle, editMath, renameTrigger, triggerSync, handleEject, data.inputs, data.typedInputs]);
+        typedInputs: data.typedInputs,
+        handles: data.handles
+    }), [id, data.slots, isHandleActive, toggleHandle, editMath, renameTrigger, triggerSync, handleEject, data.inputs, data.typedInputs, data.handles]);
 
     return (
         <TextNodeContext.Provider value={contextValue}>
@@ -1960,7 +2032,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                 }
             `}</style>
 
-                <DynamicHandles nodeId={id} handles={data.handles} allowedTypes={['input']} touchingEdges={data.touchingEdges} />
+                <DynamicHandles nodeId={id} handles={data.handles} allowedTypes={['input', 'scope']} touchingEdges={data.touchingEdges} />
 
                 <style>{`
                 .tiptap-editor-container .ProseMirror { outline: none; }

@@ -22,7 +22,7 @@ export function WorkflowHeader() {
       className="workflow-header-overlay"
       style={{
         position: 'absolute',
-        left: isSidebarOpen ? 292 : 24,
+        left: isSidebarOpen ? 228 : 24,
         top: 16,
         zIndex: 20,
         pointerEvents: 'auto',
@@ -48,6 +48,20 @@ export function WorkflowHeader() {
           {shouldShowAuthor ? `by ${authorName} · ` : ''}
           {String(visibility).toUpperCase()}
         </span>
+      </div>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'var(--bg-input)',
+        border: '1px solid var(--border-header)',
+        borderRadius: '12px',
+        padding: '2px 8px',
+        fontSize: '0.75rem',
+        fontWeight: 600,
+        color: 'var(--text-sub)'
+      }} title={`${nodes.length} Nodes`}>
+        {nodes.length}
       </div>
     </div>
   );

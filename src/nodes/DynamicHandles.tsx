@@ -12,6 +12,115 @@ interface DynamicHandlesProps {
     touchingEdges?: { left?: boolean, right?: boolean, top?: boolean, bottom?: boolean };
 }
 
+type MenuActionType = HandleType | 'delete' | 'close';
+
+type MenuItem = {
+    type: MenuActionType;
+    label: string;
+    desc: string;
+    icon: string;
+    color: string;
+    handleId?: string;
+};
+
+type MenuState = {
+    pX: number;
+    pY: number;
+    side: 'top' | 'bottom' | 'left' | 'right';
+    percent: number;
+    screenX: number;
+    screenY: number;
+    activeIndex: number | null;
+    items: MenuItem[];
+};
+
+const PANEL_ITEMS: Record<Exclude<MenuActionType, 'close'>, { label: string; desc: string; icon: string; color: string }> = {
+    input: { label: '數據輸入', desc: '接收運算數據', icon: '●', color: '#2196F3' },
+    output: { label: '數據輸出', desc: '傳遞運算結果', icon: '●', color: '#E91E63' },
+    'gate-in': { label: 'Gate 控制', desc: '控制閘門開關 (1=開, 0=關)', icon: '⧁', color: '#4ade80' },
+    scope: { label: '連通接口', desc: '節點間的變數環境互通', icon: '◎', color: '#888888' },
+    delete: { label: '刪除組件', desc: '移除此零件', icon: '🗑', color: '#ff4757' }
+};
+
+const PieMenu: React.FC<{ menu: MenuState; onAction: (type: MenuActionType, handleId?: string) => void }> = ({ menu, onAction }) => {
+    const size = 320;
+    const center = size / 2;
+    const outerRadius = 140;
+    const innerRadius = 55;
+    const itemCount = menu.items.length;
+    const anglePerItem = 360 / itemCount;
+
+    const describeArc = (startAngle: number, endAngle: number): string => {
+        const polarToCartesian = (centerX: number, centerY: number, radius: number, angleInDegrees: number) => {
+            const angleInRadians = (angleInDegrees - 90) * Math.PI / 180.0;
+            return {
+                x: centerX + (radius * Math.cos(angleInRadians)),
+                y: centerY + (radius * Math.sin(angleInRadians))
+            };
+        };
+
+        const diff = endAngle - startAngle;
+        if (diff >= 359.9) {
+            const mid = startAngle + diff / 2;
+            return `${describeArc(startAngle, mid)} ${describeArc(mid, endAngle)}`;
+        }
+
+        const startOuter = polarToCartesian(center, center, outerRadius, endAngle);
+        const endOuter = polarToCartesian(center, center, outerRadius, startAngle);
+        const startInner = polarToCartesian(center, center, innerRadius, endAngle);
+        const endInner = polarToCartesian(center, center, innerRadius, startAngle);
+        const largeArcFlag = diff <= 180 ? '0' : '1';
+
+        return [
+            'M', startOuter.x, startOuter.y,
+            'A', outerRadius, outerRadius, 0, largeArcFlag, 0, endOuter.x, endOuter.y,
+            'L', endInner.x, endInner.y,
+            'A', innerRadius, innerRadius, 0, largeArcFlag, 1, startInner.x, startInner.y,
+            'Z'
+        ].join(' ');
+    };
+
+    return (
+        <>
+            <div className="pie-menu-overlay" onClick={() => onAction('close')} />
+            <div className="pie-menu-container" style={{ left: menu.screenX - center, top: menu.screenY - center }}>
+                <svg className="pie-svg" viewBox={`0 0 ${size} ${size}`}>
+                    {menu.items.map((item, i) => {
+                        const startAngle = i * anglePerItem;
+                        const endAngle = (i + 1) * anglePerItem;
+                        const midAngle = startAngle + anglePerItem / 2;
+                        const textRadius = (outerRadius + innerRadius) / 2;
+
+                        const radian = (midAngle - 90) * Math.PI / 180;
+                        const tx = center + Math.cos(radian) * textRadius;
+                        const ty = center + Math.sin(radian) * textRadius;
+                        const itemStyle = { ['--item-color' as string]: item.color } as React.CSSProperties;
+
+                        return (
+                            <g key={i}>
+                                <path
+                                    className={`pie-segment ${menu.activeIndex === i ? 'active' : ''}`}
+                                    d={describeArc(startAngle, endAngle)}
+                                    style={itemStyle}
+                                    onClick={() => onAction(item.type, item.handleId)}
+                                />
+                                <g className="pie-label-group" transform={`translate(${tx}, ${ty})`}>
+                                    <text className="pie-item-icon" y="-15" style={itemStyle}>
+                                        {item.icon}
+                                    </text>
+                                    <text className="pie-item-label" y="5" style={{ fill: 'var(--text-main)', opacity: menu.activeIndex === i ? 1 : 0.6 }}>{item.label}</text>
+                                    <text className="pie-item-desc" y="20" style={{ fill: 'var(--text-main)', opacity: 0.4 }}>{item.desc}</text>
+                                </g>
+                            </g>
+                        );
+                    })}
+                </svg>
+                <div className="pie-menu-center-v2" onClick={() => onAction('close')}>x</div>
+            </div>
+        </>
+    );
+};
+
 export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
     nodeId,
     handles = [],
@@ -32,14 +141,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
         updateNodeInternals(nodeId);
     }, [nodeId, handles, updateNodeInternals]);
 
-    const [menu, setMenu] = useState<{ 
-        pX: number, pY: number, 
-        side: 'top' | 'bottom' | 'left' | 'right', 
-        percent: number, 
-        screenX: number, screenY: number, 
-        activeIndex: number | null,
-        items: { type: HandleType | 'delete' | 'close', label: string, icon: string, color: string }[] 
-    } | null>(null);
+    const [menu, setMenu] = useState<MenuState | null>(null);
     const [movingHandle, setMovingHandle] = useState<{ id: string, side: string, offset: number } | null>(null);
     const [cmdPressed, setCmdPressed] = useState(false);
 
@@ -58,13 +160,6 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
         };
     }, []);
 
-    const panelItems: Record<string, { label: string, desc: string, icon: string, color: string }> = {
-        'input': { label: '數據輸入', desc: '接收運算數據', icon: '●', color: '#2196F3' },
-        'output': { label: '數據輸出', desc: '傳遞運算結果', icon: '●', color: '#E91E63' },
-        'gate-in': { label: 'Gate 控制', desc: '控制閘門開關 (1=開, 0=關)', icon: '⧁', color: '#4ade80' },
-        'delete': { label: '刪除組件', desc: '移除此零件', icon: '🗑', color: '#ff4757' }
-    };
-
     const onEdgeContextMenu = useCallback((e: React.MouseEvent, side: 'top' | 'bottom' | 'left' | 'right') => {
         e.preventDefault();
         e.stopPropagation();
@@ -75,13 +170,13 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
         const pX = ((e.clientX - rect.left) / rect.width) * 100;
         const pY = ((e.clientY - rect.top) / rect.height) * 100;
         const percent = Math.max(0, Math.min(100, (side === 'top' || side === 'bottom') ? pX : pY));
-        const typesToShow = allowedTypes.filter(t => panelItems[t]);
+        const typesToShow = allowedTypes.filter((t) => PANEL_ITEMS[t]);
         if (typesToShow.length === 0) return;
 
-        const items = typesToShow.map(type => ({
-            ...panelItems[type],
+        const items: MenuItem[] = typesToShow.map((type) => ({
+            ...PANEL_ITEMS[type],
             type,
-            desc: customDescriptions[type] || panelItems[type].desc
+            desc: customDescriptions[type] || PANEL_ITEMS[type].desc
         }));
 
         if (items.length === 1) {
@@ -94,8 +189,8 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
             return;
         }
 
-        setMenu({ pX, pY, side, percent, screenX: e.clientX, screenY: e.clientY, activeIndex: null, items } as any);
-    }, [nodeId, locked, allowedTypes, panelItems, customDescriptions, addHandle]);
+        setMenu({ pX, pY, side, percent, screenX: e.clientX, screenY: e.clientY, activeIndex: null, items });
+    }, [nodeId, locked, allowedTypes, customDescriptions, addHandle]);
 
     const onEdgeMouseDown = useCallback((e: React.MouseEvent, side: 'top' | 'bottom' | 'left' | 'right') => {
         if (e.button === 2) {
@@ -137,8 +232,8 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                         // But menu is about to be cleared.
                         // We'll handle it via a ref or a side effect.
                         // Actually, I can just call the action here directly.
-                        if (item.type === 'delete' && (item as any).handleId) {
-                            removeHandle(nodeId, (item as any).handleId);
+                        if (item.type === 'delete' && item.handleId) {
+                            removeHandle(nodeId, item.handleId);
                         } else if (item.type !== 'close') {
                             addHandle(nodeId, {
                                 id: `h-${Date.now()}`,
@@ -180,9 +275,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
         e.stopPropagation();
         if (locked) return;
         
-        const items = [
-            { ...panelItems['delete'], type: 'delete', handleId: handle.id } as any
-        ];
+        const items: MenuItem[] = [{ ...PANEL_ITEMS.delete, type: 'delete', handleId: handle.id }];
 
         if (items.length === 1) {
             removeHandle(nodeId, handle.id);
@@ -198,86 +291,6 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
             activeIndex: null,
             items
         });
-    };
-
-    const PieMenu = ({ menu, onAction }: { menu: any, onAction: (type: string, handleId?: string) => void }) => {
-        const size = 320;
-        const center = size / 2;
-        const outerRadius = 140;
-        const innerRadius = 55;
-        const itemCount = menu.items.length;
-        const anglePerItem = 360 / itemCount;
-
-        const describeArc = (startAngle: number, endAngle: number): string => {
-            const polarToCartesian = (centerX: number, centerY: number, radius: number, angleInDegrees: number) => {
-                const angleInRadians = (angleInDegrees - 90) * Math.PI / 180.0;
-                return {
-                    x: centerX + (radius * Math.cos(angleInRadians)),
-                    y: centerY + (radius * Math.sin(angleInRadians))
-                };
-            };
-
-            // If it's a full circle or near-full, draw two semi-arcs to avoid SVG arc limitations
-            const diff = endAngle - startAngle;
-            if (diff >= 359.9) {
-                const mid = startAngle + diff / 2;
-                return describeArc(startAngle, mid) + " " + describeArc(mid, endAngle);
-            }
-
-            const startOuter = polarToCartesian(center, center, outerRadius, endAngle);
-            const endOuter = polarToCartesian(center, center, outerRadius, startAngle);
-            const startInner = polarToCartesian(center, center, innerRadius, endAngle);
-            const endInner = polarToCartesian(center, center, innerRadius, startAngle);
-
-            const largeArcFlag = diff <= 180 ? "0" : "1";
-
-            return [
-                "M", startOuter.x, startOuter.y,
-                "A", outerRadius, outerRadius, 0, largeArcFlag, 0, endOuter.x, endOuter.y,
-                "L", endInner.x, endInner.y,
-                "A", innerRadius, innerRadius, 0, largeArcFlag, 1, startInner.x, startInner.y,
-                "Z"
-            ].join(" ");
-        };
-
-        return (
-            <>
-                <div className="pie-menu-overlay" onClick={() => onAction('close')} />
-                <div className="pie-menu-container" style={{ left: menu.screenX - center, top: menu.screenY - center }}>
-                    <svg className="pie-svg" viewBox={`0 0 ${size} ${size}`}>
-                        {menu.items.map((item: any, i: number) => {
-                            const startAngle = i * anglePerItem;
-                            const endAngle = (i + 1) * anglePerItem;
-                            const midAngle = startAngle + anglePerItem / 2;
-                            const textRadius = (outerRadius + innerRadius) / 2;
-                            
-                            const radian = (midAngle - 90) * Math.PI / 180;
-                            const tx = center + Math.cos(radian) * textRadius;
-                            const ty = center + Math.sin(radian) * textRadius;
-
-                            return (
-                                <g key={i}>
-                                    <path
-                                        className={`pie-segment ${menu.activeIndex === i ? 'active' : ''}`}
-                                        d={describeArc(startAngle, endAngle)}
-                                        style={{ '--item-color': item.color } as any}
-                                        onClick={() => onAction(item.type, item.handleId)}
-                                    />
-                                    <g className="pie-label-group" transform={`translate(${tx}, ${ty})`}>
-                                        <text className="pie-item-icon" y="-15" style={{ '--item-color': item.color } as any}>
-                                            {item.icon}
-                                        </text>
-                                        <text className="pie-item-label" y="5" style={{ fill: 'var(--text-main)', opacity: menu.activeIndex === i ? 1 : 0.6 }}>{item.label}</text>
-                                        <text className="pie-item-desc" y="20" style={{ fill: 'var(--text-main)', opacity: 0.4 }}>{item.desc}</text>
-                                    </g>
-                                </g>
-                            );
-                        })}
-                    </svg>
-                    <div className="pie-menu-center-v2" onClick={() => onAction('close')}>×</div>
-                </div>
-            </>
-        );
     };
 
     const onHandleMouseDown = (e: React.MouseEvent, handle: CustomHandle) => {
@@ -297,7 +310,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
             const pY = ((e.clientY - rect.top) / rect.height) * 100;
 
             // Determine which edge is closest to the mouse to allow crossing edges
-            const dists = [
+            const dists: { side: 'top' | 'bottom' | 'left' | 'right'; d: number; p: number }[] = [
                 { side: 'top', d: Math.abs(pY - 0), p: pX },
                 { side: 'bottom', d: Math.abs(pY - 100), p: pX },
                 { side: 'left', d: Math.abs(pX - 0), p: pY },
@@ -307,7 +320,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
             const clampedP = Math.max(0, Math.min(100, closest.p));
 
             setMovingHandle(prev => prev ? { ...prev, side: closest.side, offset: clampedP } : null);
-            updateHandle(nodeId, movingHandle.id, { position: closest.side as any, offset: clampedP });
+            updateHandle(nodeId, movingHandle.id, { position: closest.side, offset: clampedP });
             updateNodeInternals(nodeId);
         };
 
@@ -319,7 +332,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
             window.removeEventListener('mousemove', onMouseMove);
             window.removeEventListener('mouseup', onMouseUp);
         };
-    }, [movingHandle, nodeId, updateHandle]);
+    }, [movingHandle, nodeId, updateHandle, updateNodeInternals]);
 
     const getPositionLiteral = (pos: string): Position => {
         switch (pos) {
@@ -347,7 +360,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
     };
 
     const getShapeClass = (type: HandleType) => {
-        if (['input', 'output'].includes(type)) return 'handle-square';
+        if (['input', 'output', 'scope'].includes(type)) return 'handle-square';
         return 'handle-triangle-down';
     };
 
@@ -379,8 +392,38 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
             {handles.map((h) => {
                 // Hide input handles on the left if connected on the left
                 if (h.type === 'input' && h.position === 'left' && touchingEdges.left) return null;
-                // Hide output handles on the right if connected on the right
-                if (h.type === 'output' && h.position === 'right' && touchingEdges.right) return null;
+                if (h.type === 'scope') {
+                    const handleStyle = {
+                        [h.position === 'top' || h.position === 'bottom' ? 'left' : 'top']: `${h.offset}%`
+                    };
+
+                    return (
+                        <React.Fragment key={h.id}>
+                            <Handle
+                                id={`${h.id}-source`}
+                                type="source"
+                                position={getPositionLiteral(h.position)}
+                                isConnectable={!cmdPressed}
+                                className={`${getShapeClass(h.type)} handle-${h.type} ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
+                                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onHandleContextMenu(e, h); }}
+                                onMouseDown={(e) => onHandleMouseDown(e, h)}
+                                style={{ ...handleStyle, zIndex: 2 }}
+                            />
+                            <Handle
+                                id={`${h.id}-target`}
+                                type="target"
+                                position={getPositionLiteral(h.position)}
+                                isConnectable={!cmdPressed}
+                                className={`${getShapeClass(h.type)} handle-${h.type} ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
+                                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onHandleContextMenu(e, h); }}
+                                onMouseDown={(e) => onHandleMouseDown(e, h)}
+                                style={{ ...handleStyle, zIndex: 1 }}
+                            >
+                                <div style={{ transform: `rotate(${getRotation(h.type, h.position)}deg)`, display: 'flex' }}>◎</div>
+                            </Handle>
+                        </React.Fragment>
+                    );
+                }
 
                 return (
                     <Handle
@@ -395,8 +438,8 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                         }}
                         onContextMenu={(e) => e.preventDefault()}
                         onMouseEnter={(e) => {
-                            const desc = (h as any).description || customDescriptions[h.id] || panelItems[h.type]?.desc || 'Any generic data';
-                            const inferredType = (h as any).declaredType ? `Type: ${(h as any).declaredType}` : (h.type === 'input' ? 'Receives: Auto-casted' : h.type === 'output' ? 'Emits: Result Data' : 'Gate Trigger');
+                            const desc = h.description || customDescriptions[h.id] || PANEL_ITEMS[h.type]?.desc || 'Any generic data';
+                            const inferredType = h.declaredType ? `Type: ${h.declaredType}` : (h.type === 'input' ? 'Receives: Auto-casted' : h.type === 'output' ? 'Emits: Result Data' : 'Gate Trigger');
                             const rect = (e.target as HTMLElement).getBoundingClientRect();
                             window.dispatchEvent(new CustomEvent('setTooltip', {
                                 detail: {

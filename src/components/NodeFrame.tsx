@@ -360,7 +360,7 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
                 flexGrow: 1,
                 padding: '4px 8px',
                 overflowY: 'auto',
-                overflowX: 'hidden',
+                overflowX: contentStyle?.overflowX || contentStyle?.overflow || 'hidden',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '4px',

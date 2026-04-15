@@ -51,6 +51,35 @@ type WorkflowRow = {
   created_at: string;
 };
 
+type PublicWorkflowCardRow = {
+  id: string;
+  slug: string | null;
+  title: string;
+  summary: string;
+  author: string;
+  difficulty: string;
+  visibility: WorkflowVisibility;
+  tags: string[] | null;
+  updated_at: string;
+  node_count: number | null;
+  edge_count: number | null;
+};
+
+type WorkflowEngagementRow = {
+  workflow_id: string;
+  view_count: number | null;
+  like_count: number | null;
+  bookmark_count: number | null;
+  fork_count: number | null;
+};
+
+type MyWorkflowInteractionRow = {
+  workflow_id: string;
+  liked: boolean | null;
+  bookmarked: boolean | null;
+  forked: boolean | null;
+};
+
 const FALLBACK_AUTHOR = 'Methmatica Community';
 const slugify = (value: string) =>
   value
@@ -81,6 +110,27 @@ const rowToCard = (row: WorkflowRow): CommunityWorkflowCard => {
     edgeCount: graphEdges.length,
     seoTitle: `${row.title} | Methmatica`,
     seoDescription: row.description || `${row.title} 的工作流頁面`,
+  };
+};
+
+const publicRowToCard = (row: PublicWorkflowCardRow): CommunityWorkflowCard => {
+  const tags = row.tags ?? [];
+
+  return {
+    id: row.id,
+    slug: row.slug || slugify(row.title),
+    title: row.title,
+    summary: row.summary,
+    author: row.author || FALLBACK_AUTHOR,
+    difficulty: row.difficulty || (row.visibility === 'core' ? '核心' : '社群'),
+    visibility: row.visibility,
+    tags,
+    updatedAt: row.updated_at,
+    featuredTemplateIds: [],
+    nodeCount: row.node_count ?? 0,
+    edgeCount: row.edge_count ?? 0,
+    seoTitle: `${row.title} | Methmatica`,
+    seoDescription: row.summary || `${row.title} 的工作流頁面`,
   };
 };
 
@@ -115,17 +165,68 @@ export async function listPublicWorkflows() {
 
   const { data, error } = await withSupabaseTimeout(
     supabase
-      .from('workflows')
-      .select('id, owner_id, slug, title, description, tags, visibility, status, workflow_json, published_at, updated_at, created_at')
-      .in('visibility', ['public', 'core'])
-      .eq('status', 'published')
-      .order('published_at', { ascending: false, nullsFirst: false })
+      .from('public_workflow_cards')
+      .select('id, slug, title, summary, author, difficulty, visibility, tags, updated_at, node_count, edge_count')
       .order('updated_at', { ascending: false }),
     'Loading public workflows'
   );
 
   if (error) throw error;
-  return ((data ?? []) as WorkflowRow[]).map(rowToCard);
+
+  const cards = ((data ?? []) as PublicWorkflowCardRow[]).map(publicRowToCard);
+  if (cards.length === 0) return cards;
+
+  const workflowIds = cards.map(card => card.id);
+  let engagementByWorkflowId = new Map<string, WorkflowEngagementRow>();
+  let myInteractionsByWorkflowId = new Map<string, MyWorkflowInteractionRow>();
+
+  try {
+    const [engagementResult, sessionResult] = await Promise.all([
+      withSupabaseTimeout(
+        supabase.rpc('get_workflow_engagement', { p_workflow_ids: workflowIds }),
+        'Loading workflow engagement'
+      ),
+      withSupabaseTimeout(supabase.auth.getSession(), 'Loading current session'),
+    ]);
+
+    if (engagementResult.error) throw engagementResult.error;
+    if (sessionResult.error) throw sessionResult.error;
+
+    const engagementRows = ((engagementResult.data ?? []) as WorkflowEngagementRow[]);
+    engagementByWorkflowId = new Map<string, WorkflowEngagementRow>(
+      engagementRows.map(row => [row.workflow_id, row])
+    );
+
+    const currentUserId = sessionResult.data.session?.user?.id;
+    if (currentUserId) {
+      const myInteractionResult = await withSupabaseTimeout(
+        supabase.rpc('get_my_workflow_interactions', { p_workflow_ids: workflowIds }),
+        'Loading my workflow interactions'
+      );
+      if (myInteractionResult.error) throw myInteractionResult.error;
+      const myRows = (myInteractionResult.data ?? []) as MyWorkflowInteractionRow[];
+      myInteractionsByWorkflowId = new Map<string, MyWorkflowInteractionRow>(
+        myRows.map(row => [row.workflow_id, row])
+      );
+    }
+  } catch (interactionError) {
+    console.warn('[workflows] interaction stats unavailable, fallback to cards only:', interactionError);
+  }
+
+  return cards.map((card) => {
+    const engagement = engagementByWorkflowId.get(card.id);
+    const mine = myInteractionsByWorkflowId.get(card.id);
+    return {
+      ...card,
+      viewCount: engagement?.view_count ?? 0,
+      likeCount: engagement?.like_count ?? 0,
+      bookmarkCount: engagement?.bookmark_count ?? 0,
+      forkCount: engagement?.fork_count ?? 0,
+      liked: mine?.liked ?? false,
+      bookmarked: mine?.bookmarked ?? false,
+      forked: mine?.forked ?? false,
+    };
+  });
 }
 
 export async function getWorkflowBlueprintFromSupabase(workflowId: string) {
@@ -180,7 +281,6 @@ export async function publishWorkflowToSupabase(payload: WorkflowPayload) {
       tags,
       authorName: payload.author.name,
       authorId: payload.author.id,
-      authorEmail: payload.author.email,
     },
   };
 

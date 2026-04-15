@@ -1458,3 +1458,19 @@ math-field::part(virtual-keyboard-toggle) {
 [data-theme='light'] .react-flow__controls-button:hover {
   background: rgba(14, 47, 11, 0.08) !important;
 }
+
+.handle-circle {
+    border-radius: 50% !important;
+}
+
+.handle-scope {
+    background-color: #888888 !important;
+    border-color: #555555 !important;
+}
+
+.handle-scope > div {
+    color: #000;
+    font-size: 8px;
+    font-weight: 800;
+    margin-top: 2px;
+}

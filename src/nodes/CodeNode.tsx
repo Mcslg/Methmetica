@@ -120,9 +120,32 @@ type CodeExecutionResult = {
     outputs?: Record<string, unknown>;
 };
 
+type WorkerResponse = {
+    result?: unknown;
+    outputs?: Record<string, unknown>;
+    globalUpdates?: Record<string, unknown>;
+};
+
+type PendingRequest = {
+    resolve: (val: WorkerResponse) => void;
+    reject: (err: unknown) => void;
+};
+
 // Worker management
 let workerInstance: Worker | null = null;
-let pendingRequests = new Map<string, { resolve: (val: any) => void, reject: (err: any) => void }>();
+const pendingRequests = new Map<string, PendingRequest>();
+
+const resetWorker = () => {
+    if (workerInstance) {
+        workerInstance.terminate();
+        workerInstance = null;
+    }
+};
+
+const rejectPendingRequests = (message: string) => {
+    pendingRequests.forEach(({ reject }) => reject(message));
+    pendingRequests.clear();
+};
 
 const getWorker = () => {
     if (!workerInstance) {
@@ -139,6 +162,14 @@ const getWorker = () => {
                 pending.reject(error);
             }
             pendingRequests.delete(requestId);
+        };
+        workerInstance.onerror = () => {
+            rejectPendingRequests('Code runner worker crashed.');
+            resetWorker();
+        };
+        workerInstance.onmessageerror = () => {
+            rejectPendingRequests('Code runner worker message failed.');
+            resetWorker();
         };
     }
     return workerInstance;
@@ -176,17 +207,26 @@ export const executeCodeNode = async (node: AppNode, state: AppState): Promise<v
     const worker = getWorker();
 
     try {
-        const response = await new Promise<any>((resolve, reject) => {
-            pendingRequests.set(requestId, { resolve, reject });
-            worker.postMessage({ requestId, code, inputs, typedInputs, globals, outputDeclarations });
-
-            // Safety timeout
-            setTimeout(() => {
+        const response = await new Promise<WorkerResponse>((resolve, reject) => {
+            const timeout = window.setTimeout(() => {
                 if (pendingRequests.has(requestId)) {
                     pendingRequests.delete(requestId);
+                    resetWorker();
                     reject('Execution Timeout (可能存在無窮迴圈)');
                 }
             }, 3000);
+
+            pendingRequests.set(requestId, {
+                resolve: (val) => {
+                    window.clearTimeout(timeout);
+                    resolve(val);
+                },
+                reject: (err) => {
+                    window.clearTimeout(timeout);
+                    reject(err);
+                }
+            });
+            worker.postMessage({ requestId, code, inputs, typedInputs, globals, outputDeclarations });
         });
 
         const { result, outputs: customOutputs, globalUpdates } = response;

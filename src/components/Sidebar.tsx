@@ -6,8 +6,10 @@ import TitleLogo from '../assets/Title.svg';
 import TitleDarkLogo from '../assets/Title_dark.svg';
 import { useLanguage } from '../contexts/LanguageContext';
 import * as driveService from '../utils/googleDriveService';
-import { pushRoute } from '../utils/navigation';
+import { parseRouteFromLocation, pushRoute } from '../utils/navigation';
 import { forkWorkflowToLocalDraft } from '../utils/workflowFork';
+import { deleteLocalDraft } from '../utils/localDraftService';
+import { setWorkflowInteraction } from '../integrations/supabase/workflowInteractions';
 
 export function Sidebar() {
     const { t, language, setLanguage } = useLanguage();
@@ -28,6 +30,10 @@ export function Sidebar() {
     const isCurrentUserOwner = Boolean(projectRoot?.data.ownerId && user?.id === projectRoot.data.ownerId);
     const isForkablePublicWorkflow = Boolean(projectRoot?.data.readOnlyPreview && !isCurrentUserOwner);
     const publishTemplateLabel = isForkablePublicWorkflow ? 'Fork' : hasPublishedTemplate ? '更新' : '發布';
+    const currentRoute = parseRouteFromLocation(window.location);
+    const canDeleteWorkflow =
+        (currentRoute.view === 'editor' && currentRoute.source === 'draft' && Boolean(currentRoute.id)) ||
+        Boolean(activeFileId);
 
     const onDragStart = (event: React.DragEvent, nodeType: string, templateId?: string) => {
         const payload = templateId ? JSON.stringify({ type: nodeType, templateId }) : nodeType;
@@ -114,12 +120,45 @@ export function Sidebar() {
     const handlePublishTemplate = () => {
         if (isForkablePublicWorkflow) {
             forkWorkflowToLocalDraft({ nodes, edges, user, setGraph, setActiveFileId });
+            if (currentRoute.source === 'public' && currentRoute.id) {
+                void setWorkflowInteraction(currentRoute.id, 'fork', true).catch((error) => {
+                    console.warn('[sidebar] failed to record workflow fork:', error);
+                });
+            }
             return;
         }
         if (!projectRoot || !hasBuilderDraft) return;
         window.dispatchEvent(new CustomEvent('publish-project-template', {
             detail: { projectNodeId: projectRoot.id },
         }));
+    };
+
+    const handleDeleteCurrentWorkflow = async () => {
+        if (isForkablePublicWorkflow || currentRoute.view !== 'editor') {
+            alert('公開工作流不能直接刪除，請先 Fork 成自己的副本。');
+            return;
+        }
+
+        const workflowName = String(projectRoot?.data.label || 'Untitled Workflow');
+        if (!window.confirm(`確定要刪除 workflow「${workflowName}」嗎？這個動作不能復原。`)) return;
+
+        try {
+            if (currentRoute.source === 'draft' && currentRoute.id) {
+                deleteLocalDraft(currentRoute.id);
+            } else if (activeFileId) {
+                await driveService.deleteWorkflow(activeFileId);
+                setActiveFileId(null);
+            } else {
+                alert('目前這個 workflow 還沒有可刪除的儲存來源。你可以使用清空畫布。');
+                return;
+            }
+
+            setCurrentView('home');
+            pushRoute({ view: 'home' });
+        } catch (err) {
+            console.error('Failed to delete workflow', err);
+            alert('刪除 workflow 失敗。');
+        }
     };
 
     const handleBackToHome = () => {
@@ -218,6 +257,18 @@ export function Sidebar() {
                         <Icons.Load /> {t('sidebar.load_import')}
                     </button>
                     <button
+                        className="sidebar-btn danger"
+                        onClick={handleDeleteCurrentWorkflow}
+                        disabled={!canDeleteWorkflow || isForkablePublicWorkflow}
+                        title={
+                            isForkablePublicWorkflow
+                                ? '公開工作流不能直接刪除，請先 Fork 成自己的副本'
+                                : canDeleteWorkflow ? '刪除目前 workflow' : '目前 workflow 還沒有儲存來源'
+                        }
+                    >
+                        <Icons.Clear /> 刪除 workflow
+                    </button>
+                    <button
                         className="sidebar-btn danger hold-btn"
                         onMouseDown={startHold}
                         onMouseUp={stopHold}
@@ -231,17 +282,7 @@ export function Sidebar() {
                     </button>
                 </div>
 
-                <div className="sidebar-section">
-                    <label>{t('sidebar.system')}</label>
-                    <div className="stat-row">
-                        <span>{t('sidebar.nodes_count')}:</span>
-                        <span>{nodes.length}</span>
-                    </div>
-                    <div className="stat-row">
-                        <span>{t('sidebar.edges_count')}:</span>
-                        <span>{edges.length}</span>
-                    </div>
-                </div>
+
 
                 <input
                     type="file"

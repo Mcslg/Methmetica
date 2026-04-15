@@ -21,10 +21,28 @@ import {
 } from '@xyflow/react';
 import { incrementEvalGraph } from '../components/DebugOverlay';
 
-export const createGraphSignature = (nodes: AppNode[], edges: Edge[]) =>
-    JSON.stringify({ nodes, edges });
+export const createGraphSignature = (nodes: AppNode[], edges: Edge[]) => {
+    const essentialNodes = nodes.map(n => ({
+        id: n.id,
+        type: n.type,
+        position: n.position,
+        width: n.width,
+        height: n.height,
+        // 過濾掉與存檔無關的 UI 狀態和暫時性計算結果
+        data: Object.fromEntries(
+            Object.entries(n.data).filter(([key]) => !['error', 'inputSignature', 'status', 'touchingEdges', 'publishStatus'].includes(key))
+        )
+    }));
 
-export type HandleType = 'input' | 'output' | 'gate-in';
+    const essentialEdges = edges.map(e => {
+        const { selected, type, ...rest } = e as any;
+        return rest;
+    });
+
+    return JSON.stringify({ nodes: essentialNodes, edges: essentialEdges });
+};
+
+export type HandleType = 'input' | 'output' | 'gate-in' | 'scope';
 
 export type CustomHandle = {
     id: string;
@@ -33,6 +51,8 @@ export type CustomHandle = {
     offset: number; // percentage 0-100
     label?: string; // Optional label for variables
     lineIndex?: number; // For TextNode: which line this handle is pinned to
+    description?: string;
+    declaredType?: string;
 };
 
 export type BalanceOperation = {

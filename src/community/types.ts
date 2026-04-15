@@ -96,6 +96,13 @@ export type CommunityWorkflowCard = {
   featuredTemplateIds: string[];
   nodeCount: number;
   edgeCount: number;
+  viewCount?: number;
+  likeCount?: number;
+  bookmarkCount?: number;
+  forkCount?: number;
+  liked?: boolean;
+  bookmarked?: boolean;
+  forked?: boolean;
   seoTitle: string;
   seoDescription: string;
 };

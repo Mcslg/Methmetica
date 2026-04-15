@@ -332,6 +332,10 @@ function Flow() {
   useEffect(() => {
     if (!radialMenu) return;
 
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+
     const handleMouseMove = (e: MouseEvent) => {
       const dx = e.clientX - radialMenu.screenX;
       const dy = e.clientY - radialMenu.screenY;
@@ -360,9 +364,11 @@ function Flow() {
       }
     };
 
+    window.addEventListener('contextmenu', handleContextMenu, { capture: true });
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
     return () => {
+      window.removeEventListener('contextmenu', handleContextMenu, { capture: true });
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
@@ -659,7 +665,7 @@ function Flow() {
       )}
 
       {radialMenu && createPortal(
-        <div className="pie-menu-container" style={{ left: radialMenu.screenX - 160, top: radialMenu.screenY - 160 }}>
+        <div className="pie-menu-container" style={{ left: radialMenu.screenX - 160, top: radialMenu.screenY - 160 }} onContextMenu={(e) => e.preventDefault()}>
           <svg className="pie-svg" viewBox="0 0 320 320">
             {(() => {
               const items = [

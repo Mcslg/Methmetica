@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import { useReactFlow } from '@xyflow/react';
 import useStore, { type AppState } from '../store/useStore';
 import { MathInput } from './MathInput';
@@ -17,29 +17,21 @@ export const FormulaSidebarArea: React.FC<FormulaSidebarAreaProps> = ({ containe
     const setDraggingEjectPos = useStore((state: AppState) => state.setDraggingEjectPos);
     const { screenToFlowPosition } = useReactFlow();
 
-    // Local state for the formulas list
-    const [formulas, setFormulas] = useState<string[]>([]);
+    const formulas = useMemo(() => {
+        const rawText = textNode?.data.text;
+        if (!rawText) return [''];
 
-    useEffect(() => {
-        if (!textNode?.data.text) {
-            setFormulas(['']);
-            return;
-        }
-
-        const rawText = textNode.data.text;
         let extracted: string[] = [];
-        
         if (rawText.includes('$$')) {
             const matches = rawText.match(/\$\$(.*?)\$\$/g);
             if (matches) {
-                extracted = matches.map(m => m.slice(2, -2).trim());
+                extracted = matches.map((match) => match.slice(2, -2).trim());
             }
         } else {
             extracted = rawText.trim().split('\n').filter(Boolean);
         }
-        
-        if (extracted.length === 0) extracted = [''];
-        setFormulas(extracted);
+
+        return extracted.length > 0 ? extracted : [''];
     }, [textNode?.data.text]);
 
     const syncToTextNode = (newFormulas: string[]) => {
@@ -49,21 +41,18 @@ export const FormulaSidebarArea: React.FC<FormulaSidebarAreaProps> = ({ containe
 
     const addFormula = () => {
         const next = [...formulas, ''];
-        setFormulas(next);
         syncToTextNode(next);
     };
 
     const removeFormula = (index: number) => {
         const next = formulas.filter((_, i) => i !== index);
         const final = next.length === 0 ? [''] : next;
-        setFormulas(final);
         syncToTextNode(final);
     };
 
     const updateFormula = (index: number, val: string) => {
         const next = [...formulas];
         next[index] = val;
-        setFormulas(next);
         syncToTextNode(next);
     };
 
@@ -106,7 +95,7 @@ export const FormulaSidebarArea: React.FC<FormulaSidebarAreaProps> = ({ containe
 
     // Get all sliders plugged into this node
     const sliders = Object.entries(allSlots)
-        .filter(([_, sid]) => {
+        .filter(([, sid]) => {
             const node = useStore.getState().nodes.find(n => n.id === sid);
             return node?.type === 'sliderNode';
         })

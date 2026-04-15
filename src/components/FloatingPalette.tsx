@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import useStore from '../store/useStore';
 import { NodeLibrary } from './NodeLibrary';
 import { Icons } from './Icons';
@@ -19,7 +19,7 @@ export const FloatingPalette: React.FC = () => {
         e.stopPropagation();
     };
 
-    const onMouseMove = (e: MouseEvent) => {
+    const onMouseMove = useCallback((e: MouseEvent) => {
         if (!isDragging) return;
         const newX = e.clientX - dragOffset.x;
         const newY = e.clientY - dragOffset.y;
@@ -32,9 +32,11 @@ export const FloatingPalette: React.FC = () => {
             x: Math.max(0, Math.min(newX, maxX)), 
             y: Math.max(0, Math.min(newY, maxY)) 
         });
-    };
+    }, [dragOffset.x, dragOffset.y, isDragging, setPalettePosition]);
 
-    const onMouseUp = () => setIsDragging(false);
+    const onMouseUp = useCallback(() => {
+        setIsDragging(false);
+    }, []);
 
     useEffect(() => {
         if (isDragging) {
@@ -48,7 +50,7 @@ export const FloatingPalette: React.FC = () => {
             window.removeEventListener('mousemove', onMouseMove);
             window.removeEventListener('mouseup', onMouseUp);
         };
-    }, [isDragging]);
+    }, [isDragging, onMouseMove, onMouseUp]);
 
     const onDragStart = (event: React.DragEvent, nodeType: string) => {
         event.dataTransfer.setData('application/reactflow', nodeType);

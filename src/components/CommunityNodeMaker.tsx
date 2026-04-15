@@ -1,5 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
+import { useReactFlow } from '@xyflow/react';
 import { Icons } from './Icons';
 import { getTemplateInterfaceSchema, portToHandleSpec } from '../community/types';
 import type {
@@ -464,9 +465,42 @@ export function CommunityNodeMaker({
     return null;
   }, [draft.builderBlocks, draggingBlockIndex, draggingKind]);
 
+  const [toolkitOffsetY, setToolkitOffsetY] = React.useState(0);
+  const { getZoom } = useReactFlow();
+
+  const handleToolkitDragStart = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    const startY = e.clientY;
+    const startOffset = toolkitOffsetY;
+    const zoom = getZoom();
+
+    const onMove = (me: PointerEvent) => {
+      setToolkitOffsetY(startOffset + (me.clientY - startY) / zoom);
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp, { once: true });
+  };
+
   const renderToolkit = () => (
-    <div className="builder-toolbar nodrag" onPointerDown={stopNodeDragPropagation} onMouseDown={stopNodeDragPropagation}>
-      <div className="panel-title">Builder toolkit</div>
+    <div 
+      className="builder-toolbar nodrag" 
+      style={{ transform: `translateY(${toolkitOffsetY}px)` }}
+      onPointerDown={stopNodeDragPropagation} 
+      onMouseDown={stopNodeDragPropagation}
+    >
+      <div 
+        className="panel-title" 
+        style={{ cursor: 'grab', display: 'flex', alignItems: 'center', gap: '6px', userSelect: 'none' }}
+        onPointerDown={handleToolkitDragStart}
+        title="Drag to move vertically"
+      >
+        <Icons.Grid size={12} style={{ opacity: 0.7 }} /> Builder toolkit
+      </div>
       <div className="builder-toolbar-items">
         {ACTIVE_TOOLKIT.map(item => (
           <div
@@ -718,19 +752,24 @@ export function CommunityNodeMaker({
       <style>{`
         .node-maker-shell {
           display: block;
+          position: relative;
         }
         .builder-toolbar {
+          position: absolute;
+          right: calc(100% + 16px);
+          top: 0;
+          width: 160px;
           display: grid;
           gap: 10px;
-          margin-bottom: 12px;
           padding: 12px;
           border: 1px solid var(--border-node);
           border-radius: 18px;
-          background: rgba(255,255,255,0.03);
+          background: var(--bg-sidebar);
+          box-shadow: var(--node-shadow);
         }
         .builder-toolbar-items {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+          grid-template-columns: 1fr;
           gap: 8px;
         }
         .maker-card {

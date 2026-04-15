@@ -11,14 +11,16 @@ interface MathInputProps {
     id?: string;
 }
 
-export const MathInput = forwardRef<any, MathInputProps>(({ value, onChange, onKeyDown, className, style, readOnly, id }, ref) => {
-    const mfRef = useRef<any>(null);
+type MathfieldElement = HTMLElement & { value: string };
+
+export const MathInput = forwardRef<MathfieldElement, MathInputProps>(({ value, onChange, onKeyDown, className, style, readOnly, id }, ref) => {
+    const mfRef = useRef<MathfieldElement | null>(null);
     const isSettingValueRef = useRef(false);
     const valueRef = useRef(value);
     const [isReady, setIsReady] = React.useState(false);
 
     // Expose the underlying math-field to parent refs
-    useImperativeHandle(ref, () => mfRef.current);
+    useImperativeHandle(ref, () => mfRef.current as MathfieldElement);
 
     // Keep the ref updated with the latest prop without triggering effects
     useEffect(() => {
@@ -49,9 +51,9 @@ export const MathInput = forwardRef<any, MathInputProps>(({ value, onChange, onK
         if (!mf) return;
 
         let frameId: number;
-        const handleInput = (e: any) => {
+        const handleInput = (e: Event) => {
             if (isSettingValueRef.current) return; // Prevent fake inputs when syncing from React
-            const nextVal = e.target.value;
+            const nextVal = (e.target as MathfieldElement | null)?.value ?? '';
             if (nextVal !== valueRef.current && onChangeRef.current) {
                 // Use RAF to decouple from React render cycle and prevent thrashing
                 cancelAnimationFrame(frameId);
@@ -79,7 +81,7 @@ export const MathInput = forwardRef<any, MathInputProps>(({ value, onChange, onK
             mf.value = value;
             isSettingValueRef.current = false;
         }
-    }, [value]);
+    }, [value, isReady]);
 
     if (!isReady) {
         return (
@@ -96,9 +98,9 @@ export const MathInput = forwardRef<any, MathInputProps>(({ value, onChange, onK
             ref={mfRef}
             id={id}
             class={className}
-            style={style as any}
+            style={style}
             read-only={readOnly ? "true" : undefined}
-            onKeyDown={onKeyDown as any}
+            onKeyDown={onKeyDown}
         />
     );
 });

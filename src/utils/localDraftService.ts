@@ -104,6 +104,11 @@ export const loadLocalDraft = (id: string): LocalDraftDoc | null => {
   }
 };
 
+export const deleteLocalDraft = (id: string) => {
+  window.localStorage.removeItem(keyOf(id));
+  writeIndex(readIndex().filter(item => item.id !== id));
+};
+
 export const listLocalDrafts = () =>
   readIndex()
     .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt))

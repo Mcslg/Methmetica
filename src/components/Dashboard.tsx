@@ -14,6 +14,7 @@ import {
   listPublicWorkflows,
   runSupabaseHealthCheck,
 } from '../integrations/supabase/workflows';
+import { recordWorkflowView } from '../integrations/supabase/workflowInteractions';
 import { listPublicNodeTemplates } from '../integrations/supabase/nodeTemplates';
 import { pushRoute } from '../utils/navigation';
 import {
@@ -248,6 +249,9 @@ export function Dashboard() {
   };
 
   const openBlueprint = async (workflowId: string) => {
+    void recordWorkflowView(workflowId, { surface: 'dashboard' }).catch((error) => {
+      console.warn('[dashboard] failed to record workflow view:', error);
+    });
     const blueprint =
       (isSupabaseConfigured ? await getWorkflowBlueprintFromSupabase(workflowId) : null) ??
       getCommunityWorkflowBlueprint(workflowId);
