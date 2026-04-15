@@ -149,6 +149,7 @@ export type AppState = {
     onNodesChange: OnNodesChange<AppNode>;
     onEdgesChange: OnEdgesChange<Edge>;
     onConnect: OnConnect;
+    toggleWirelessEdge: (edgeId: string) => void;
     updateNodeData: (nodeId: string, data: NodeData, options?: UpdateNodeDataOptions) => void;
     addHandle: (nodeId: string, handle: CustomHandle) => void;
     removeHandle: (nodeId: string, handleId: string) => void;
@@ -737,6 +738,40 @@ const useStore = create<AppState>()(
             edges: addEdge(newEdge, get().edges),
         });
         get().evaluateGraph();
+    },
+
+    toggleWirelessEdge: (edgeId: string) => {
+        get().takeSnapshot();
+        const currentEdges = get().edges;
+        const nextEdges = currentEdges.map((edge) => {
+            if (edge.id !== edgeId) return edge;
+
+            const classes = new Set((edge.className || '').split(/\s+/).filter(Boolean));
+            const isWireless = classes.has('wireless-edge');
+            if (isWireless) {
+                classes.delete('wireless-edge');
+            } else {
+                classes.add('wireless-edge');
+            }
+            if (!classes.has('data-edge') && !classes.has('scope-edge')) {
+                classes.add('data-edge');
+            }
+
+            const isScope = classes.has('scope-edge');
+            const nextStroke = isWireless ? (isScope ? '#8a8a8a' : '#3d5a80') : '#9ca3af';
+
+            return {
+                ...edge,
+                className: Array.from(classes).join(' '),
+                style: {
+                    ...(edge.style || {}),
+                    strokeWidth: 2,
+                    stroke: nextStroke,
+                    strokeDasharray: isWireless ? undefined : '6 4',
+                },
+            };
+        });
+        set({ edges: nextEdges });
     },
 
     updateNodeData: (nodeId: string, dataPatch: Partial<NodeData>, options?: UpdateNodeDataOptions) => {

@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Handle, Position, useUpdateNodeInternals } from '@xyflow/react';
+import { Handle, Position, useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 import useStore, { type AppState, type CustomHandle, type HandleType } from '../store/useStore';
 
 interface DynamicHandlesProps {
@@ -132,8 +132,11 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
     const addHandle = useStore((state: AppState) => state.addHandle);
     const removeHandle = useStore((state: AppState) => state.removeHandle);
     const updateHandle = useStore((state: AppState) => state.updateHandle);
+    const edges = useStore((state: AppState) => state.edges);
+    const nodes = useStore((state: AppState) => state.nodes);
     const containerRef = useRef<HTMLDivElement>(null);
     const updateNodeInternals = useUpdateNodeInternals();
+    const { setCenter } = useReactFlow();
 
 
     // Trigger internal update whenever handles array changes meaningfully
@@ -365,12 +368,31 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
     };
 
     const canAddAny = allowedTypes.length > 0;
-    const getScopeHandleStyle = (handle: CustomHandle, role: 'source' | 'target'): React.CSSProperties => {
-        const shiftPx = role === 'source' ? -6 : 6;
+    const getWirelessPeerNodeId = useCallback((handleId: string, role: 'source' | 'target'): string | null => {
+        const wirelessEdge = edges.find((edge) => {
+            if (!edge.className?.includes('wireless-edge')) return false;
+            if (role === 'source') {
+                return edge.source === nodeId && edge.sourceHandle === handleId;
+            }
+            return edge.target === nodeId && edge.targetHandle === handleId;
+        });
+        if (!wirelessEdge) return null;
+        return role === 'source' ? wirelessEdge.target : wirelessEdge.source;
+    }, [edges, nodeId]);
+
+    const focusPeerNode = useCallback((peerNodeId: string) => {
+        const peer = nodes.find((node) => node.id === peerNodeId);
+        if (!peer) return;
+        const width = peer.measured?.width ?? peer.width ?? 220;
+        const height = peer.measured?.height ?? peer.height ?? 120;
+        setCenter(peer.position.x + width / 2, peer.position.y + height / 2, { duration: 320 });
+    }, [nodes, setCenter]);
+
+    const getScopeHandleStyle = (handle: CustomHandle): React.CSSProperties => {
         if (handle.position === 'top' || handle.position === 'bottom') {
-            return { left: `calc(${handle.offset}% + ${shiftPx}px)` };
+            return { left: `${handle.offset}%` };
         }
-        return { top: `calc(${handle.offset}% + ${shiftPx}px)` };
+        return { top: `${handle.offset}%` };
     };
 
     return (
@@ -401,30 +423,43 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                 if (h.type === 'input' && h.position === 'left' && touchingEdges.left) return null;
                 if (h.type === 'scope') {
                     const isScopeInput = h.id.endsWith('-in');
+                    const scopeHandleId = `${h.id}-${isScopeInput ? 'target' : 'source'}`;
+                    const wirelessPeerNodeId = getWirelessPeerNodeId(scopeHandleId, isScopeInput ? 'target' : 'source');
+                    const wirelessClass = wirelessPeerNodeId ? 'wireless-endpoint' : '';
                     return (
                         isScopeInput ? (
                             <Handle
                                 key={h.id}
-                                id={`${h.id}-target`}
+                                id={scopeHandleId}
                                 type="target"
                                 position={getPositionLiteral(h.position)}
                                 isConnectable={!cmdPressed}
-                                className={`${getShapeClass(h.type)} handle-${h.type} handle-scope-in ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
+                                className={`${getShapeClass(h.type)} handle-${h.type} handle-scope-in ${wirelessClass} ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
                                 onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onHandleContextMenu(e, h); }}
                                 onMouseDown={(e) => onHandleMouseDown(e, h)}
-                                style={{ ...getScopeHandleStyle(h, 'target'), zIndex: 1 }}
+                                onClick={(e) => {
+                                    if (!wirelessPeerNodeId) return;
+                                    e.stopPropagation();
+                                    focusPeerNode(wirelessPeerNodeId);
+                                }}
+                                style={{ ...getScopeHandleStyle(h), zIndex: 1 }}
                             />
                         ) : (
                             <Handle
                                 key={h.id}
-                                id={`${h.id}-source`}
+                                id={scopeHandleId}
                                 type="source"
                                 position={getPositionLiteral(h.position)}
                                 isConnectable={!cmdPressed}
-                                className={`${getShapeClass(h.type)} handle-${h.type} handle-scope-out ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
+                                className={`${getShapeClass(h.type)} handle-${h.type} handle-scope-out ${wirelessClass} ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
                                 onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onHandleContextMenu(e, h); }}
                                 onMouseDown={(e) => onHandleMouseDown(e, h)}
-                                style={{ ...getScopeHandleStyle(h, 'source'), zIndex: 2 }}
+                                onClick={(e) => {
+                                    if (!wirelessPeerNodeId) return;
+                                    e.stopPropagation();
+                                    focusPeerNode(wirelessPeerNodeId);
+                                }}
+                                style={{ ...getScopeHandleStyle(h), zIndex: 2 }}
                             >
                                 <div style={{ transform: `rotate(${getRotation(h.type, h.position)}deg)`, display: 'flex' }}>◎</div>
                             </Handle>
@@ -433,13 +468,17 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                 }
 
                 return (
+                    (() => {
+                        const wirelessPeerNodeId = getWirelessPeerNodeId(h.id, (h.type === 'input' || h.type === 'gate-in') ? 'target' : 'source');
+                        const wirelessClass = wirelessPeerNodeId ? 'wireless-endpoint' : '';
+                        return (
                     <Handle
                         key={h.id}
                         id={h.id}
                         type={(h.type === 'input' || h.type === 'gate-in') ? 'target' : 'source'}
                         position={getPositionLiteral(h.position)}
                         isConnectable={!cmdPressed}
-                        className={`${getShapeClass(h.type)} handle-${h.type} ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
+                        className={`${getShapeClass(h.type)} handle-${h.type} ${wirelessClass} ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
                         style={{
                             [h.position === 'top' || h.position === 'bottom' ? 'left' : 'top']: `${h.offset}%`,
                         }}
@@ -473,6 +512,11 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                                 onHandleMouseDown(e, h);
                             }
                         }}
+                        onClick={(e) => {
+                            if (!wirelessPeerNodeId) return;
+                            e.stopPropagation();
+                            focusPeerNode(wirelessPeerNodeId);
+                        }}
                     >
                         <div style={{ transform: `rotate(${getRotation(h.type, h.position)}deg)`, display: 'flex' }}>
                             {h.type === 'gate-in' ? '⧁' : '●'}
@@ -490,6 +534,8 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                             </div>
                         )}
                     </Handle>
+                        );
+                    })()
                 );
             })}
 

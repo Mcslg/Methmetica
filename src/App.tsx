@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { ReactFlow, Background, Controls, ReactFlowProvider, useReactFlow, BackgroundVariant, type Edge } from '@xyflow/react';
 import { useShallow } from 'zustand/react/shallow';
@@ -58,7 +58,7 @@ const annotatePublicWorkflowNodes = (
 function Flow() {
   const { t, language } = useLanguage();
   const {
-    nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, addNodes, removeNode, addHandle,
+    nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, addNodes, removeNode, addHandle, toggleWirelessEdge,
     handleProximitySnap, updatePluginHint, setAltPressed, setCtrlPressed, theme,
     isSidebarOpen, setDeletingHover, draggingEjectPos, hoveredNodeId,
     setHoveredNodeId, updateNodeDimensions, isAltPressed, undo, redo, takeSnapshot, sliceEdges,
@@ -69,6 +69,7 @@ function Flow() {
     onNodesChange: state.onNodesChange,
     onEdgesChange: state.onEdgesChange,
     onConnect: state.onConnect,
+    toggleWirelessEdge: state.toggleWirelessEdge,
     addNode: state.addNode,
     addNodes: state.addNodes,
     removeNode: state.removeNode,
@@ -94,7 +95,7 @@ function Flow() {
   })));
   const communityTemplates = useStore(state => state.communityTemplates);
   const pluginHint = useStore(state => state.pluginHint);
-  const { screenToFlowPosition, flowToScreenPosition } = useReactFlow();
+  const { screenToFlowPosition, flowToScreenPosition, setCenter } = useReactFlow();
   const [paneMenu, setPaneMenu] = useState<{ x: number, y: number, screenX: number, screenY: number } | null>(null);
   const [radialMenu, setRadialMenu] = useState<{ x: number, y: number, screenX: number, screenY: number } | null>(null);
   const [radialSelection, setRadialSelection] = useState<'textNode' | 'calculateNode' | null>(null);
@@ -109,8 +110,34 @@ function Flow() {
   const [idleTooltip, setIdleTooltip] = useState<{ x: number, y: number, text?: React.ReactNode } | null>(null);
   const [dataTooltip, setDataTooltip] = useState<{ x: number, y: number, text: React.ReactNode } | null>(null);
   const [isExplainMode, setIsExplainMode] = useState(false);
+  const [isQuickNavOpen, setIsQuickNavOpen] = useState(false);
+  const [quickNavMode, setQuickNavMode] = useState<'list' | 'gallery'>('list');
+  const [quickNavQuery, setQuickNavQuery] = useState('');
+  const [quickNavActiveIndex, setQuickNavActiveIndex] = useState(0);
+  const quickNavInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const idleTimerRef = useRef<number | null>(null);
+
+  const filteredQuickNavNodes = useMemo(() => {
+    const q = quickNavQuery.trim().toLowerCase();
+    const scored = nodes.map((node) => {
+      const label = String(node.data?.label || '').trim();
+      const nodeType = String(node.type || '');
+      const id = String(node.id || '');
+      const haystack = `${label} ${nodeType} ${id}`.toLowerCase();
+      if (!q) return { node, score: 0 };
+      if (haystack.includes(q)) {
+        const starts = label.toLowerCase().startsWith(q) || nodeType.toLowerCase().startsWith(q);
+        return { node, score: starts ? 0 : 1 };
+      }
+      return null;
+    }).filter(Boolean) as { node: AppNode; score: number }[];
+
+    return scored
+      .sort((a, b) => a.score - b.score)
+      .map((item) => item.node)
+      .slice(0, 40);
+  }, [nodes, quickNavQuery]);
 
   useEffect(() => {
     const handleCustomTooltip = (e: CustomEvent) => {
@@ -130,6 +157,18 @@ function Flow() {
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsQuickNavOpen(true);
+        setQuickNavQuery('');
+        setQuickNavActiveIndex(0);
+        return;
+      }
+      if (e.key === 'Escape' && isQuickNavOpen) {
+        e.preventDefault();
+        setIsQuickNavOpen(false);
+        return;
+      }
       if (e.key === 'Shift') {
         setIsShiftPressed(e.type === 'keydown');
         if (e.type === 'keyup') setBladeTrail([]);
@@ -172,7 +211,41 @@ function Flow() {
       window.removeEventListener('keydown', handleKey);
       window.removeEventListener('keyup', handleKey);
     };
-  }, [redo, setAltPressed, setCtrlPressed, undo]);
+  }, [isQuickNavOpen, redo, setAltPressed, setCtrlPressed, undo]);
+
+  useEffect(() => {
+    if (!isQuickNavOpen) return;
+    const timer = window.setTimeout(() => quickNavInputRef.current?.focus(), 10);
+    return () => window.clearTimeout(timer);
+  }, [isQuickNavOpen]);
+
+  const jumpToNode = useCallback((node: AppNode) => {
+    const width = node.measured?.width ?? node.width ?? 220;
+    const height = node.measured?.height ?? node.height ?? 120;
+    setCenter(node.position.x + width / 2, node.position.y + height / 2, { duration: 320 });
+    setHoveredNodeId(node.id);
+    window.setTimeout(() => {
+      if (useStore.getState().hoveredNodeId === node.id) {
+        useStore.getState().setHoveredNodeId(null);
+      }
+    }, 1200);
+    setIsQuickNavOpen(false);
+  }, [setCenter, setHoveredNodeId]);
+
+  const getNodeDisplayInfo = useCallback((node: AppNode) => {
+    const definition = getNodeDefinition(node.type || '');
+    const label = String(node.data?.label || definition?.metadata.label || node.type || node.id);
+    const typeLabel = definition?.metadata.label || node.type || 'node';
+    const color = definition?.metadata.color || 'var(--accent-bright)';
+    const incoming = edges.filter((edge) => edge.target === node.id).length;
+    const outgoing = edges.filter((edge) => edge.source === node.id).length;
+    const wireless = edges.filter((edge) => edge.className?.includes('wireless-edge') && (edge.source === node.id || edge.target === node.id)).length;
+    const size = {
+      width: Math.round(node.measured?.width ?? node.width ?? 180),
+      height: Math.round(node.measured?.height ?? node.height ?? 110),
+    };
+    return { definition, label, typeLabel, color, incoming, outgoing, wireless, size };
+  }, [edges]);
 
 
   // Handle Cmd+Scroll for node resizing with event aggregation
@@ -565,6 +638,31 @@ function Flow() {
       <DebugOverlay />
       <Sidebar />
       <FloatingPalette />
+      <button
+        className="nodrag"
+        onClick={() => {
+          setIsQuickNavOpen(true);
+          setQuickNavMode('gallery');
+          setQuickNavQuery('');
+          setQuickNavActiveIndex(0);
+        }}
+        style={{
+          position: 'fixed',
+          top: 14,
+          right: 14,
+          zIndex: 1300,
+          border: '1px solid var(--border-node)',
+          background: 'var(--bg-node)',
+          color: 'var(--text-main)',
+          borderRadius: '8px',
+          padding: '6px 10px',
+          fontSize: '0.75rem',
+          cursor: 'pointer'
+        }}
+        title="Quick Node Navigator (Cmd/Ctrl+K)"
+      >
+        Go to Node
+      </button>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -614,6 +712,11 @@ function Flow() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onEdgeContextMenu={(e, edge) => {
+          e.preventDefault();
+          e.stopPropagation();
+          toggleWirelessEdge(edge.id);
+        }}
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
         onNodeDragStart={(event, _node, nodesBeingDragged) => {
@@ -711,6 +814,233 @@ function Flow() {
         <Background color={theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(14, 47, 11, 0.08)'} gap={18} variant={BackgroundVariant.Dots} />
         <Controls position="bottom-right" />
       </ReactFlow>
+      {isQuickNavOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.35)',
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+            zIndex: 1400,
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+            paddingTop: '12vh'
+          }}
+          onClick={() => setIsQuickNavOpen(false)}
+        >
+          <div
+            className="nodrag"
+            style={{
+              width: 'min(920px, 92vw)',
+              maxHeight: '70vh',
+              overflow: 'hidden',
+              border: '1px solid var(--border-node)',
+              background: 'var(--bg-node)',
+              borderRadius: '12px',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.35)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '10px 12px',
+              borderBottom: '1px solid var(--border-header)'
+            }}>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-sub)' }}>
+                {filteredQuickNavNodes.length} nodes
+              </div>
+              <div style={{
+                display: 'flex',
+                border: '1px solid var(--border-node)',
+                borderRadius: '8px',
+                overflow: 'hidden'
+              }}>
+                {(['list', 'gallery'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => setQuickNavMode(mode)}
+                    style={{
+                      border: 'none',
+                      borderRight: mode === 'list' ? '1px solid var(--border-node)' : 'none',
+                      background: quickNavMode === mode ? 'rgba(79, 172, 254, 0.22)' : 'transparent',
+                      color: 'var(--text-main)',
+                      padding: '5px 10px',
+                      fontSize: '0.72rem',
+                      cursor: 'pointer',
+                      textTransform: 'capitalize'
+                    }}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <input
+              ref={quickNavInputRef}
+              value={quickNavQuery}
+              onChange={(e) => {
+                setQuickNavQuery(e.target.value);
+                setQuickNavActiveIndex(0);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setQuickNavActiveIndex((prev) => Math.min(prev + 1, Math.max(filteredQuickNavNodes.length - 1, 0)));
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setQuickNavActiveIndex((prev) => Math.max(prev - 1, 0));
+                } else if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const node = filteredQuickNavNodes[quickNavActiveIndex];
+                  if (node) jumpToNode(node);
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setIsQuickNavOpen(false);
+                }
+              }}
+              placeholder="Search node by label / type / id..."
+              style={{
+                width: '100%',
+                border: 'none',
+                borderBottom: '1px solid var(--border-header)',
+                background: 'transparent',
+                color: 'var(--text-main)',
+                padding: '14px 16px',
+                fontSize: '0.95rem',
+                outline: 'none'
+              }}
+            />
+            <div style={{ maxHeight: '56vh', overflowY: 'auto' }}>
+              {filteredQuickNavNodes.length === 0 ? (
+                <div style={{ padding: '14px 16px', color: 'var(--text-sub)', fontSize: '0.85rem' }}>
+                  No matching nodes.
+                </div>
+              ) : quickNavMode === 'list' ? (
+                filteredQuickNavNodes.map((node, idx) => {
+                  const { label } = getNodeDisplayInfo(node);
+                  const isActive = idx === quickNavActiveIndex;
+                  return (
+                    <button
+                      key={node.id}
+                      onMouseEnter={() => setQuickNavActiveIndex(idx)}
+                      onClick={() => jumpToNode(node)}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        border: 'none',
+                        borderBottom: '1px solid var(--border-header)',
+                        background: isActive ? 'rgba(79, 172, 254, 0.18)' : 'transparent',
+                        color: 'var(--text-main)',
+                        padding: '10px 14px',
+                        cursor: 'pointer',
+                        textAlign: 'left'
+                      }}
+                    >
+                      <span style={{ fontSize: '0.86rem' }}>{label}</span>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-sub)', fontFamily: 'monospace' }}>
+                        {node.type} · {node.id}
+                      </span>
+                    </button>
+                  );
+                })
+              ) : (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+                  gap: '10px',
+                  padding: '12px'
+                }}>
+                  {filteredQuickNavNodes.map((node, idx) => {
+                    const info = getNodeDisplayInfo(node);
+                    const isActive = idx === quickNavActiveIndex;
+                    const hasScope = (node.data?.handles || []).some((handle) => handle.type === 'scope');
+                    return (
+                      <button
+                        key={node.id}
+                        onMouseEnter={() => setQuickNavActiveIndex(idx)}
+                        onClick={() => jumpToNode(node)}
+                        style={{
+                          minHeight: '156px',
+                          border: isActive ? '1px solid rgba(79, 172, 254, 0.75)' : '1px solid var(--border-node)',
+                          background: isActive ? 'rgba(79, 172, 254, 0.12)' : 'rgba(255,255,255,0.035)',
+                          color: 'var(--text-main)',
+                          borderRadius: '8px',
+                          padding: '10px',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '8px',
+                          boxShadow: isActive ? '0 0 16px rgba(79, 172, 254, 0.18)' : 'none'
+                        }}
+                      >
+                        <div style={{
+                          height: '78px',
+                          border: '1px solid var(--border-node)',
+                          borderRadius: '8px',
+                          background: 'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))',
+                          position: 'relative',
+                          overflow: 'hidden'
+                        }}>
+                          <div style={{
+                            height: '20px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '0 7px',
+                            borderBottom: '1px solid var(--border-header)',
+                            color: 'var(--text-main)',
+                            fontSize: '0.62rem',
+                            fontWeight: 700
+                          }}>
+                            <span style={{ color: info.color }}>{info.definition?.metadata.icon || '■'}</span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{info.typeLabel}</span>
+                          </div>
+                          <div style={{
+                            padding: '8px',
+                            fontSize: '0.68rem',
+                            color: 'var(--text-sub)',
+                            lineHeight: 1.35,
+                            overflow: 'hidden',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical'
+                          }}>
+                            {node.type === 'textNode'
+                              ? String(node.data?.text || 'Notebook').slice(0, 70)
+                              : String(node.data?.value || node.data?.status || node.data?.description || info.label).slice(0, 70)}
+                          </div>
+                          <span style={{ position: 'absolute', left: 5, top: '50%', width: 8, height: 8, borderRadius: 2, border: '1px solid #2196F3', background: 'var(--bg-page)' }} />
+                          <span style={{ position: 'absolute', right: 5, top: '50%', width: 8, height: 8, borderRadius: 2, border: `1px solid ${hasScope ? '#8a8a8a' : '#E91E63'}`, background: 'var(--bg-page)' }} />
+                        </div>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {info.label}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', color: 'var(--text-sub)', fontSize: '0.66rem' }}>
+                          <span>{info.incoming} in · {info.outgoing} out</span>
+                          <span>{info.size.width}x{info.size.height}</span>
+                        </div>
+                        {info.wireless > 0 && (
+                          <div style={{ color: '#9ca3af', fontSize: '0.66rem' }}>
+                            wireless {info.wireless}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <WorkflowHeader />
 
       {paneMenu && (

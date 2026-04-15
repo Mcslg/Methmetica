@@ -362,6 +362,13 @@ math-field::part(virtual-keyboard-toggle) {
   stroke: #8a8a8a !important;
 }
 
+.wireless-edge .react-flow__edge-path {
+  stroke: transparent !important;
+  opacity: 0 !important;
+  stroke-width: 14 !important;
+  filter: none !important;
+}
+
 .react-flow__edge.selected .react-flow__edge-path {
   stroke-width: 3;
   filter: brightness(1.2);
@@ -1478,4 +1485,54 @@ math-field::part(virtual-keyboard-toggle) {
     font-size: 8px;
     font-weight: 800;
     line-height: 1;
+}
+
+.react-flow__handle.wireless-endpoint {
+    overflow: visible;
+    box-shadow: 0 0 0 1px rgba(156, 163, 175, 0.55), 0 0 10px rgba(156, 163, 175, 0.4);
+    animation: wireless-endpoint-pulse 1.8s ease-in-out infinite;
+    cursor: pointer !important;
+}
+
+.react-flow__handle.wireless-endpoint::before {
+    content: "";
+    position: absolute;
+    width: 16px;
+    height: 8px;
+    border: 1px solid rgba(156, 163, 175, 0.9);
+    border-radius: 3px;
+    background: rgba(156, 163, 175, 0.18);
+    box-shadow: 0 0 8px rgba(156, 163, 175, 0.45);
+    pointer-events: none;
+    opacity: 0.95;
+}
+
+.react-flow__handle-right.wireless-endpoint::before {
+    left: calc(100% + 5px);
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.react-flow__handle-left.wireless-endpoint::before {
+    right: calc(100% + 5px);
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.react-flow__handle-top.wireless-endpoint::before {
+    left: 50%;
+    bottom: calc(100% + 5px);
+    transform: translateX(-50%) rotate(90deg);
+}
+
+.react-flow__handle-bottom.wireless-endpoint::before {
+    left: 50%;
+    top: calc(100% + 5px);
+    transform: translateX(-50%) rotate(90deg);
+}
+
+@keyframes wireless-endpoint-pulse {
+    0% { box-shadow: 0 0 0 1px rgba(156, 163, 175, 0.35), 0 0 6px rgba(156, 163, 175, 0.35); }
+    50% { box-shadow: 0 0 0 3px rgba(156, 163, 175, 0.55), 0 0 12px rgba(156, 163, 175, 0.65); }
+    100% { box-shadow: 0 0 0 1px rgba(156, 163, 175, 0.35), 0 0 6px rgba(156, 163, 175, 0.35); }
 }
