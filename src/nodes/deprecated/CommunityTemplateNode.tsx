@@ -5,6 +5,7 @@ import { NodeFrame } from '../../components/NodeFrame';
 import { Icons } from '../../components/Icons';
 import { getCommunityTemplateById } from '../../community/catalog';
 import type { CommunityNodeTemplate, TemplateBuilderBlock } from '../../community/types';
+import { applyBlockViewOverrides } from '../../community/templateView';
 
 const openCommunityWorkflow = (workflowId: string) => {
   const url = new URL(window.location.href);
@@ -66,7 +67,8 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
       <div className="community-template-body">
         {template.builderBlocks.length > 0 && (
           <div className="community-template-fields">
-            {template.builderBlocks.map((block: TemplateBuilderBlock) => {
+            {template.builderBlocks.map((sourceBlock: TemplateBuilderBlock) => {
+              const block = applyBlockViewOverrides(sourceBlock, data.templateViewOverrides);
               if (block.kind === 'input' || block.kind === 'output') {
                 return null;
               }

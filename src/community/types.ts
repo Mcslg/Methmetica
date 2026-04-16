@@ -12,6 +12,8 @@ export type TemplateDiscoveryMode = 'search-only' | 'library-and-search';
 export type TemplatePortSource = 'static' | 'derived';
 export type TemplatePortValueKind = 'value' | 'trigger' | 'gate' | 'object' | 'formula-variable';
 export type TemplatePortDerivation = 'builderBlocks' | 'formulaVariables' | 'runtime';
+export type TemplateElementProp = 'content' | 'visible' | 'open' | 'value';
+export type TemplateElementBindingSource = 'project-input' | 'runtime-output' | 'local-state';
 
 export type TemplateBuilderBlock = {
   id: string;
@@ -54,6 +56,23 @@ export type TemplateInterfaceSchema = {
   outputs: TemplatePortSpec[];
 };
 
+export type TemplateControlPort = {
+  id: string;
+  label: string;
+  valueKind: TemplatePortValueKind;
+  defaultValue?: unknown;
+};
+
+export type TemplateElementBinding = {
+  id: string;
+  blockId: string;
+  prop: TemplateElementProp;
+  source: TemplateElementBindingSource;
+  portId: string;
+};
+
+export type TemplateViewOverrides = Record<string, Partial<Record<TemplateElementProp, unknown>>>;
+
 export type CommunityNodeTemplate = {
   id: string;
   title: string;
@@ -72,6 +91,8 @@ export type CommunityNodeTemplate = {
   tags: string[];
   interfaceSchema?: TemplateInterfaceSchema;
   interfaceSchemaText?: string;
+  controlPorts?: TemplateControlPort[];
+  elementBindings?: TemplateElementBinding[];
   runtimePlan?: BuiltWorkflowNode;
   fields: TemplateFieldSpec[];
   inputs: TemplateHandleSpec[];

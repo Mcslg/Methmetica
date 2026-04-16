@@ -7,6 +7,7 @@ import type {
   CommunityNodeTemplate,
   TemplateBuilderBlock,
   TemplateBuilderBlockKind,
+  TemplateControlPort,
   TemplateHandleSpec,
   TemplateInterfaceSchema,
   TemplatePortSpec,
@@ -30,6 +31,8 @@ const BLOCK_KIND_META: Record<TemplateBuilderBlockKind, { color: string; icon: k
 };
 
 const handlePositionByIndex = (index: number) => Math.max(16, Math.min(84, 24 + index * 18));
+
+const makeControlPortId = (blockId: string, prop: string) => `control-${blockId}-${prop}`;
 
 const getInterfaceCopy = (kind: 'input' | 'output') => {
   if (kind === 'input') {
@@ -244,9 +247,55 @@ export function CommunityNodeMaker({
     });
   };
 
+  const toggleContentControl = (block: TemplateBuilderBlock) => {
+    const portId = makeControlPortId(block.id, 'content');
+    const hasBinding = (draft.elementBindings || []).some(binding =>
+      binding.source === 'project-input' &&
+      binding.blockId === block.id &&
+      binding.prop === 'content' &&
+      binding.portId === portId
+    );
+
+    if (hasBinding) {
+      updateDraft({
+        controlPorts: (draft.controlPorts || []).filter(port => port.id !== portId),
+        elementBindings: (draft.elementBindings || []).filter(binding => binding.portId !== portId),
+      });
+      return;
+    }
+
+    const nextPort: TemplateControlPort = {
+      id: portId,
+      label: block.label?.trim() || (block.kind === 'math' ? 'Formula content' : `${block.kind} content`),
+      valueKind: 'value',
+    };
+
+    updateDraft({
+      controlPorts: [...(draft.controlPorts || []), nextPort],
+      elementBindings: [
+        ...(draft.elementBindings || []),
+        {
+          id: `${portId}-binding`,
+          blockId: block.id,
+          prop: 'content',
+          source: 'project-input',
+          portId,
+        },
+      ],
+    });
+  };
+
   const removeBlock = (blockId: string) => {
+    const boundPortIds = new Set(
+      (draft.elementBindings || [])
+        .filter(binding => binding.blockId === blockId)
+        .map(binding => binding.portId)
+    );
+
     updateDraft({
       builderBlocks: draft.builderBlocks.filter(block => block.id !== blockId),
+      controlPorts: (draft.controlPorts || []).filter(port => !boundPortIds.has(port.id)),
+      elementBindings: (draft.elementBindings || []).filter(binding => binding.blockId !== blockId),
     });
     setSelectedBlockId((prev) => (prev === blockId ? null : prev));
   };
@@ -676,7 +725,26 @@ export function CommunityNodeMaker({
                       {(block.kind === 'text' || block.kind === 'toggle' || block.kind === 'math') && (
                         <label className="stack compact nodrag">
                           <span>{block.kind === 'math' ? 'Formula' : 'Content'}</span>
-                          <textarea className="nodrag" value={block.content || ''} onChange={(e) => updateBlock(block.id, { content: e.target.value })} onPointerDown={stopNodeDragPropagation} onMouseDown={stopNodeDragPropagation} />
+                          <div className="control-field-wrap">
+                            {(() => {
+                              const portId = makeControlPortId(block.id, 'content');
+                              const isContentControlled = (draft.elementBindings || []).some(binding => binding.portId === portId);
+                              return (
+                                <button
+                                  className={`control-field-btn nodrag ${isContentControlled ? 'is-active' : ''}`}
+                                  data-project-control-port-id={isContentControlled ? portId : undefined}
+                                  onClick={() => toggleContentControl(block)}
+                                  onPointerDown={stopNodeDragPropagation}
+                                  onMouseDown={stopNodeDragPropagation}
+                                  title={isContentControlled ? 'Remove ProjectNode content input' : 'Expose content as ProjectNode input'}
+                                  type="button"
+                                >
+                                  <Icons.Trigger size={12} />
+                                </button>
+                              );
+                            })()}
+                            <textarea className="nodrag" value={block.content || ''} onChange={(e) => updateBlock(block.id, { content: e.target.value })} onPointerDown={stopNodeDragPropagation} onMouseDown={stopNodeDragPropagation} />
+                          </div>
                         </label>
                       )}
 
@@ -990,6 +1058,45 @@ export function CommunityNodeMaker({
         .interface-note small {
           margin: 0;
           color: var(--text-sub);
+        }
+        .control-field-wrap {
+          position: relative;
+        }
+        .control-field-wrap textarea {
+          padding-left: 34px;
+          min-height: 76px;
+        }
+        .control-field-btn {
+          position: absolute;
+          top: 7px;
+          left: 7px;
+          z-index: 2;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 22px;
+          height: 22px;
+          padding: 0;
+          border: 1px solid color-mix(in srgb, var(--block-accent) 32%, var(--border-node));
+          border-radius: 8px;
+          background: rgba(255,255,255,0.05);
+          cursor: pointer;
+        }
+        .control-field-btn svg {
+          margin-right: 0;
+        }
+        .control-field-btn {
+          color: var(--text-sub);
+          border-color: color-mix(in srgb, var(--block-accent) 32%, var(--border-node));
+        }
+        .control-field-btn:hover,
+        .control-field-btn.is-active {
+          color: var(--block-accent);
+          border-color: color-mix(in srgb, var(--block-accent) 65%, var(--border-node));
+          background: color-mix(in srgb, var(--block-accent) 14%, rgba(255,255,255,0.04));
+        }
+        .control-field-btn.is-active {
+          box-shadow: 0 0 0 2px color-mix(in srgb, var(--block-accent) 18%, transparent);
         }
         .builder-block-head {
           display: flex;

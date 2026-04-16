@@ -1082,6 +1082,7 @@ const MathPill = TiptapNode.create({
 const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     countRender('TextNode');
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
+    const addHandle = useStore((state: AppState) => state.addHandle);
     const updateNodeInternals = useUpdateNodeInternals();
     const { screenToFlowPosition } = useReactFlow();
     const containerRef = useRef<HTMLDivElement>(null);
@@ -1466,7 +1467,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                 
                 const scopeStr = JSON.stringify(nodeScope);
                 finalHandles.filter(h => h.type === 'scope').forEach(h => {
-                    newOutputs[`${h.id}-source`] = scopeStr;
+                    newOutputs[h.id] = scopeStr;
                 });
             } catch(e){}
         }
@@ -1631,6 +1632,29 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                     cursor: 'text'
                 }}
                 onMouseDown={(e) => { if (mathInputOpen) e.stopPropagation(); }}
+                onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const rect = containerRef.current?.getBoundingClientRect();
+                    if (!rect) return;
+                    const relX = e.clientX - rect.left;
+                    const relY = e.clientY - rect.top;
+                    const dTop = relY;
+                    const dBottom = rect.height - relY;
+                    const dLeft = relX;
+                    const dRight = rect.width - relX;
+                    const EDGE_THRESHOLD = 24;
+                    const minDist = Math.min(dTop, dBottom, dLeft, dRight);
+                    if (minDist > EDGE_THRESHOLD) return; // not near any edge
+                    const side: 'top' | 'bottom' | 'left' | 'right' =
+                        minDist === dTop ? 'top' :
+                        minDist === dBottom ? 'bottom' :
+                        minDist === dLeft ? 'left' : 'right';
+                    const offset = side === 'top' || side === 'bottom'
+                        ? Math.max(5, Math.min(95, (relX / rect.width) * 100))
+                        : Math.max(5, Math.min(95, (relY / rect.height) * 100));
+                    addHandle(id, { id: `h-scope-${Date.now()}`, type: 'scope', position: side, offset });
+                }}
             >
                 <NodeResizer color="transparent" isVisible={false} minWidth={150} minHeight={80} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
 
@@ -2032,7 +2056,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                 }
             `}</style>
 
-                <DynamicHandles nodeId={id} handles={data.handles} allowedTypes={['input', 'scope']} touchingEdges={data.touchingEdges} />
+                <DynamicHandles nodeId={id} handles={data.handles} allowedTypes={['scope']} touchingEdges={data.touchingEdges} />
 
                 <style>{`
                 .tiptap-editor-container .ProseMirror { outline: none; }

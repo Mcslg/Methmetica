@@ -4,7 +4,7 @@ import { type Edge } from '@xyflow/react';
 import { getNodeDefinition } from '../nodes/registry';
 import { canPlugin, PluginRules, type ProxyableType } from '../config/pluginRegistry';
 import { defaultCommunityTemplates } from '../community/catalog';
-import type { CommunityNodeTemplate, WorkflowVisibility } from '../community/types';
+import type { CommunityNodeTemplate, TemplateViewOverrides, WorkflowVisibility } from '../community/types';
 import type { AppUser, AuthStatus } from '../integrations/supabase/types';
 import type { MathValue } from '../types/mathTypes';
 import {
@@ -112,6 +112,7 @@ export type NodeData = {
     templateId?: string; // For reusable community template nodes
     templateDraft?: CommunityNodeTemplate;
     templateFields?: Record<string, string>;
+    templateViewOverrides?: TemplateViewOverrides;
     templateSummary?: string;
     templateBestAlgorithm?: string;
     templateAlternatives?: string[];
@@ -720,10 +721,12 @@ const useStore = create<AppState>()(
 
     onConnect: (connection: Connection) => {
         get().takeSnapshot(); // Snapshot BEFORE connecting
-        const isScopeEdge = Boolean(
-            connection.sourceHandle?.endsWith('-source') ||
-            connection.targetHandle?.endsWith('-target')
-        );
+        const { nodes } = get();
+        const sourceNode = nodes.find(n => n.id === connection.source);
+        const targetNode = nodes.find(n => n.id === connection.target);
+        const sourceHandle = sourceNode?.data.handles?.find(h => h.id === connection.sourceHandle);
+        const targetHandle = targetNode?.data.handles?.find(h => h.id === connection.targetHandle);
+        const isScopeEdge = sourceHandle?.type === 'scope' || targetHandle?.type === 'scope';
         const newEdge = {
             ...connection,
             type: 'default',

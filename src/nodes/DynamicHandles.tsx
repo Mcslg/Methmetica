@@ -144,6 +144,22 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
         updateNodeInternals(nodeId);
     }, [nodeId, handles, updateNodeInternals]);
 
+    // Auto-remove disconnected scope target handles (h-drop-scope-*)
+    // Only watches edges (not handles) to avoid race with onConnectEnd that adds handle THEN edge.
+    useEffect(() => {
+        const currentHandles = handles;
+        if (!currentHandles) return;
+        currentHandles.forEach(h => {
+            if (!h.id.startsWith('h-drop-scope')) return;
+            const isConnected = edges.some(e =>
+                (e.target === nodeId && e.targetHandle === h.id) ||
+                (e.source === nodeId && e.sourceHandle === h.id)
+            );
+            if (!isConnected) removeHandle(nodeId, h.id);
+        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [edges, nodeId, removeHandle]);
+
     const [menu, setMenu] = useState<MenuState | null>(null);
     const [movingHandle, setMovingHandle] = useState<{ id: string, side: string, offset: number } | null>(null);
     const [cmdPressed, setCmdPressed] = useState(false);
@@ -422,48 +438,54 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                 // Hide input handles on the left if connected on the left
                 if (h.type === 'input' && h.position === 'left' && touchingEdges.left) return null;
                 if (h.type === 'scope') {
-                    const isScopeInput = h.id.endsWith('-in');
-                    const scopeHandleId = `${h.id}-${isScopeInput ? 'target' : 'source'}`;
-                    const wirelessPeerNodeId = getWirelessPeerNodeId(scopeHandleId, isScopeInput ? 'target' : 'source');
+                    // h-drop-scope-* = auto-created receivers (target); h-scope-* = manually created emitters (source)
+                    const isScopeTarget = h.id.startsWith('h-drop-scope');
+                    const scopeRole = isScopeTarget ? 'target' : 'source';
+                    const wirelessPeerNodeId = getWirelessPeerNodeId(h.id, scopeRole);
                     const wirelessClass = wirelessPeerNodeId ? 'wireless-endpoint' : '';
                     return (
-                        isScopeInput ? (
-                            <Handle
-                                key={h.id}
-                                id={scopeHandleId}
-                                type="target"
-                                position={getPositionLiteral(h.position)}
-                                isConnectable={!cmdPressed}
-                                className={`${getShapeClass(h.type)} handle-${h.type} handle-scope-in ${wirelessClass} ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
-                                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onHandleContextMenu(e, h); }}
-                                onMouseDown={(e) => onHandleMouseDown(e, h)}
-                                onClick={(e) => {
-                                    if (!wirelessPeerNodeId) return;
-                                    e.stopPropagation();
-                                    focusPeerNode(wirelessPeerNodeId);
-                                }}
-                                style={{ ...getScopeHandleStyle(h), zIndex: 1 }}
-                            />
-                        ) : (
-                            <Handle
-                                key={h.id}
-                                id={scopeHandleId}
-                                type="source"
-                                position={getPositionLiteral(h.position)}
-                                isConnectable={!cmdPressed}
-                                className={`${getShapeClass(h.type)} handle-${h.type} handle-scope-out ${wirelessClass} ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
-                                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onHandleContextMenu(e, h); }}
-                                onMouseDown={(e) => onHandleMouseDown(e, h)}
-                                onClick={(e) => {
-                                    if (!wirelessPeerNodeId) return;
-                                    e.stopPropagation();
-                                    focusPeerNode(wirelessPeerNodeId);
-                                }}
-                                style={{ ...getScopeHandleStyle(h), zIndex: 2 }}
-                            >
-                                <div style={{ transform: `rotate(${getRotation(h.type, h.position)}deg)`, display: 'flex' }}>◎</div>
-                            </Handle>
-                        )
+                        <Handle
+                            key={h.id}
+                            id={h.id}
+                            type={isScopeTarget ? 'target' : 'source'}
+                            position={getPositionLiteral(h.position)}
+                            isConnectable={!cmdPressed}
+                            className={`${getShapeClass(h.type)} handle-${h.type} ${wirelessClass} ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
+                            style={{ [h.position === 'top' || h.position === 'bottom' ? 'left' : 'top']: `${h.offset}%` }}
+                            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onHandleContextMenu(e, h); }}
+                            onMouseDown={(e) => onHandleMouseDown(e, h)}
+                            onMouseEnter={(e) => {
+                                const rect = (e.target as HTMLElement).getBoundingClientRect();
+                                window.dispatchEvent(new CustomEvent('setTooltip', {
+                                    detail: {
+                                        x: rect.x + 15,
+                                        y: rect.y - 40,
+                                        text: (
+                                            <div style={{ textAlign: 'left' }}>
+                                                <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>SCOPE PIN</div>
+                                                <div style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{h.label || '連通接口'}</div>
+                                                <div style={{ fontSize: '0.7rem', opacity: 0.8, marginTop: 4 }}>
+                                                    {isScopeTarget ? '接收：外部變數環境' : '輸出：本節點變數環境'}
+                                                </div>
+                                                {wirelessPeerNodeId && (
+                                                    <div style={{ fontSize: '0.7rem', color: 'var(--accent)', marginTop: 2 }}>點擊跳至對端節點</div>
+                                                )}
+                                            </div>
+                                        )
+                                    }
+                                }));
+                            }}
+                            onMouseLeave={() => {
+                                window.dispatchEvent(new CustomEvent('setTooltip', { detail: null }));
+                            }}
+                            onClick={(e) => {
+                                if (!wirelessPeerNodeId) return;
+                                e.stopPropagation();
+                                focusPeerNode(wirelessPeerNodeId);
+                            }}
+                        >
+                            {!isScopeTarget && <div style={{ display: 'flex' }}>◎</div>}
+                        </Handle>
                     );
                 }
 

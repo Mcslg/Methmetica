@@ -14,7 +14,7 @@ import {
   listPublicWorkflows,
   runSupabaseHealthCheck,
 } from '../integrations/supabase/workflows';
-import { recordWorkflowView } from '../integrations/supabase/workflowInteractions';
+import { recordWorkflowView, setWorkflowInteraction, type WorkflowInteractionKind } from '../integrations/supabase/workflowInteractions';
 import { listPublicNodeTemplates } from '../integrations/supabase/nodeTemplates';
 import { pushRoute } from '../utils/navigation';
 import {
@@ -25,6 +25,8 @@ import {
 } from '../utils/localDraftService';
 
 type DashboardTab = 'community' | 'private';
+type CommunityListMode = 'all' | 'likes' | 'bookmarks';
+type CommunitySortMode = 'recent' | 'popular';
 
 const annotatePublicWorkflowNodes = (
   nodes: AppNode[],
@@ -65,10 +67,13 @@ export function Dashboard() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<DashboardTab>('private');
+  const [communityListMode, setCommunityListMode] = useState<CommunityListMode>('all');
+  const [communitySortMode, setCommunitySortMode] = useState<CommunitySortMode>('recent');
   const [publicWorkflows, setPublicWorkflows] = useState<CommunityWorkflowCard[]>(publicCommunityWorkflows);
   const [localDrafts, setLocalDrafts] = useState<LocalDraftSummary[]>([]);
   const [isLoadingPublicWorkflows, setIsLoadingPublicWorkflows] = useState(false);
   const [publicWorkflowError, setPublicWorkflowError] = useState<string | null>(null);
+  const [pendingInteractions, setPendingInteractions] = useState<Record<string, boolean>>({});
   const [supabaseHealth, setSupabaseHealth] = useState<{
     configured: boolean;
     storedSession: boolean;
@@ -262,6 +267,59 @@ export function Dashboard() {
     pushRoute({ view: 'editor', source: 'public', id: workflowId });
   };
 
+  const handleToggleInteraction = async (
+    event: React.MouseEvent,
+    workflowId: string,
+    kind: WorkflowInteractionKind,
+    currentlyEnabled: boolean | undefined,
+  ) => {
+    event.stopPropagation();
+    if (!user) {
+      alert('先登入才能收藏或按讚。');
+      return;
+    }
+
+    const nextEnabled = !currentlyEnabled;
+    const pendingKey = `${workflowId}:${kind}`;
+    const countField = kind === 'like' ? 'likeCount' : kind === 'bookmark' ? 'bookmarkCount' : 'forkCount';
+    const flagField = kind === 'like' ? 'liked' : kind === 'bookmark' ? 'bookmarked' : 'forked';
+
+    setPendingInteractions((prev) => ({ ...prev, [pendingKey]: true }));
+    setPublicWorkflows((prev) => prev.map((workflow) => {
+      if (workflow.id !== workflowId) return workflow;
+      const currentCount = workflow[countField] ?? 0;
+      const updatedCount = nextEnabled ? currentCount + 1 : Math.max(0, currentCount - 1);
+      return {
+        ...workflow,
+        [flagField]: nextEnabled,
+        [countField]: updatedCount,
+      };
+    }));
+
+    try {
+      await setWorkflowInteraction(workflowId, kind, nextEnabled);
+    } catch (error) {
+      console.error(`[dashboard] failed to toggle ${kind}:`, error);
+      setPublicWorkflows((prev) => prev.map((workflow) => {
+        if (workflow.id !== workflowId) return workflow;
+        const currentCount = workflow[countField] ?? 0;
+        const revertedCount = nextEnabled ? Math.max(0, currentCount - 1) : currentCount + 1;
+        return {
+          ...workflow,
+          [flagField]: !nextEnabled,
+          [countField]: revertedCount,
+        };
+      }));
+      alert('更新互動狀態失敗，請稍後再試。');
+    } finally {
+      setPendingInteractions((prev) => {
+        const next = { ...prev };
+        delete next[pendingKey];
+        return next;
+      });
+    }
+  };
+
   const handleOpenWorkflow = async (file: WorkflowListItem) => {
     try {
       const data = await driveService.loadWorkflow(file.id);
@@ -308,10 +366,47 @@ export function Dashboard() {
   };
 
   const filteredPublicWorkflows = useMemo(() => {
-    return publicWorkflows.filter(workflow =>
-      `${workflow.title} ${workflow.summary} ${workflow.tags.join(' ')}`.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [publicWorkflows, searchQuery]);
+    const keyword = searchQuery.toLowerCase();
+
+    const matchesKeyword = (workflow: CommunityWorkflowCard) =>
+      `${workflow.title} ${workflow.summary} ${workflow.tags.join(' ')}`.toLowerCase().includes(keyword);
+
+    const matchesListMode = (workflow: CommunityWorkflowCard) => {
+      if (communityListMode === 'likes') return Boolean(workflow.liked);
+      if (communityListMode === 'bookmarks') return Boolean(workflow.bookmarked);
+      return true;
+    };
+
+    const rows = publicWorkflows
+      .filter(matchesKeyword)
+      .filter(matchesListMode);
+
+    rows.sort((a, b) => {
+      if (communitySortMode === 'popular') {
+        const scoreA =
+          (a.viewCount ?? 0) * 0.05 +
+          (a.likeCount ?? 0) * 3 +
+          (a.bookmarkCount ?? 0) * 4 +
+          (a.forkCount ?? 0) * 5;
+        const scoreB =
+          (b.viewCount ?? 0) * 0.05 +
+          (b.likeCount ?? 0) * 3 +
+          (b.bookmarkCount ?? 0) * 4 +
+          (b.forkCount ?? 0) * 5;
+        return scoreB - scoreA;
+      }
+
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
+
+    return rows;
+  }, [publicWorkflows, searchQuery, communityListMode, communitySortMode]);
+
+  useEffect(() => {
+    if (!user && communityListMode !== 'all') {
+      setCommunityListMode('all');
+    }
+  }, [communityListMode, user]);
 
   const filteredWorkflows = workflowList.filter(w =>
     w.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -452,7 +547,38 @@ export function Dashboard() {
         </nav>
 
         {activeTab === 'community' && (
-          <section className="section-grid">
+          <section className="community-panel">
+            <div className="community-toolbar">
+              <div className="community-list-modes">
+                <button className={communityListMode === 'all' ? 'active' : ''} onClick={() => setCommunityListMode('all')}>
+                  全部
+                </button>
+                <button
+                  className={communityListMode === 'likes' ? 'active' : ''}
+                  onClick={() => setCommunityListMode('likes')}
+                  disabled={!user}
+                  title={user ? '你按讚過的工作流' : '請先登入'}
+                >
+                  我的 Likes
+                </button>
+                <button
+                  className={communityListMode === 'bookmarks' ? 'active' : ''}
+                  onClick={() => setCommunityListMode('bookmarks')}
+                  disabled={!user}
+                  title={user ? '你收藏過的工作流' : '請先登入'}
+                >
+                  我的 Bookmarks
+                </button>
+              </div>
+              <label className="community-sort">
+                排序
+                <select value={communitySortMode} onChange={(e) => setCommunitySortMode(e.target.value as CommunitySortMode)}>
+                  <option value="recent">最新</option>
+                  <option value="popular">最熱門</option>
+                </select>
+              </label>
+            </div>
+          <div className="section-grid">
             {isLoadingPublicWorkflows && (
               <div className="loading-state" style={{ gridColumn: '1 / -1' }}>
                 <div className="spinner"></div>
@@ -470,8 +596,8 @@ export function Dashboard() {
             {!isLoadingPublicWorkflows && filteredPublicWorkflows.length === 0 && !publicWorkflowError && (
               <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
                 <Icons.Search size={42} style={{ opacity: 0.12, marginBottom: 12 }} />
-                <h3>No public workflows yet</h3>
-                <p>第一條公開 workflow 發布後，就會出現在這裡。</p>
+                <h3>{communityListMode === 'all' ? 'No public workflows yet' : `沒有${communityListMode === 'likes' ? '按讚' : '收藏'}紀錄`}</h3>
+                <p>{communityListMode === 'all' ? '第一條公開 workflow 發布後，就會出現在這裡。' : '先在公開工作流按讚或收藏，就會出現在這裡。'}</p>
               </div>
             )}
             {filteredPublicWorkflows.map(workflow => (
@@ -482,6 +608,12 @@ export function Dashboard() {
                   </div>
                   <span className={`status-pill ${workflow.visibility}`}>{workflow.visibility}</span>
                 </div>
+                <div className="card-metrics">
+                  <span>View {workflow.viewCount ?? 0}</span>
+                  <span>Like {workflow.likeCount ?? 0}</span>
+                  <span>Save {workflow.bookmarkCount ?? 0}</span>
+                  <span>Fork {workflow.forkCount ?? 0}</span>
+                </div>
                 <div className="card-body">
                   <h3>{workflow.title}</h3>
                   <p>{workflow.summary}</p>
@@ -491,12 +623,33 @@ export function Dashboard() {
                 </div>
                 <div className="card-footer">
                   <span>{workflow.author}</span>
-                  <button className="card-open-btn" onClick={(e) => { e.stopPropagation(); openBlueprint(workflow.id); }}>
-                    Open
-                  </button>
+                  <div className="card-footer-actions">
+                    <div className="workflow-interactions">
+                      <button
+                        className={`interaction-btn ${workflow.liked ? 'active' : ''}`}
+                        onClick={(e) => handleToggleInteraction(e, workflow.id, 'like', workflow.liked)}
+                        disabled={pendingInteractions[`${workflow.id}:like`]}
+                        title={workflow.liked ? '取消讚' : '按讚'}
+                      >
+                        Like {workflow.likeCount ?? 0}
+                      </button>
+                      <button
+                        className={`interaction-btn ${workflow.bookmarked ? 'active' : ''}`}
+                        onClick={(e) => handleToggleInteraction(e, workflow.id, 'bookmark', workflow.bookmarked)}
+                        disabled={pendingInteractions[`${workflow.id}:bookmark`]}
+                        title={workflow.bookmarked ? '取消收藏' : '收藏'}
+                      >
+                        Save {workflow.bookmarkCount ?? 0}
+                      </button>
+                    </div>
+                    <button className="card-open-btn" onClick={(e) => { e.stopPropagation(); openBlueprint(workflow.id); }}>
+                      Open
+                    </button>
+                  </div>
                 </div>
               </article>
             ))}
+          </div>
           </section>
         )}
 
@@ -917,6 +1070,56 @@ export function Dashboard() {
           grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
           gap: 16px;
         }
+        .community-panel {
+          display: grid;
+          gap: 12px;
+        }
+        .community-toolbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+        .community-list-modes {
+          display: inline-flex;
+          gap: 6px;
+          flex-wrap: wrap;
+        }
+        .community-list-modes button {
+          cursor: pointer;
+          border: 1px solid var(--border-node);
+          background: var(--bg-sidebar);
+          color: var(--text-sub);
+          border-radius: 999px;
+          padding: 6px 10px;
+          font: inherit;
+          font-size: 0.76rem;
+        }
+        .community-list-modes button.active {
+          color: white;
+          background: var(--accent);
+          border-color: var(--accent);
+        }
+        .community-list-modes button:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+        .community-sort {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          color: var(--text-sub);
+          font-size: 0.76rem;
+        }
+        .community-sort select {
+          border: 1px solid var(--border-node);
+          background: var(--bg-sidebar);
+          color: var(--text-main);
+          border-radius: 8px;
+          padding: 6px 8px;
+          font: inherit;
+        }
         .workflow-card {
           background: var(--bg-sidebar);
           border: 1px solid var(--border-node);
@@ -945,6 +1148,43 @@ export function Dashboard() {
           justify-content: space-between;
           gap: 10px;
         }
+        .card-footer-actions,
+        .workflow-interactions {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .workflow-interactions {
+          flex-wrap: wrap;
+          justify-content: flex-end;
+        }
+        .interaction-btn {
+          cursor: pointer;
+          border: 1px solid var(--border-node);
+          border-radius: 10px;
+          padding: 6px 8px;
+          background: rgba(255,255,255,0.03);
+          color: var(--text-sub);
+          font: inherit;
+          font-size: 0.72rem;
+          line-height: 1;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 68px;
+        }
+        [data-theme='light'] .interaction-btn {
+          background: rgba(255,255,255,0.95);
+        }
+        .interaction-btn.active {
+          color: var(--accent-bright);
+          border-color: rgba(74, 222, 128, 0.45);
+          background: rgba(74, 222, 128, 0.08);
+        }
+        .interaction-btn:disabled {
+          opacity: 0.55;
+          cursor: wait;
+        }
         .card-icon-box {
           width: 42px;
           height: 42px;
@@ -955,6 +1195,19 @@ export function Dashboard() {
         }
         .card-body h3 {
           margin: 0 0 6px;
+        }
+        .card-metrics {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+        .card-metrics span {
+          border: 1px solid var(--border-node);
+          border-radius: 999px;
+          padding: 2px 8px;
+          font-size: 0.68rem;
+          color: var(--text-sub);
+          background: rgba(255,255,255,0.02);
         }
         .card-body p,
         .card-meta {
@@ -1046,6 +1299,20 @@ export function Dashboard() {
           }
           .dashboard-actions {
             align-items: stretch;
+          }
+          .community-toolbar {
+            align-items: flex-start;
+          }
+          .card-footer {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+          .card-footer-actions {
+            width: 100%;
+            justify-content: space-between;
+          }
+          .workflow-interactions {
+            justify-content: flex-start;
           }
         }
         @media (max-width: 640px) {

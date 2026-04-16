@@ -325,6 +325,8 @@ function Flow() {
 
   const onNodeContextMenu = useCallback((e: React.MouseEvent<HTMLElement> | NodeMenuEvent, node: AppNode) => {
     e.preventDefault();
+    // TextNode uses its own right-click to create scope handles; skip the node menu
+    if (node.type === 'textNode') return;
     setPaneMenu(null);
     const currentTarget = 'currentTarget' in e ? e.currentTarget : null;
     const rect = currentTarget instanceof HTMLElement ? currentTarget.getBoundingClientRect() : { top: e.clientY, height: 100 };
@@ -568,7 +570,9 @@ function Flow() {
     if (!toNodeId || toNodeId === connectStart.nodeId) return;
 
     const targetNode = nodes.find((n) => n.id === toNodeId);
-    if (!targetNode || !Array.isArray(targetNode.data?.handles)) return;
+    // For textNode, allow even if no existing handles (handles start empty)
+    if (!targetNode) return;
+    if (targetNode.type !== 'textNode' && !Array.isArray(targetNode.data?.handles)) return;
 
     const sourceNode = nodes.find((n) => n.id === connectStart.nodeId);
     const startHandleBaseId = connectStart.handleId.replace(/-(source|target)$/, '');
@@ -600,30 +604,28 @@ function Flow() {
       : (relY / rect.height) * 100;
     const offset = Math.max(5, Math.min(95, offsetBase));
 
-    // Use a non "h-auto-" prefix so TextNode's DOM-sync logic won't treat it as temporary and remove it.
-    const newHandleId = `h-drop-${requestedHandleType}-${Date.now()}-${Math.floor(Math.random() * 1000)}-in`;
+    // Use a non "h-auto-" prefix so TextNode's DOM-sync logic won't treat it as temporary.
+    // Use 'input' type so it acts as a target handle for the incoming scope source.
+    const newHandleId = `h-drop-scope-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     addHandle(toNodeId, {
       id: newHandleId,
-      type: requestedHandleType,
+      type: 'scope' as any,
       position: side,
       offset,
     });
 
-    // Wait one frame so React Flow internals pick up the newly created handle.
     requestAnimationFrame(() => {
       if (connectStart.handleType === 'source') {
-        const targetHandle = requestedHandleType === 'scope' ? `${newHandleId}-target` : newHandleId;
         onConnect({
           source: connectStart.nodeId,
           sourceHandle: connectStart.handleId,
           target: toNodeId,
-          targetHandle,
+          targetHandle: newHandleId,
         });
       } else {
-        const sourceHandle = requestedHandleType === 'scope' ? `${newHandleId}-source` : newHandleId;
         onConnect({
           source: toNodeId,
-          sourceHandle,
+          sourceHandle: newHandleId,
           target: connectStart.nodeId,
           targetHandle: connectStart.handleId,
         });
