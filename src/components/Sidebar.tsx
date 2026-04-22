@@ -10,6 +10,11 @@ import { parseRouteFromLocation, pushRoute } from '../utils/navigation';
 import { forkWorkflowToLocalDraft } from '../utils/workflowFork';
 import { deleteLocalDraft } from '../utils/localDraftService';
 import { setWorkflowInteraction } from '../integrations/supabase/workflowInteractions';
+import {
+    getWorkflowVersionBlueprintFromSupabase,
+    listWorkflowVersions,
+    type WorkflowVersionSummary,
+} from '../integrations/supabase/workflows';
 
 export function Sidebar() {
     const { t, language, setLanguage } = useLanguage();
@@ -22,6 +27,9 @@ export function Sidebar() {
     const [holdProgress, setHoldProgress] = React.useState(0);
     const [isSyncing, setIsSyncing] = React.useState(false);
     const [syncStatus, setSyncStatus] = React.useState<'idle' | 'success' | 'error'>('idle');
+    const [workflowVersions, setWorkflowVersions] = React.useState<WorkflowVersionSummary[]>([]);
+    const [isLoadingVersions, setIsLoadingVersions] = React.useState(false);
+    const [versionError, setVersionError] = React.useState<string | null>(null);
     const holdTimerRef = useRef<any>(null);
     const isDirty = createGraphSignature(nodes, edges) !== savedGraphSignature;
     const projectRoot = nodes.find(node => node.type === 'projectNode');
@@ -30,7 +38,30 @@ export function Sidebar() {
     const isCurrentUserOwner = Boolean(projectRoot?.data.ownerId && user?.id === projectRoot.data.ownerId);
     const isForkablePublicWorkflow = Boolean(projectRoot?.data.readOnlyPreview && !isCurrentUserOwner);
     const publishTemplateLabel = isForkablePublicWorkflow ? 'Fork' : hasPublishedTemplate ? '更新' : '發布';
+    const publishStatus = typeof projectRoot?.data.publishStatus === 'string' ? projectRoot.data.publishStatus : '';
+    const publishFailureReason = (() => {
+        if (!publishStatus) return '';
+        const failurePrefixes = ['發布失敗：', '發布前請先補齊：'];
+        const prefix = failurePrefixes.find(item => publishStatus.startsWith(item));
+        if (prefix) return publishStatus.slice(prefix.length).trim();
+        if (publishStatus.includes('先登入') || publishStatus.includes('只有 trusted_editor')) return publishStatus;
+        return '';
+    })();
+    const hasPublishFailure = Boolean(publishFailureReason);
+    const isPublishClean = hasPublishedTemplate && !isDirty && !hasPublishFailure && !isForkablePublicWorkflow;
+    const publishButtonClassName = [
+        'sidebar-btn',
+        'publish',
+        isPublishClean ? 'published-clean' : '',
+        hasPublishFailure ? 'publish-failed' : '',
+    ].filter(Boolean).join(' ');
     const currentRoute = parseRouteFromLocation(window.location);
+    const supabaseWorkflowId = typeof projectRoot?.data.supabaseWorkflowId === 'string'
+        ? projectRoot.data.supabaseWorkflowId
+        : null;
+    const activeWorkflowVersionId = typeof projectRoot?.data.workflowVersionId === 'string'
+        ? projectRoot.data.workflowVersionId
+        : null;
     const isEditorRoute = currentRoute.view === 'editor';
     const canDeleteWorkflow =
         (isEditorRoute && currentRoute.source === 'draft' && Boolean(currentRoute.id)) ||
@@ -121,7 +152,7 @@ export function Sidebar() {
     const handlePublishTemplate = () => {
         if (isForkablePublicWorkflow) {
             forkWorkflowToLocalDraft({ nodes, edges, user, setGraph, setActiveFileId });
-            if (isEditorRoute && currentRoute.source === 'public' && currentRoute.id) {
+            if (currentRoute.view === 'editor' && currentRoute.source === 'public' && currentRoute.id) {
                 void setWorkflowInteraction(currentRoute.id, 'fork', true).catch((error) => {
                     console.warn('[sidebar] failed to record workflow fork:', error);
                 });
@@ -134,8 +165,74 @@ export function Sidebar() {
         }));
     };
 
+    React.useEffect(() => {
+        if (!supabaseWorkflowId) {
+            setWorkflowVersions([]);
+            setVersionError(null);
+            return;
+        }
+
+        let cancelled = false;
+        setIsLoadingVersions(true);
+        setVersionError(null);
+
+        listWorkflowVersions(supabaseWorkflowId)
+            .then((versions) => {
+                if (cancelled) return;
+                setWorkflowVersions(versions);
+            })
+            .catch((error) => {
+                if (cancelled) return;
+                const message = error instanceof Error ? error.message : 'Failed to load workflow versions.';
+                setVersionError(message);
+            })
+            .finally(() => {
+                if (!cancelled) setIsLoadingVersions(false);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [supabaseWorkflowId, projectRoot?.data.publishStatus]);
+
+    const handleOpenVersion = async (version: WorkflowVersionSummary) => {
+        setIsSyncing(true);
+        try {
+            const blueprint = await getWorkflowVersionBlueprintFromSupabase(version.id);
+            if (!blueprint) throw new Error(`Workflow version v${version.version} is missing.`);
+            setGraph(
+                blueprint.nodes.map(node => (
+                    node.type === 'projectNode'
+                        ? {
+                            ...node,
+                            data: {
+                                ...node.data,
+                                workflowSource: 'public' as const,
+                                readOnlyPreview: true,
+                                supabaseWorkflowId: blueprint.meta?.workflowId ?? version.workflowId,
+                                workflowVersionId: blueprint.meta?.workflowVersionId ?? version.id,
+                                workflowVersion: blueprint.meta?.workflowVersion ?? version.version,
+                                ownerId: blueprint.meta?.ownerId ?? node.data.ownerId,
+                                authorName: blueprint.meta?.authorName ?? node.data.authorName,
+                                publishStatus: `正在查看歷史版本 v${version.version}。Fork 後才能編輯。`,
+                            },
+                        }
+                        : node
+                )),
+                blueprint.edges
+            );
+            setActiveFileId(null);
+            pushRoute({ view: 'editor', source: 'version', id: version.id });
+        } catch (error) {
+            console.error('Failed to open workflow version', error);
+            alert(error instanceof Error ? error.message : '開啟歷史版本失敗。');
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
     const handleDeleteCurrentWorkflow = async () => {
-        if (isForkablePublicWorkflow || currentRoute.view !== 'editor') {
+        if (isForkablePublicWorkflow || !isEditorRoute) {
             alert('公開工作流不能直接刪除，請先 Fork 成自己的副本。');
             return;
         }
@@ -233,24 +330,61 @@ export function Sidebar() {
                             }
                         </button>
                     )}
-                    {isDirty && (
-                        <div className="sidebar-unsaved-hint">
-                            <Icons.Comment />
-                            <span>Unsaved changes</span>
+                    <div className="publish-action-row">
+                        <button
+                            className={publishButtonClassName}
+                            onClick={handlePublishTemplate}
+                            disabled={!hasBuilderDraft && !isForkablePublicWorkflow}
+                            title={
+                                isForkablePublicWorkflow
+                                    ? 'Fork 這個公開工作流成為你的本機副本'
+                                    : hasPublishFailure
+                                        ? publishFailureReason
+                                        : isPublishClean
+                                            ? '已發布，且目前沒有新的變更'
+                                            : hasBuilderDraft ? `${publishTemplateLabel}此工作流為節點` : '先在 Project Node 建立節點 Builder'
+                            }
+                        >
+                            {isPublishClean ? <Icons.Check /> : hasPublishFailure ? <Icons.Clear /> : <Icons.Package />}
+                            {publishTemplateLabel}
+                        </button>
+                    </div>
+                    {hasPublishFailure && (
+                        <div className="publish-failure-inline" title={publishFailureReason}>
+                            {publishFailureReason}
                         </div>
                     )}
-                    <button
-                        className="sidebar-btn"
-                        onClick={handlePublishTemplate}
-                        disabled={!hasBuilderDraft && !isForkablePublicWorkflow}
-                        title={
-                            isForkablePublicWorkflow
-                                ? 'Fork 這個公開工作流成為你的本機副本'
-                                : hasBuilderDraft ? `${publishTemplateLabel}此工作流為節點` : '先在 Project Node 建立節點 Builder'
-                        }
-                    >
-                        <Icons.Package /> {publishTemplateLabel}
-                    </button>
+                    {supabaseWorkflowId && (
+                        <div className="workflow-version-panel">
+                            <div className="workflow-version-header">
+                                <span>Versions</span>
+                                {isLoadingVersions && <small>Loading...</small>}
+                            </div>
+                            {versionError ? (
+                                <div className="workflow-version-error">{versionError}</div>
+                            ) : workflowVersions.length === 0 && !isLoadingVersions ? (
+                                <div className="workflow-version-empty">還沒有發布版本。</div>
+                            ) : (
+                                <div className="workflow-version-list">
+                                    {workflowVersions.map(version => (
+                                        <button
+                                            key={version.id}
+                                            className={`workflow-version-item ${version.id === activeWorkflowVersionId ? 'active' : ''}`}
+                                            onClick={() => handleOpenVersion(version)}
+                                            disabled={isSyncing}
+                                            title={`Open v${version.version}`}
+                                        >
+                                            <span>
+                                                v{version.version}
+                                                {version.isCurrent && <em>current</em>}
+                                            </span>
+                                            <small>{new Date(version.publishedAt).toLocaleString()}</small>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
                     <button className="sidebar-btn" onClick={handleSave}>
                         <Icons.Save /> {t('sidebar.save_export')}
                     </button>
@@ -537,6 +671,111 @@ export function Sidebar() {
                     position: relative;
                     z-index: 2;
                     pointer-events: none;
+                }
+                .publish-action-row {
+                    position: relative;
+                    display: flex;
+                    align-items: stretch;
+                    gap: 8px;
+                    width: 100%;
+                }
+                .sidebar-btn.publish {
+                    flex: 1;
+                    min-width: 0;
+                }
+                .sidebar-btn.publish.published-clean {
+                    background: #059669;
+                    border-color: #10b981;
+                    color: white;
+                }
+                .sidebar-btn.publish.published-clean:hover:not(:disabled) {
+                    background: #047857;
+                    border-color: #10b981;
+                    color: white;
+                }
+                .sidebar-btn.publish.publish-failed {
+                    background: rgba(248, 113, 113, 0.06);
+                    border-color: #ef4444;
+                    color: #fca5a5;
+                }
+                .sidebar-btn.publish.publish-failed:hover:not(:disabled) {
+                    background: rgba(248, 113, 113, 0.12);
+                    border-color: #f87171;
+                    color: #fecaca;
+                }
+                .publish-failure-inline {
+                    margin-top: -2px;
+                    padding: 0 2px;
+                    color: #f87171;
+                    font-size: 0.7rem;
+                    line-height: 1.35;
+                }
+                .workflow-version-panel {
+                    display: grid;
+                    gap: 8px;
+                    padding: 10px;
+                    border: 1px solid var(--border-node);
+                    border-radius: 8px;
+                    background: rgba(255, 255, 255, 0.03);
+                }
+                .workflow-version-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    gap: 8px;
+                    color: var(--text-main);
+                    font-size: 0.78rem;
+                    font-weight: 700;
+                }
+                .workflow-version-header small,
+                .workflow-version-empty,
+                .workflow-version-error {
+                    color: var(--text-sub);
+                    font-size: 0.72rem;
+                }
+                .workflow-version-error {
+                    color: #f87171;
+                }
+                .workflow-version-list {
+                    display: grid;
+                    gap: 6px;
+                    max-height: 180px;
+                    overflow: auto;
+                }
+                .workflow-version-item {
+                    display: grid;
+                    gap: 2px;
+                    width: 100%;
+                    padding: 8px;
+                    border: 1px solid var(--border-node);
+                    border-radius: 8px;
+                    background: rgba(255, 255, 255, 0.04);
+                    color: var(--text-main);
+                    text-align: left;
+                    cursor: pointer;
+                }
+                .workflow-version-item:hover:not(:disabled),
+                .workflow-version-item.active {
+                    border-color: var(--accent);
+                    background: var(--accent-light);
+                }
+                .workflow-version-item span {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 6px;
+                    font-size: 0.76rem;
+                    font-weight: 700;
+                }
+                .workflow-version-item em {
+                    color: var(--accent-bright);
+                    font-size: 0.64rem;
+                    font-style: normal;
+                    font-weight: 700;
+                }
+                .workflow-version-item small {
+                    color: var(--text-sub);
+                    font-size: 0.68rem;
                 }
                 .stat-row {
                     display: flex;

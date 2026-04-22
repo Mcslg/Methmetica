@@ -2,7 +2,16 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { useReactFlow } from '@xyflow/react';
 import { Icons } from './Icons';
+import { useLanguage } from '../contexts/LanguageContext';
 import { getTemplateInterfaceSchema, portToHandleSpec } from '../community/types';
+import {
+  SUPPORTED_TEMPLATE_LANGUAGES,
+  getLanguageText,
+  getLocalizedText,
+  hasLanguageText,
+  setLocalizedText,
+  type SupportedLanguage,
+} from '../community/localizedText';
 import type {
   CommunityNodeTemplate,
   TemplateBuilderBlock,
@@ -52,11 +61,57 @@ const getInterfaceCopy = (kind: 'input' | 'output') => {
   };
 };
 
+const blockDisplayText = (
+  block: TemplateBuilderBlock,
+  field: 'label' | 'content' | 'placeholder',
+  language: SupportedLanguage,
+) => {
+  const localized = field === 'label'
+    ? block.labelI18n
+    : field === 'content'
+      ? block.contentI18n
+      : block.placeholderI18n;
+  const fallback = field === 'label' ? block.label : field === 'content' ? block.content : block.placeholder;
+  return getLocalizedText(localized, language, fallback || '');
+};
+
+const blockEditText = (
+  block: TemplateBuilderBlock,
+  field: 'label' | 'content' | 'placeholder',
+  language: SupportedLanguage,
+) => {
+  const localized = field === 'label'
+    ? block.labelI18n
+    : field === 'content'
+      ? block.contentI18n
+      : block.placeholderI18n;
+  const fallback = field === 'label' ? block.label : field === 'content' ? block.content : block.placeholder;
+  return getLanguageText(localized, language, fallback || '');
+};
+
+const languageLabel = (language: SupportedLanguage) => language === 'zh-TW' ? '中文' : 'EN';
+
+const MissingLanguageBadge = ({ language }: { language: SupportedLanguage }) => (
+  <small className="missing-language-badge">未填 {languageLabel(language)}</small>
+);
+
+const fieldHasLanguageText = (
+  localized: Parameters<typeof hasLanguageText>[0],
+  language: SupportedLanguage,
+  fallback = '',
+) => hasLanguageText(localized, language, fallback);
+
+const missingTemplateLanguages = (
+  localized: Parameters<typeof hasLanguageText>[0],
+  fallback = '',
+) => SUPPORTED_TEMPLATE_LANGUAGES.filter(language => !fieldHasLanguageText(localized, language, fallback));
+
 const blockToHandle = (block: TemplateBuilderBlock, index: number): TemplateHandleSpec | null => {
   if (block.kind === 'input') {
     return {
       id: `h-in-${block.id}`,
       label: block.label,
+      labelI18n: block.labelI18n,
       position: 'left',
       type: 'input',
       offset: handlePositionByIndex(index),
@@ -67,6 +122,7 @@ const blockToHandle = (block: TemplateBuilderBlock, index: number): TemplateHand
     return {
       id: `h-out-${block.id}`,
       label: block.label,
+      labelI18n: block.labelI18n,
       position: 'right',
       type: 'output',
       offset: handlePositionByIndex(index),
@@ -86,6 +142,7 @@ const blockToPort = (block: TemplateBuilderBlock, index: number): TemplatePortSp
     valueKind: 'value',
     derivesFrom: 'builderBlocks',
     description: block.placeholder,
+    descriptionI18n: block.placeholderI18n,
   };
 };
 
@@ -119,8 +176,11 @@ export const buildTemplateFromBlocks = (draft: CommunityNodeTemplate): Community
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-const validateDraft = (draft: CommunityNodeTemplate): string | null => {
-  if (!draft.title.trim()) return 'Title 不能為空。';
+export const validateDraft = (draft: CommunityNodeTemplate): string | null => {
+  const missingTitleLanguages = missingTemplateLanguages(draft.titleI18n, draft.title);
+  if (missingTitleLanguages.length > 0) return `Title 還沒填寫：${missingTitleLanguages.map(languageLabel).join('、')}。`;
+  const missingSummaryLanguages = missingTemplateLanguages(draft.summaryI18n, draft.summary);
+  if (missingSummaryLanguages.length > 0) return `Summary 還沒填寫：${missingSummaryLanguages.map(languageLabel).join('、')}。`;
   if (!draft.slug.trim()) return 'Slug 不能為空。';
   if (!slugPattern.test(draft.slug.trim())) return 'Slug 只能包含小寫英數字與連字號。';
 
@@ -136,13 +196,31 @@ const validateDraft = (draft: CommunityNodeTemplate): string | null => {
     if (blockIds.has(block.id)) return 'Block id 重複，請重新加入該 block。';
     blockIds.add(block.id);
 
-    if (block.kind !== 'text' && !block.label.trim()) {
-      return '每個 block 都需要 label。';
+    if (block.kind !== 'text') {
+      const missingLabelLanguages = missingTemplateLanguages(block.labelI18n, block.label);
+      if (missingLabelLanguages.length > 0) {
+        return `${block.kind} block 的 Label 還沒填寫：${missingLabelLanguages.map(languageLabel).join('、')}。`;
+      }
+    }
+
+    if (block.kind === 'text' || block.kind === 'toggle' || block.kind === 'math') {
+      const missingContentLanguages = missingTemplateLanguages(block.contentI18n, block.content || '');
+      if (missingContentLanguages.length > 0) {
+        return `${block.kind} block 的 ${block.kind === 'math' ? 'Formula' : 'Content'} 還沒填寫：${missingContentLanguages.map(languageLabel).join('、')}。`;
+      }
     }
   }
 
   if (interfaceCount === 0) {
     return '至少需要一個 input 或 output interface。';
+  }
+
+  const missingPort = [...interfaceSchema.inputs, ...interfaceSchema.outputs].find(port =>
+    missingTemplateLanguages(port.labelI18n, port.label).length > 0
+  );
+  if (missingPort) {
+    const missingLanguages = missingTemplateLanguages(missingPort.labelI18n, missingPort.label);
+    return `Interface "${missingPort.id}" 的名稱還沒填寫：${missingLanguages.map(languageLabel).join('、')}。`;
   }
 
   return null;
@@ -152,6 +230,8 @@ interface CommunityNodeMakerProps {
   draft: CommunityNodeTemplate;
   onChange: (draft: CommunityNodeTemplate) => void;
   onPublish: (draft: CommunityNodeTemplate) => void;
+  editingLanguage?: SupportedLanguage;
+  onEditingLanguageChange?: (language: SupportedLanguage) => void;
   publishLabel?: string;
   status?: string;
   hideMetadataFields?: boolean;
@@ -179,12 +259,18 @@ export function CommunityNodeMaker({
   draft,
   onChange,
   onPublish,
+  editingLanguage: controlledEditingLanguage,
+  onEditingLanguageChange,
   publishLabel = 'Publish template',
   status,
   hideMetadataFields = false,
   hidePublishAction = false,
   showDetachedToolkit = false,
 }: CommunityNodeMakerProps) {
+  const { language } = useLanguage();
+  const [localEditingLanguage, setLocalEditingLanguage] = React.useState<SupportedLanguage>(language);
+  const editingLanguage = controlledEditingLanguage ?? localEditingLanguage;
+  const setEditingLanguage = onEditingLanguageChange ?? setLocalEditingLanguage;
   const [draggingKind, setDraggingKind] = React.useState<TemplateBuilderBlockKind | null>(null);
   const [draggingBlockIndex, setDraggingBlockIndex] = React.useState<number | null>(null);
   const [dropIndex, setDropIndex] = React.useState<number | null>(null);
@@ -203,6 +289,27 @@ export function CommunityNodeMaker({
     onChange({ ...draft, ...patch });
   };
 
+  const updateLocalizedDraftText = (field: 'title' | 'summary', value: string) => {
+    const i18nKey = field === 'title' ? 'titleI18n' : 'summaryI18n';
+    updateDraft({
+      [field]: editingLanguage === 'zh-TW' || !draft[field] ? value : draft[field],
+      [i18nKey]: setLocalizedText(draft[i18nKey], editingLanguage, value),
+    } as Partial<CommunityNodeTemplate>);
+  };
+
+  const updateLocalizedBlockText = (
+    block: TemplateBuilderBlock,
+    field: 'label' | 'content' | 'placeholder',
+    value: string,
+  ) => {
+    const i18nKey = field === 'label' ? 'labelI18n' : field === 'content' ? 'contentI18n' : 'placeholderI18n';
+    const basePatch = editingLanguage === 'zh-TW' || !block[field] ? { [field]: value } : {};
+    updateBlock(block.id, {
+      ...basePatch,
+      [i18nKey]: setLocalizedText(block[i18nKey], editingLanguage, value),
+    } as Partial<TemplateBuilderBlock>);
+  };
+
   const createBlock = (kind: TemplateBuilderBlockKind): TemplateBuilderBlock => ({
     id: `${kind}-${Date.now()}`,
     kind,
@@ -212,8 +319,30 @@ export function CommunityNodeMaker({
       kind === 'toggle' ? 'toggle' :
       kind === 'math' ? 'formula' :
       '',
+    labelI18n: {
+      'zh-TW':
+        kind === 'input' ? 'input' :
+        kind === 'output' ? 'output' :
+        kind === 'toggle' ? 'toggle' :
+        kind === 'math' ? 'formula' :
+        '',
+      en:
+        kind === 'input' ? 'input' :
+        kind === 'output' ? 'output' :
+        kind === 'toggle' ? 'toggle' :
+        kind === 'math' ? 'formula' :
+        '',
+    },
     content: kind === 'text' ? '輸入教學說明...' : kind === 'math' ? 'a^2 + b^2 = c^2' : '',
+    contentI18n: {
+      'zh-TW': kind === 'text' ? '輸入教學說明...' : kind === 'math' ? 'a^2 + b^2 = c^2' : '',
+      en: kind === 'text' ? 'Enter instructional text...' : kind === 'math' ? 'a^2 + b^2 = c^2' : '',
+    },
     placeholder: kind === 'input' ? '使用此節點時會提供的值' : kind === 'output' ? '此節點輸出的命名' : '',
+    placeholderI18n: {
+      'zh-TW': kind === 'input' ? '使用此節點時會提供的值' : kind === 'output' ? '此節點輸出的命名' : '',
+      en: kind === 'input' ? 'Value provided when this node is used' : kind === 'output' ? 'Name for this node output' : '',
+    },
   });
 
   const flashInsertedBlock = (blockId: string) => {
@@ -266,7 +395,11 @@ export function CommunityNodeMaker({
 
     const nextPort: TemplateControlPort = {
       id: portId,
-      label: block.label?.trim() || (block.kind === 'math' ? 'Formula content' : `${block.kind} content`),
+      label: blockDisplayText(block, 'label', editingLanguage).trim() || (block.kind === 'math' ? 'Formula content' : `${block.kind} content`),
+      labelI18n: {
+        ...(block.labelI18n || {}),
+        [editingLanguage]: blockDisplayText(block, 'label', editingLanguage).trim() || (block.kind === 'math' ? 'Formula content' : `${block.kind} content`),
+      },
       valueKind: 'value',
     };
 
@@ -506,13 +639,31 @@ export function CommunityNodeMaker({
           draggingKind === 'toggle' ? 'toggle' :
           draggingKind === 'math' ? 'formula' :
           'text',
+        labelI18n: {
+          [editingLanguage]:
+            draggingKind === 'input' ? 'input' :
+            draggingKind === 'output' ? 'output' :
+            draggingKind === 'toggle' ? 'toggle' :
+            draggingKind === 'math' ? 'formula' :
+            'text',
+        },
         content: draggingKind === 'text' ? '輸入教學說明...' : draggingKind === 'math' ? 'a^2 + b^2 = c^2' : '',
+        contentI18n: {
+          [editingLanguage]: draggingKind === 'text' ? (editingLanguage === 'en' ? 'Enter instructional text...' : '輸入教學說明...') : draggingKind === 'math' ? 'a^2 + b^2 = c^2' : '',
+        },
         placeholder: draggingKind === 'input' ? '使用此節點時會提供的值' : draggingKind === 'output' ? '此節點輸出的命名' : '',
+        placeholderI18n: {
+          [editingLanguage]: draggingKind === 'input'
+            ? (editingLanguage === 'en' ? 'Value provided when this node is used' : '使用此節點時會提供的值')
+            : draggingKind === 'output'
+              ? (editingLanguage === 'en' ? 'Name for this node output' : '此節點輸出的命名')
+              : '',
+        },
       } as TemplateBuilderBlock;
     }
 
     return null;
-  }, [draft.builderBlocks, draggingBlockIndex, draggingKind]);
+  }, [draft.builderBlocks, draggingBlockIndex, draggingKind, editingLanguage]);
 
   const [toolkitOffsetY, setToolkitOffsetY] = React.useState(0);
   const { getZoom } = useReactFlow();
@@ -587,15 +738,37 @@ export function CommunityNodeMaker({
           <div>
             <h3>Node Builder</h3>
           </div>
-          <span className="maker-badge">search only</span>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            {!controlledEditingLanguage && (
+              <div className="maker-language-switch" aria-label="Template language">
+                {SUPPORTED_TEMPLATE_LANGUAGES.map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    className={editingLanguage === item ? 'is-active' : ''}
+                    onClick={() => setEditingLanguage(item)}
+                  >
+                    {item === 'zh-TW' ? '中文' : 'EN'}
+                  </button>
+                ))}
+              </div>
+            )}
+            <span className="maker-badge">search only</span>
+          </div>
         </div>
 
         {!hideMetadataFields && (
           <>
             <div className="maker-grid meta-grid">
               <label>
-                <span>Title</span>
-                <input value={draft.title} onChange={(e) => updateDraft({ title: e.target.value })} />
+                <span className="field-label-row">
+                  <span>Title</span>
+                  {!hasLanguageText(draft.titleI18n, editingLanguage, draft.title) && <MissingLanguageBadge language={editingLanguage} />}
+                </span>
+                <input
+                  value={getLanguageText(draft.titleI18n, editingLanguage, draft.title)}
+                  onChange={(e) => updateLocalizedDraftText('title', e.target.value)}
+                />
               </label>
               <label>
                 <span>Slug</span>
@@ -612,8 +785,14 @@ export function CommunityNodeMaker({
             </div>
 
             <label className="stack">
-              <span>Summary</span>
-              <textarea value={draft.summary} onChange={(e) => updateDraft({ summary: e.target.value })} />
+              <span className="field-label-row">
+                <span>Summary</span>
+                {!hasLanguageText(draft.summaryI18n, editingLanguage, draft.summary) && <MissingLanguageBadge language={editingLanguage} />}
+              </span>
+              <textarea
+                value={getLanguageText(draft.summaryI18n, editingLanguage, draft.summary)}
+                onChange={(e) => updateLocalizedDraftText('summary', e.target.value)}
+              />
             </label>
           </>
         )}
@@ -639,8 +818,8 @@ export function CommunityNodeMaker({
             >
               {dropIndex === 0 && previewBlock && (
                 <div className="builder-preview-card" style={{ '--block-accent': BLOCK_KIND_META[previewBlock.kind].color } as React.CSSProperties}>
-                  <strong>{previewBlock.label}</strong>
-                  <span>{previewBlock.content || previewBlock.placeholder || BLOCK_KIND_META[previewBlock.kind].summaryLabel}</span>
+                  <strong>{blockDisplayText(previewBlock, 'label', editingLanguage)}</strong>
+                  <span>{blockDisplayText(previewBlock, 'content', editingLanguage) || blockDisplayText(previewBlock, 'placeholder', editingLanguage) || BLOCK_KIND_META[previewBlock.kind].summaryLabel}</span>
                 </div>
               )}
             </div>
@@ -703,28 +882,40 @@ export function CommunityNodeMaker({
                   </div>
                   <div className="builder-block-summary">
                     <strong>
-                      {block.kind === 'text' ? 'Text' : (block.label || 'Untitled block')}
+                      {block.kind === 'text' ? 'Text' : (blockDisplayText(block, 'label', editingLanguage) || 'Untitled block')}
                     </strong>
                     <span>
                       {block.kind === 'input'
                         ? 'Shows as a left-side input handle on the community node.'
                         : block.kind === 'output'
                           ? 'Shows as a right-side output handle on the community node.'
-                          : (block.content || BLOCK_KIND_META[block.kind].summaryLabel)}
+                          : (blockDisplayText(block, 'content', editingLanguage) || BLOCK_KIND_META[block.kind].summaryLabel)}
                     </span>
                   </div>
                   {!collapsedBlocks[block.id] && (
                     <>
                       {block.kind !== 'text' && (
                         <label className="stack compact nodrag">
-                          <span>Label</span>
-                          <input className="nodrag" value={block.label} onChange={(e) => updateBlock(block.id, { label: e.target.value })} onPointerDown={stopNodeDragPropagation} onMouseDown={stopNodeDragPropagation} />
+                          <span className="field-label-row">
+                            <span>Label</span>
+                            {!hasLanguageText(block.labelI18n, editingLanguage, block.label) && <MissingLanguageBadge language={editingLanguage} />}
+                          </span>
+                          <input
+                            className="nodrag"
+                            value={blockEditText(block, 'label', editingLanguage)}
+                            onChange={(e) => updateLocalizedBlockText(block, 'label', e.target.value)}
+                            onPointerDown={stopNodeDragPropagation}
+                            onMouseDown={stopNodeDragPropagation}
+                          />
                         </label>
                       )}
 
                       {(block.kind === 'text' || block.kind === 'toggle' || block.kind === 'math') && (
                         <label className="stack compact nodrag">
-                          <span>{block.kind === 'math' ? 'Formula' : 'Content'}</span>
+                          <span className="field-label-row">
+                            <span>{block.kind === 'math' ? 'Formula' : 'Content'}</span>
+                            {!hasLanguageText(block.contentI18n, editingLanguage, block.content || '') && <MissingLanguageBadge language={editingLanguage} />}
+                          </span>
                           <div className="control-field-wrap">
                             {(() => {
                               const portId = makeControlPortId(block.id, 'content');
@@ -743,7 +934,13 @@ export function CommunityNodeMaker({
                                 </button>
                               );
                             })()}
-                            <textarea className="nodrag" value={block.content || ''} onChange={(e) => updateBlock(block.id, { content: e.target.value })} onPointerDown={stopNodeDragPropagation} onMouseDown={stopNodeDragPropagation} />
+                            <textarea
+                              className="nodrag"
+                              value={blockEditText(block, 'content', editingLanguage)}
+                              onChange={(e) => updateLocalizedBlockText(block, 'content', e.target.value)}
+                              onPointerDown={stopNodeDragPropagation}
+                              onMouseDown={stopNodeDragPropagation}
+                            />
                           </div>
                         </label>
                       )}
@@ -761,7 +958,13 @@ export function CommunityNodeMaker({
 
                           <label className="stack compact nodrag">
                             <span>Description</span>
-                            <input className="nodrag" value={block.placeholder || ''} onChange={(e) => updateBlock(block.id, { placeholder: e.target.value })} onPointerDown={stopNodeDragPropagation} onMouseDown={stopNodeDragPropagation} />
+                            <input
+                              className="nodrag"
+                              value={blockEditText(block, 'placeholder', editingLanguage)}
+                              onChange={(e) => updateLocalizedBlockText(block, 'placeholder', e.target.value)}
+                              onPointerDown={stopNodeDragPropagation}
+                              onMouseDown={stopNodeDragPropagation}
+                            />
                           </label>
                         </>
                       )}
@@ -777,8 +980,8 @@ export function CommunityNodeMaker({
                 >
                   {dropIndex === index + 1 && previewBlock && (
                     <div className="builder-preview-card" style={{ '--block-accent': BLOCK_KIND_META[previewBlock.kind].color } as React.CSSProperties}>
-                      <strong>{previewBlock.label}</strong>
-                      <span>{previewBlock.content || previewBlock.placeholder || BLOCK_KIND_META[previewBlock.kind].summaryLabel}</span>
+                      <strong>{blockDisplayText(previewBlock, 'label', editingLanguage)}</strong>
+                      <span>{blockDisplayText(previewBlock, 'content', editingLanguage) || blockDisplayText(previewBlock, 'placeholder', editingLanguage) || BLOCK_KIND_META[previewBlock.kind].summaryLabel}</span>
                     </div>
                   )}
                 </div>
@@ -869,6 +1072,27 @@ export function CommunityNodeMaker({
           color: var(--text-sub);
           white-space: nowrap;
         }
+        .maker-language-switch {
+          display: inline-flex;
+          padding: 2px;
+          border: 1px solid var(--border-node);
+          border-radius: 10px;
+          background: rgba(255,255,255,0.04);
+        }
+        .maker-language-switch button {
+          border: 0;
+          background: transparent;
+          color: var(--text-sub);
+          border-radius: 7px;
+          padding: 4px 8px;
+          font-size: 0.68rem;
+          cursor: pointer;
+        }
+        .maker-language-switch button.is-active {
+          background: var(--accent-bright);
+          color: #07130a;
+          font-weight: 700;
+        }
         .meta-grid,
         .two-col {
           display: grid;
@@ -880,6 +1104,22 @@ export function CommunityNodeMaker({
           gap: 5px;
           font-size: 0.72rem;
           color: var(--text-sub);
+        }
+        .field-label-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+        }
+        .missing-language-badge {
+          border: 1px solid rgba(245, 158, 11, 0.35);
+          border-radius: 999px;
+          padding: 1px 6px;
+          color: #fbbf24;
+          background: rgba(245, 158, 11, 0.1);
+          font-size: 0.62rem;
+          font-weight: 700;
+          white-space: nowrap;
         }
         .stack.compact textarea {
           min-height: 62px;

@@ -34,7 +34,10 @@ export const applyBlockViewOverrides = (
 
   return {
     ...block,
-    ...(blockOverrides.content !== undefined ? { content: String(blockOverrides.content) } : {}),
+    ...(blockOverrides.content !== undefined ? {
+      content: String(blockOverrides.content),
+      contentI18n: undefined,
+    } : {}),
   };
 };
 

@@ -1,6 +1,7 @@
 import type { Edge } from '@xyflow/react';
 import type { CSSProperties } from 'react';
 import type { AppNode } from '../store/useStore';
+import type { LocalizedText } from './localizedText';
 
 export type WorkflowVisibility = 'public' | 'private' | 'core';
 
@@ -19,17 +20,24 @@ export type TemplateBuilderBlock = {
   id: string;
   kind: TemplateBuilderBlockKind;
   label: string;
+  labelI18n?: LocalizedText;
   content?: string;
+  contentI18n?: LocalizedText;
   placeholder?: string;
+  placeholderI18n?: LocalizedText;
 };
 
 export type TemplateFieldSpec = {
   id: string;
   label: string;
+  labelI18n?: LocalizedText;
   kind: TemplateFieldKind;
   placeholder?: string;
+  placeholderI18n?: LocalizedText;
   defaultValue?: string;
+  defaultValueI18n?: LocalizedText;
   help?: string;
+  helpI18n?: LocalizedText;
   required?: boolean;
   options?: string[];
 };
@@ -37,6 +45,7 @@ export type TemplateFieldSpec = {
 export type TemplateHandleSpec = {
   id: string;
   label: string;
+  labelI18n?: LocalizedText;
   position: 'top' | 'bottom' | 'left' | 'right';
   type: 'input' | 'output';
   offset: number;
@@ -47,6 +56,7 @@ export type TemplatePortSpec = TemplateHandleSpec & {
   valueKind: TemplatePortValueKind;
   required?: boolean;
   description?: string;
+  descriptionI18n?: LocalizedText;
   derivesFrom?: TemplatePortDerivation;
   typeConstraint?: string; // 'type:${MathTypeId}' or 'cap:${MathCapability}'
 };
@@ -59,6 +69,7 @@ export type TemplateInterfaceSchema = {
 export type TemplateControlPort = {
   id: string;
   label: string;
+  labelI18n?: LocalizedText;
   valueKind: TemplatePortValueKind;
   defaultValue?: unknown;
 };
@@ -76,7 +87,9 @@ export type TemplateViewOverrides = Record<string, Partial<Record<TemplateElemen
 export type CommunityNodeTemplate = {
   id: string;
   title: string;
+  titleI18n?: LocalizedText;
   summary: string;
+  summaryI18n?: LocalizedText;
   category: string;
   slug: string;
   version: string;
@@ -154,6 +167,9 @@ export type WorkflowBlueprint = {
   nodes: WorkflowGraphNode[];
   edges: WorkflowGraphEdge[];
   meta?: {
+    workflowId?: string;
+    workflowVersionId?: string;
+    workflowVersion?: number;
     ownerId?: string;
     authorName?: string;
   };
@@ -178,6 +194,7 @@ export const cloneInterfaceSchema = (schema?: TemplateInterfaceSchema): Template
 export const portToHandleSpec = (port: TemplatePortSpec): TemplateHandleSpec => ({
   id: port.id,
   label: port.label,
+  labelI18n: port.labelI18n,
   position: port.position,
   type: port.type,
   offset: port.offset,

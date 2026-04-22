@@ -404,12 +404,6 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
         setCenter(peer.position.x + width / 2, peer.position.y + height / 2, { duration: 320 });
     }, [nodes, setCenter]);
 
-    const getScopeHandleStyle = (handle: CustomHandle): React.CSSProperties => {
-        if (handle.position === 'top' || handle.position === 'bottom') {
-            return { left: `${handle.offset}%` };
-        }
-        return { top: `${handle.offset}%` };
-    };
 
     return (
         <div

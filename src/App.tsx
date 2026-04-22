@@ -18,7 +18,7 @@ import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { AuthBootstrap } from './components/AuthBootstrap';
 import { getCommunityWorkflowBlueprint, getCommunityWorkflowBySlug } from './community/catalog';
 import { isSupabaseConfigured } from './integrations/supabase/client';
-import { getWorkflowBlueprintFromSupabaseByRef } from './integrations/supabase/workflows';
+import { getWorkflowBlueprintFromSupabaseByRef, getWorkflowVersionBlueprintFromSupabase } from './integrations/supabase/workflows';
 import * as driveService from './utils/googleDriveService';
 import { loadLocalDraft, saveLocalDraft } from './utils/localDraftService';
 import { type AppRoute, parseRouteFromLocation, readEditorSnapshotFromHistory, replaceRoute } from './utils/navigation';
@@ -39,7 +39,7 @@ type ConnectStartPayload = { nodeId: string | null; handleId: string | null; han
 type TouchTargetEvent = React.TouchEvent<HTMLElement>;
 const annotatePublicWorkflowNodes = (
   nodes: AppNode[],
-  meta?: { ownerId?: string; authorName?: string },
+  meta?: { workflowId?: string; workflowVersionId?: string; workflowVersion?: number; ownerId?: string; authorName?: string },
 ) => nodes.map(node => (
   node.type === 'projectNode'
     ? {
@@ -48,6 +48,9 @@ const annotatePublicWorkflowNodes = (
           ...node.data,
           workflowSource: 'public' as const,
           readOnlyPreview: true,
+          supabaseWorkflowId: meta?.workflowId ?? node.data.supabaseWorkflowId,
+          workflowVersionId: meta?.workflowVersionId,
+          workflowVersion: meta?.workflowVersion,
           ownerId: meta?.ownerId ?? node.data.ownerId,
           authorName: meta?.authorName ?? node.data.authorName,
         },
@@ -581,7 +584,6 @@ function Flow() {
     const isScopeStart = startCustomHandle?.type === 'scope';
     // Auto-create handle on node body is currently scoped to gray "scope" handle only.
     if (!isScopeStart) return;
-    const requestedHandleType = 'scope';
 
     const nodeEl = document.querySelector(`[data-id="${toNodeId}"]`);
     if (!(nodeEl instanceof HTMLElement)) return;
@@ -1389,6 +1391,18 @@ function App() {
             return localBySlug ? getCommunityWorkflowBlueprint(localBySlug.id) : null;
           })();
         if (!blueprint) throw new Error(`Workflow ${route.id} not found`);
+        if (token !== routeTokenRef.current) return;
+        setGraph(annotatePublicWorkflowNodes(blueprint.nodes as AppNode[], blueprint.meta), blueprint.edges as Edge[]);
+        setActiveFileId(null);
+        setCurrentView('editor');
+        return;
+      }
+
+      if (route.source === 'version' && route.id) {
+        const blueprint = isSupabaseConfigured
+          ? await getWorkflowVersionBlueprintFromSupabase(route.id)
+          : null;
+        if (!blueprint) throw new Error(`Workflow version ${route.id} not found`);
         if (token !== routeTokenRef.current) return;
         setGraph(annotatePublicWorkflowNodes(blueprint.nodes as AppNode[], blueprint.meta), blueprint.edges as Edge[]);
         setActiveFileId(null);

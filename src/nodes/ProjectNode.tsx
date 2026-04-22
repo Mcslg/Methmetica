@@ -4,11 +4,19 @@ import { Icons } from '../components/Icons';
 import { NodeFrame } from '../components/NodeFrame';
 import useStore, { type AppNode, type CustomHandle, type NodeData } from '../store/useStore';
 import { useLanguage } from '../contexts/LanguageContext';
-import { CommunityNodeMaker, buildTemplateFromBlocks } from '../components/CommunityNodeMaker';
+import { CommunityNodeMaker, buildTemplateFromBlocks, validateDraft } from '../components/CommunityNodeMaker';
 import type { CommunityNodeTemplate, TemplateInterfaceSchema, TemplatePortSpec, WorkflowVisibility } from '../community/types';
 import { getTemplateInternalHandles, getTemplateInterfaceSchema } from '../community/types';
 import { makeInitialDraft, syncDraftWithWorkflowMetadata } from '../community/templateDraft';
 import { resolveTemplateViewOverrides } from '../community/templateView';
+import {
+  SUPPORTED_TEMPLATE_LANGUAGES,
+  getLanguageText,
+  getLocalizedText,
+  hasLanguageText,
+  setLocalizedText,
+  type SupportedLanguage,
+} from '../community/localizedText';
 import { publishWorkflowToSupabase } from '../integrations/supabase/workflows';
 import { publishNodeTemplateToSupabase } from '../integrations/supabase/nodeTemplates';
 import { getUserRole } from '../integrations/supabase/auth';
@@ -42,6 +50,10 @@ const slugifyPortId = (value: string, fallback: string) => {
 const createPort = (type: 'input' | 'output', index: number): TemplatePortSpec => ({
   id: `${type}-${Date.now()}-${index}`,
   label: type === 'input' ? `input_${index + 1}` : `output_${index + 1}`,
+  labelI18n: {
+    'zh-TW': type === 'input' ? `input_${index + 1}` : `output_${index + 1}`,
+    en: type === 'input' ? `input_${index + 1}` : `output_${index + 1}`,
+  },
   type,
   position: type === 'input' ? 'left' : 'right',
   offset: 42,
@@ -63,6 +75,23 @@ const normalizeInterfaceSchema = (schema: TemplateInterfaceSchema): TemplateInte
   inputs: normalizePortOffsets(schema.inputs),
   outputs: normalizePortOffsets(schema.outputs),
 });
+
+const languageLabel = (language: SupportedLanguage) => language === 'zh-TW' ? '中文' : 'EN';
+
+const MissingLanguageBadge = ({ language }: { language: SupportedLanguage }) => (
+  <small style={{
+    border: '1px solid rgba(245, 158, 11, 0.35)',
+    borderRadius: 999,
+    padding: '1px 6px',
+    color: '#fbbf24',
+    background: 'rgba(245, 158, 11, 0.1)',
+    fontSize: '0.62rem',
+    fontWeight: 700,
+    whiteSpace: 'nowrap',
+  }}>
+    未填 {languageLabel(language)}
+  </small>
+);
 
 const buildProjectControlHandles = (
   draft?: CommunityNodeTemplate,
@@ -203,7 +232,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
   const setUser = useStore(state => state.setUser);
   const markCurrentGraphSaved = useStore(state => state.markCurrentGraphSaved);
   const addNode = useStore(state => state.addNode);
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
 
   const [localName, setLocalName] = React.useState(data.label || '');
   const [localDesc, setLocalDesc] = React.useState(data.description || '');
@@ -216,6 +245,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
   const [testOutputs, setTestOutputs] = React.useState<Record<string, string>>({});
   const [testStatus, setTestStatus] = React.useState('');
   const [testTrace, setTestTrace] = React.useState<string[]>([]);
+  const [interfaceLanguage, setInterfaceLanguage] = React.useState<SupportedLanguage>(language);
   const [isExpanded, setIsExpanded] = React.useState(true);
   const [isPublishing, setIsPublishing] = React.useState(false);
   const [controlHandleOffsets, setControlHandleOffsets] = React.useState<Record<string, number>>({});
@@ -224,6 +254,46 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
   const linkedTemplateNodeId = data.linkedTemplateNodeId as string | undefined;
   const publishStatus = data.publishStatus || '發布此工作流，就等於發布這個節點。';
   const lastSyncedDraftSignatureRef = React.useRef(serializeDraft(data.builderDraft as CommunityNodeTemplate | undefined));
+  const localizedTemplateTitle = React.useCallback((template: CommunityNodeTemplate) => (
+    getLocalizedText(template.titleI18n, language, template.title)
+  ), [language]);
+  const localizedTemplateSummary = React.useCallback((template: CommunityNodeTemplate) => (
+    getLocalizedText(template.summaryI18n, language, template.summary)
+  ), [language]);
+  const displayedProjectName = builderDraft
+    ? getLanguageText(builderDraft.titleI18n, interfaceLanguage, builderDraft.title || localName)
+    : localName;
+  const displayedProjectDescription = builderDraft
+    ? getLanguageText(builderDraft.summaryI18n, interfaceLanguage, builderDraft.summary || localDesc)
+    : localDesc;
+
+  const updateLocalizedProjectText = React.useCallback((field: 'title' | 'summary', value: string) => {
+    if (!builderDraft) {
+      if (field === 'title') setLocalName(value);
+      else setLocalDesc(value);
+      return;
+    }
+
+    if (field === 'title' && interfaceLanguage === 'zh-TW') setLocalName(value);
+    if (field === 'summary' && interfaceLanguage === 'zh-TW') setLocalDesc(value);
+
+    setLocalBuilderDraft((current) => {
+      if (!current) return current;
+      if (field === 'title') {
+        return {
+          ...current,
+          title: interfaceLanguage === 'zh-TW' || !current.title ? value : current.title,
+          titleI18n: setLocalizedText(current.titleI18n, interfaceLanguage, value),
+        };
+      }
+
+      return {
+        ...current,
+        summary: interfaceLanguage === 'zh-TW' || !current.summary ? value : current.summary,
+        summaryI18n: setLocalizedText(current.summaryI18n, interfaceLanguage, value),
+      };
+    });
+  }, [builderDraft, interfaceLanguage]);
 
   const syncDraftWithLocalMetadata = React.useCallback((draft: CommunityNodeTemplate) => syncDraftWithWorkflowMetadata(draft, {
     title: (localName || data.label || draft.title).trim() || draft.title,
@@ -291,15 +361,18 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     const templateViewOverrides = resolveTemplateViewOverrides(packagedDraft, projectNode.data.inputs);
 
     const linkedNodeData = {
-      label: packagedDraft.title || 'Community Template',
+      label: localizedTemplateTitle(packagedDraft) || 'Community Template',
       templateId: packagedDraft.id,
       templateDraft: packagedDraft,
       templateViewOverrides,
       builderSourceId: id,
       autoManagedTemplateNode: true,
       templateFields: Object.fromEntries(packagedDraft.fields.map(field => [field.id, field.defaultValue || ''])),
-      templateSummary: packagedDraft.summary,
-      handles: getTemplateInternalHandles(packagedDraft).map(handle => ({ ...handle })),
+      templateSummary: localizedTemplateSummary(packagedDraft),
+      handles: getTemplateInternalHandles(packagedDraft).map(handle => ({
+        ...handle,
+        label: getLocalizedText(handle.labelI18n, language, handle.label),
+      })),
     };
 
     const linkedDataSignature = JSON.stringify(linkedNodeData);
@@ -359,7 +432,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     if (currentLinkedDataSignature !== linkedDataSignature) {
       updateNodeData(linkedTemplateNode.id, linkedNodeData as Partial<NodeData>, { skipGraphEval: true });
     }
-  }, [addNode, id, linkedTemplateNodeId, updateNodeData, updateProjectData]);
+  }, [addNode, id, language, linkedTemplateNodeId, localizedTemplateSummary, localizedTemplateTitle, updateNodeData, updateProjectData]);
 
   const saveWorkflowMetadata = React.useCallback((patch?: Partial<{ label: string; description: string; tags: string[]; visibility: WorkflowVisibility }>) => {
     const finalName = (patch?.label ?? localName).trim() || 'Untitled Workflow';
@@ -482,6 +555,19 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
       summary: localDesc || data.description || draft.summary,
       tags: parseTags(localTags),
     });
+    const validationError = validateDraft(buildTemplateFromBlocks({
+      ...syncedDraft,
+      version: syncedDraft.version || '1.0.0',
+      discovery: 'search-only',
+      visibility: localVisibility,
+    }));
+    if (validationError) {
+      updateProjectData({
+        publishStatus: `發布前請先補齊：${validationError}`,
+      });
+      setIsPublishing(false);
+      return;
+    }
 
     try {
       const packagedBase = buildTemplateFromBlocks({
@@ -782,22 +868,68 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         <div className="project-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div className="root-metadata">
             <label className="root-field" style={{ gridColumn: '1 / -1' }}>
-              <span>{t('nodes.project.name_label') || 'Project Name'}</span>
+              <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                  <span>{t('nodes.project.name_label') || 'Project Name'}</span>
+                  {builderDraft && !hasLanguageText(builderDraft.titleI18n, interfaceLanguage, builderDraft.title || localName) && (
+                    <MissingLanguageBadge language={interfaceLanguage} />
+                  )}
+                </span>
+                {builderDraft && (
+                  <span
+                    className="maker-language-switch"
+                    aria-label="Template language"
+                    style={{
+                      display: 'inline-flex',
+                      padding: 2,
+                      border: '1px solid var(--border-node)',
+                      borderRadius: 10,
+                      background: 'rgba(255,255,255,0.04)',
+                    }}
+                  >
+                    {SUPPORTED_TEMPLATE_LANGUAGES.map((item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        className={interfaceLanguage === item ? 'is-active' : ''}
+                        onClick={() => setInterfaceLanguage(item)}
+                        style={{
+                          border: 0,
+                          background: interfaceLanguage === item ? 'var(--accent-bright)' : 'transparent',
+                          color: interfaceLanguage === item ? '#07130a' : 'var(--text-sub)',
+                          borderRadius: 7,
+                          padding: '4px 8px',
+                          fontSize: '0.68rem',
+                          fontWeight: interfaceLanguage === item ? 700 : 500,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {item === 'zh-TW' ? '中文' : 'EN'}
+                      </button>
+                    ))}
+                  </span>
+                )}
+              </span>
               <input
                 type="text"
                 className="project-name-input"
-                value={localName}
-                onChange={(e) => setLocalName(e.target.value)}
+                value={displayedProjectName}
+                onChange={(e) => updateLocalizedProjectText('title', e.target.value)}
                 onBlur={() => saveWorkflowMetadata()}
                 placeholder={t('nodes.project.name_placeholder') || 'Enter workflow name...'}
               />
             </label>
             <label className="root-field">
-              <span>{t('nodes.project.desc_label') || 'Description'}</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                <span>{t('nodes.project.desc_label') || 'Description'}</span>
+                {builderDraft && !hasLanguageText(builderDraft.summaryI18n, interfaceLanguage, builderDraft.summary || localDesc) && (
+                  <MissingLanguageBadge language={interfaceLanguage} />
+                )}
+              </span>
               <textarea
                 className="project-desc-input"
-                value={localDesc}
-                onChange={(e) => setLocalDesc(e.target.value)}
+                value={displayedProjectDescription}
+                onChange={(e) => updateLocalizedProjectText('summary', e.target.value)}
                 onBlur={() => saveWorkflowMetadata()}
                 placeholder={t('nodes.project.desc_placeholder') || 'Explain this workflow...'}
               />
@@ -908,20 +1040,26 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                           <div style={{ display: 'grid', gap: '6px' }}>
                             <input
                               className="project-tags-input"
-                              value={port.label}
+                              value={getLanguageText(port.labelI18n, interfaceLanguage, port.label)}
                               onChange={(e) => {
                                 const nextLabel = e.target.value;
                                 updateBuilderInterface((schema) => ({
                                   ...schema,
                                   inputs: schema.inputs.map((item, itemIndex) => itemIndex === index ? {
                                     ...item,
-                                    label: nextLabel,
-                                    id: slugifyPortId(nextLabel, item.id),
+                                    label: interfaceLanguage === 'zh-TW' || !item.label ? nextLabel : item.label,
+                                    labelI18n: setLocalizedText(item.labelI18n, interfaceLanguage, nextLabel),
+                                    id: interfaceLanguage === 'zh-TW' ? slugifyPortId(nextLabel, item.id) : item.id,
                                   } : item),
                                 }));
                               }}
                               placeholder="input name"
                             />
+                            {!hasLanguageText(port.labelI18n, interfaceLanguage, port.label) && (
+                              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                <MissingLanguageBadge language={interfaceLanguage} />
+                              </div>
+                            )}
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-sub)' }}>
                               <span>id: {port.id}</span>
                             </div>
@@ -999,20 +1137,26 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                           <div style={{ display: 'grid', gap: '6px' }}>
                             <input
                               className="project-tags-input"
-                              value={port.label}
+                              value={getLanguageText(port.labelI18n, interfaceLanguage, port.label)}
                               onChange={(e) => {
                                 const nextLabel = e.target.value;
                                 updateBuilderInterface((schema) => ({
                                   ...schema,
                                   outputs: schema.outputs.map((item, itemIndex) => itemIndex === index ? {
                                     ...item,
-                                    label: nextLabel,
-                                    id: slugifyPortId(nextLabel, item.id),
+                                    label: interfaceLanguage === 'zh-TW' || !item.label ? nextLabel : item.label,
+                                    labelI18n: setLocalizedText(item.labelI18n, interfaceLanguage, nextLabel),
+                                    id: interfaceLanguage === 'zh-TW' ? slugifyPortId(nextLabel, item.id) : item.id,
                                   } : item),
                                 }));
                               }}
                               placeholder="output name"
                             />
+                            {!hasLanguageText(port.labelI18n, interfaceLanguage, port.label) && (
+                              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                <MissingLanguageBadge language={interfaceLanguage} />
+                              </div>
+                            )}
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-sub)' }}>
                               <span>id: {port.id}</span>
                             </div>
@@ -1149,13 +1293,13 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                         >
                           <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-sub)', fontSize: '0.72rem' }}>
                             <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#38bdf8', boxShadow: '0 0 0 3px rgba(56,189,248,0.16)' }} />
-                            {port.label}
+                            {getLocalizedText(port.labelI18n, language, port.label)}
                           </span>
                           <input
                             className="project-tags-input nodrag"
                             value={testInputs[port.id] || ''}
                             onChange={(event) => setTestInputs((current) => ({ ...current, [port.id]: event.target.value }))}
-                            placeholder={`value for ${port.label}`}
+                            placeholder={`value for ${getLocalizedText(port.labelI18n, language, port.label)}`}
                           />
                         </label>
                       ))}
@@ -1195,7 +1339,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                           }}
                         >
                           <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px', color: 'var(--text-sub)', fontSize: '0.72rem' }}>
-                            {port.label}
+                            {getLocalizedText(port.labelI18n, language, port.label)}
                             <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#f59e0b', boxShadow: '0 0 0 3px rgba(245,158,11,0.16)' }} />
                           </span>
                           <pre style={{
@@ -1223,6 +1367,8 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                 draft={builderDraft}
                 onChange={handleDraftChange}
                 onPublish={handlePublish}
+                editingLanguage={interfaceLanguage}
+                onEditingLanguageChange={setInterfaceLanguage}
                 publishLabel={isPublishing ? '發布中...' : '發布此工作流為節點'}
                 status={publishStatus}
                 hideMetadataFields

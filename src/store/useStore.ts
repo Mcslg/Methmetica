@@ -128,6 +128,8 @@ export type NodeData = {
     autoManagedTemplateNode?: boolean;
     readOnlyPreview?: boolean;
     supabaseWorkflowId?: string;
+    workflowVersionId?: string;
+    workflowVersion?: number;
      visibility?: WorkflowVisibility;
     autoRun?: boolean; // For nodes that can toggle automatic execution
 };

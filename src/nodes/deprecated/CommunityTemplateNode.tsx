@@ -6,6 +6,8 @@ import { Icons } from '../../components/Icons';
 import { getCommunityTemplateById } from '../../community/catalog';
 import type { CommunityNodeTemplate, TemplateBuilderBlock } from '../../community/types';
 import { applyBlockViewOverrides } from '../../community/templateView';
+import { useLanguage } from '../../contexts/LanguageContext';
+import { getLocalizedText } from '../../community/localizedText';
 
 const openCommunityWorkflow = (workflowId: string) => {
   const url = new URL(window.location.href);
@@ -16,6 +18,7 @@ const openCommunityWorkflow = (workflowId: string) => {
 };
 
 export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({ id, data, selected }: NodeProps<AppNode>) {
+  const { language } = useLanguage();
   const isReadOnlyPreview = Boolean(data.readOnlyPreview);
   const templateFromStore = useStore(
     state => state.communityTemplates.find((item: CommunityNodeTemplate) => item.id === data.templateId) ?? null
@@ -43,7 +46,7 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
       data={data}
       selected={selected}
       icon={<Icons.Package />}
-      defaultLabel={template.title}
+      defaultLabel={getLocalizedText(template.titleI18n, language, template.title)}
       minWidth={template.size.width}
       minHeight={120}
       className={`community-template-node template-${template.source}`}
@@ -75,23 +78,31 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
 
               if (block.kind === 'text') {
                 return (
-                  <p key={block.id} className="community-template-text-block">{block.content || '尚未填入內容。'}</p>
+                  <p key={block.id} className="community-template-text-block">
+                    {getLocalizedText(block.contentI18n, language, block.content || '') || '尚未填入內容。'}
+                  </p>
                 );
               }
 
               if (block.kind === 'math') {
                 return (
                   <div key={block.id} className="community-template-static-block math">
-                    <span className="community-template-static-label">{block.label}</span>
-                    <code>{block.content || '尚未填入公式。'}</code>
+                    <span className="community-template-static-label">
+                      {getLocalizedText(block.labelI18n, language, block.label)}
+                    </span>
+                    <code>{getLocalizedText(block.contentI18n, language, block.content || '') || '尚未填入公式。'}</code>
                   </div>
                 );
               }
 
               return (
                 <details key={block.id} className="community-template-toggle" open={!isReadOnlyPreview}>
-                  <summary>{block.label}</summary>
-                  <p>{block.content || block.placeholder || '尚未填入切換內容。'}</p>
+                  <summary>{getLocalizedText(block.labelI18n, language, block.label)}</summary>
+                  <p>
+                    {getLocalizedText(block.contentI18n, language, block.content || '') ||
+                      getLocalizedText(block.placeholderI18n, language, block.placeholder || '') ||
+                      '尚未填入切換內容。'}
+                  </p>
                 </details>
               );
             })}

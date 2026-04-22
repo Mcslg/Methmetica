@@ -49,6 +49,9 @@ type WorkflowRow = {
   published_at: string | null;
   updated_at: string;
   created_at: string;
+  current_version_id?: string | null;
+  current_version?: number | null;
+  workflow_version_id?: string | null;
 };
 
 type PublicWorkflowCardRow = {
@@ -63,6 +66,33 @@ type PublicWorkflowCardRow = {
   updated_at: string;
   node_count: number | null;
   edge_count: number | null;
+};
+
+export type WorkflowVersionSummary = {
+  id: string;
+  workflowId: string;
+  version: number;
+  title: string;
+  description: string;
+  tags: string[];
+  visibility: WorkflowVisibility;
+  publishedAt: string;
+  createdAt: string;
+  isCurrent: boolean;
+};
+
+type WorkflowVersionRow = {
+  id: string;
+  workflow_id: string;
+  version: number;
+  title: string;
+  description: string;
+  tags: string[] | null;
+  visibility: WorkflowVisibility;
+  workflow_json: WorkflowRow['workflow_json'];
+  created_by: string;
+  published_at: string;
+  created_at: string;
 };
 
 type WorkflowEngagementRow = {
@@ -155,8 +185,36 @@ const rowToBlueprint = (row: WorkflowRow): WorkflowBlueprint => ({
   nodes: normalizeNodes(row.workflow_json?.nodes ?? []),
   edges: normalizeEdges(row.workflow_json?.edges ?? []),
   meta: {
+    workflowId: row.id,
+    workflowVersionId: row.workflow_version_id ?? row.current_version_id ?? undefined,
+    workflowVersion: row.current_version ?? undefined,
     ownerId: row.owner_id,
     authorName: row.workflow_json?.meta?.authorName || FALLBACK_AUTHOR,
+  },
+});
+
+const versionRowToBlueprint = (version: WorkflowVersionRow, workflow: WorkflowRow): WorkflowBlueprint => ({
+  card: {
+    ...rowToCard({
+      ...workflow,
+      title: version.title,
+      description: version.description,
+      tags: version.tags,
+      visibility: version.visibility,
+      workflow_json: version.workflow_json,
+      published_at: version.published_at,
+      updated_at: version.published_at,
+    }),
+    updatedAt: version.published_at,
+  },
+  nodes: normalizeNodes(version.workflow_json?.nodes ?? []),
+  edges: normalizeEdges(version.workflow_json?.edges ?? []),
+  meta: {
+    workflowId: version.workflow_id,
+    workflowVersionId: version.id,
+    workflowVersion: version.version,
+    ownerId: workflow.owner_id,
+    authorName: version.workflow_json?.meta?.authorName || FALLBACK_AUTHOR,
   },
 });
 
@@ -235,7 +293,7 @@ export async function getWorkflowBlueprintFromSupabase(workflowId: string) {
   const { data, error } = await withSupabaseTimeout(
     supabase
       .from('workflows')
-      .select('id, owner_id, slug, title, description, tags, visibility, status, workflow_json, published_at, updated_at, created_at')
+      .select('id, owner_id, slug, title, description, tags, visibility, status, workflow_json, published_at, updated_at, created_at, current_version_id')
       .eq('id', workflowId)
       .maybeSingle(),
     'Opening workflow'
@@ -252,7 +310,7 @@ export async function getWorkflowBlueprintFromSupabaseByRef(workflowRef: string)
   const { data, error } = await withSupabaseTimeout(
     supabase
       .from('workflows')
-      .select('id, owner_id, slug, title, description, tags, visibility, status, workflow_json, published_at, updated_at, created_at')
+      .select('id, owner_id, slug, title, description, tags, visibility, status, workflow_json, published_at, updated_at, created_at, current_version_id')
       .or(`id.eq.${workflowRef},slug.eq.${workflowRef}`)
       .limit(1)
       .maybeSingle(),
@@ -262,6 +320,76 @@ export async function getWorkflowBlueprintFromSupabaseByRef(workflowRef: string)
   if (error) throw error;
   if (!data) return null;
   return rowToBlueprint(data as WorkflowRow);
+}
+
+export async function listWorkflowVersions(workflowId: string) {
+  if (!supabase) return [];
+
+  const { data: workflowData, error: workflowError } = await withSupabaseTimeout(
+    supabase
+      .from('workflows')
+      .select('id, current_version_id')
+      .eq('id', workflowId)
+      .maybeSingle(),
+    'Loading workflow version pointer'
+  );
+
+  if (workflowError) throw workflowError;
+
+  const { data, error } = await withSupabaseTimeout(
+    supabase
+      .from('workflow_versions')
+      .select('id, workflow_id, version, title, description, tags, visibility, published_at, created_at')
+      .eq('workflow_id', workflowId)
+      .order('version', { ascending: false }),
+    'Loading workflow versions'
+  );
+
+  if (error) throw error;
+
+  const currentVersionId = (workflowData as { current_version_id?: string | null } | null)?.current_version_id ?? null;
+  return ((data ?? []) as WorkflowVersionRow[]).map((row): WorkflowVersionSummary => ({
+    id: row.id,
+    workflowId: row.workflow_id,
+    version: row.version,
+    title: row.title,
+    description: row.description,
+    tags: row.tags ?? [],
+    visibility: row.visibility,
+    publishedAt: row.published_at,
+    createdAt: row.created_at,
+    isCurrent: row.id === currentVersionId,
+  }));
+}
+
+export async function getWorkflowVersionBlueprintFromSupabase(workflowVersionId: string) {
+  if (!supabase) return null;
+
+  const { data: versionData, error: versionError } = await withSupabaseTimeout(
+    supabase
+      .from('workflow_versions')
+      .select('id, workflow_id, version, title, description, tags, visibility, workflow_json, created_by, published_at, created_at')
+      .eq('id', workflowVersionId)
+      .maybeSingle(),
+    'Opening workflow version'
+  );
+
+  if (versionError) throw versionError;
+  if (!versionData) return null;
+
+  const version = versionData as WorkflowVersionRow;
+  const { data: workflowData, error: workflowError } = await withSupabaseTimeout(
+    supabase
+      .from('workflows')
+      .select('id, owner_id, slug, title, description, tags, visibility, status, workflow_json, published_at, updated_at, created_at, current_version_id')
+      .eq('id', version.workflow_id)
+      .maybeSingle(),
+    'Opening version workflow'
+  );
+
+  if (workflowError) throw workflowError;
+  if (!workflowData) return null;
+  return versionRowToBlueprint(version, workflowData as WorkflowRow);
 }
 
 export async function publishWorkflowToSupabase(payload: WorkflowPayload) {
@@ -284,32 +412,21 @@ export async function publishWorkflowToSupabase(payload: WorkflowPayload) {
     },
   };
 
-  const baseRecord = {
-    owner_id: payload.author.id,
-    title,
-    description,
-    tags,
-    visibility: payload.visibility,
-    status: payload.status ?? 'published',
-    slug,
-    workflow_json: workflowJson,
-    published_at: new Date().toISOString(),
-  };
+  const { data, error } = await withSupabaseTimeout(
+    supabase
+      .rpc('publish_workflow_version', {
+        p_workflow_id: payload.id ?? null,
+        p_title: title,
+        p_description: description,
+        p_tags: tags,
+        p_visibility: payload.visibility,
+        p_slug: slug,
+        p_workflow_json: workflowJson,
+      })
+      .single(),
+    'Publishing workflow'
+  );
 
-  const query = payload.id
-    ? supabase
-        .from('workflows')
-        .update(baseRecord)
-        .eq('id', payload.id)
-        .select('id, owner_id, slug, title, description, tags, visibility, status, workflow_json, published_at, updated_at, created_at')
-        .single()
-    : supabase
-        .from('workflows')
-        .insert(baseRecord)
-        .select('id, owner_id, slug, title, description, tags, visibility, status, workflow_json, published_at, updated_at, created_at')
-        .single();
-
-  const { data, error } = await withSupabaseTimeout(query, 'Publishing workflow');
   if (error) throw error;
   return rowToBlueprint(data as WorkflowRow);
 }

@@ -1,6 +1,6 @@
 export type AppRoute =
   | { view: 'home' }
-  | { view: 'editor'; source: 'new' | 'drive' | 'public' | 'draft'; id?: string };
+  | { view: 'editor'; source: 'new' | 'drive' | 'public' | 'draft' | 'version'; id?: string };
 
 export type EditorHistorySnapshot = {
   nodes: unknown[];
@@ -10,8 +10,8 @@ export type EditorHistorySnapshot = {
 
 const APP_ROUTE_STATE_KEY = '__methmaticaRoute';
 
-const isEditorSource = (value: string | null): value is 'new' | 'drive' | 'public' | 'draft' =>
-  value === 'new' || value === 'drive' || value === 'public' || value === 'draft';
+const isEditorSource = (value: string | null): value is 'new' | 'drive' | 'public' | 'draft' | 'version' =>
+  value === 'new' || value === 'drive' || value === 'public' || value === 'draft' || value === 'version';
 
 const normalizeRoute = (route: AppRoute): AppRoute => {
   if (route.view === 'home') {
@@ -20,7 +20,7 @@ const normalizeRoute = (route: AppRoute): AppRoute => {
 
   const source = route.source;
   const id = route.id?.trim();
-  if ((source === 'drive' || source === 'public' || source === 'draft') && !id) {
+  if ((source === 'drive' || source === 'public' || source === 'draft' || source === 'version') && !id) {
     return { view: 'editor', source: 'new' };
   }
 
