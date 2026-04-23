@@ -76,11 +76,12 @@ self.onmessage = async (e: MessageEvent) => {
 
         // [NEW] 自動裝箱 (Boxing): 根據宣告將結果包裝回 MathValue
         const boxValue = (val: any, name: string) => {
-            const type = outputDeclarations?.[name] || 'unknown';
+            const declaredTypes = outputDeclarations?.[name];
+            const type = Array.isArray(declaredTypes) ? (declaredTypes[0] || 'unknown') : (declaredTypes || 'unknown');
             return {
                 type,
                 value: val,
-                meta: { source: 'CodeNode' }
+                meta: { source: 'CodeNode', declaredTypes }
             };
         };
 

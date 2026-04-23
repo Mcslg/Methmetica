@@ -22,6 +22,7 @@ import { getWorkflowBlueprintFromSupabaseByRef, getWorkflowVersionBlueprintFromS
 import * as driveService from './utils/googleDriveService';
 import { loadLocalDraft, saveLocalDraft } from './utils/localDraftService';
 import { type AppRoute, parseRouteFromLocation, readEditorSnapshotFromHistory, replaceRoute } from './utils/navigation';
+import type { MathValue } from './types/mathTypes';
 
 type PaneMenuEvent = {
   preventDefault: () => void;
@@ -37,6 +38,78 @@ type NodeMenuEvent = PaneMenuEvent & {
 type AddNodeAtCenterEvent = CustomEvent<{ type: string; templateId?: string }>;
 type ConnectStartPayload = { nodeId: string | null; handleId: string | null; handleType: string | null };
 type TouchTargetEvent = React.TouchEvent<HTMLElement>;
+type EdgeTransferTooltip = {
+  value: unknown;
+  typedValue?: MathValue;
+  inferredType: string;
+  sourceNodeId: string;
+  sourceHandleId?: string | null;
+  targetNodeId: string;
+  targetHandleId?: string | null;
+};
+
+type DataTooltipState = {
+  x: number;
+  y: number;
+  text?: React.ReactNode;
+  edgeTransfer?: EdgeTransferTooltip;
+};
+
+const stringifyTooltipJson = (value: unknown) => {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return JSON.stringify({ value: String(value) }, null, 2);
+  }
+};
+
+const buildEdgeMetadata = (edgeTransfer: EdgeTransferTooltip) => {
+  if (edgeTransfer.typedValue?.meta) {
+    return edgeTransfer.typedValue.meta;
+  }
+
+  return {
+    sourceNodeId: edgeTransfer.sourceNodeId,
+    sourceHandleId: edgeTransfer.sourceHandleId || 'default',
+    targetNodeId: edgeTransfer.targetNodeId,
+    targetHandleId: edgeTransfer.targetHandleId || 'default',
+    inferredType: edgeTransfer.inferredType,
+    hasTypedValue: Boolean(edgeTransfer.typedValue),
+  };
+};
+
+function DataTooltipContent({ tooltip, isShiftPressed }: { tooltip: DataTooltipState; isShiftPressed: boolean }) {
+  if (!tooltip.edgeTransfer) return <>{tooltip.text}</>;
+
+  const { edgeTransfer } = tooltip;
+  const displayValue = edgeTransfer.typedValue?.display
+    ?? edgeTransfer.typedValue?.text
+    ?? edgeTransfer.typedValue?.value
+    ?? edgeTransfer.value;
+  const metadata = buildEdgeMetadata(edgeTransfer);
+
+  return (
+    <div style={{ textAlign: 'left', minWidth: isShiftPressed ? '260px' : 'auto', maxWidth: isShiftPressed ? '420px' : '260px' }}>
+      <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>
+        {isShiftPressed ? 'Metadata JSON' : 'Data transmitted:'}
+      </div>
+      <pre style={{
+        margin: '4px 0 0',
+        fontFamily: 'monospace',
+        fontWeight: isShiftPressed ? 500 : 800,
+        fontSize: isShiftPressed ? '0.68rem' : '0.75rem',
+        wordBreak: 'break-word',
+        whiteSpace: 'pre-wrap',
+        maxHeight: isShiftPressed ? '240px' : 'none',
+        overflow: isShiftPressed ? 'auto' : 'visible',
+      }}>
+        {isShiftPressed ? stringifyTooltipJson(metadata) : String(displayValue ?? 'undefined')}
+      </pre>
+      <div style={{ fontSize: '0.75rem', color: 'var(--accent)', marginTop: 2 }}>{edgeTransfer.inferredType}</div>
+      {!isShiftPressed && <div style={{ fontSize: '0.6rem', opacity: 0.4, marginTop: 4 }}>Hold Shift for metadata JSON</div>}
+    </div>
+  );
+}
 
 const copyLiveFormState = (source: Element, clone: Element) => {
   const sourceFields = source.querySelectorAll('input, textarea, select');
@@ -204,7 +277,7 @@ function Flow() {
   const [lastFlowPos, setLastFlowPos] = useState<{ x: number, y: number } | null>(null);
   const [bladeTrail, setBladeTrail] = useState<{ x: number, y: number, id: number }[]>([]);
   const [idleTooltip, setIdleTooltip] = useState<{ x: number, y: number, text?: React.ReactNode } | null>(null);
-  const [dataTooltip, setDataTooltip] = useState<{ x: number, y: number, text: React.ReactNode } | null>(null);
+  const [dataTooltip, setDataTooltip] = useState<DataTooltipState | null>(null);
   const [isExplainMode, setIsExplainMode] = useState(false);
   const [isQuickNavOpen, setIsQuickNavOpen] = useState(false);
   const [quickNavQuery, setQuickNavQuery] = useState('');
@@ -869,9 +942,10 @@ function Flow() {
           if (sourceNode) {
             let val = sourceNode.data.value;
             let type = 'Any';
+            let typedVal: MathValue | undefined;
             if (edge.sourceHandle) {
                val = sourceNode.data.outputs?.[edge.sourceHandle] ?? val;
-               const typedVal = sourceNode.data.typedOutputs?.[edge.sourceHandle];
+               typedVal = sourceNode.data.typedOutputs?.[edge.sourceHandle];
                if (typedVal) type = typedVal.type;
                else if (!isNaN(Number(val))) type = 'Number';
                else if (typeof val === 'string') type = 'String';
@@ -879,22 +953,15 @@ function Flow() {
             setDataTooltip({
                 x: e.clientX,
                 y: e.clientY - 40,
-                text: (
-                    <div style={{ textAlign: 'left', minWidth: isShiftPressed ? '180px' : 'auto' }}>
-                        <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>{isShiftPressed ? 'Full Metadata' : 'Data transmitted:'}</div>
-                        <div style={{ fontFamily: 'monospace', fontWeight: 'bold', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>
-                             {isShiftPressed ? JSON.stringify(val, null, 2) : String(val ?? 'undefined')}
-                        </div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--accent)', marginTop: 2 }}>{type}</div>
-                        {isShiftPressed && (
-                             <div style={{ fontSize: '0.65rem', opacity: 0.5, marginTop: 8, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 4 }}>
-                                Source: {edge.source}<br/>
-                                Handle: {edge.sourceHandle || 'default'}
-                             </div>
-                        )}
-                        {!isShiftPressed && <div style={{ fontSize: '0.6rem', opacity: 0.4, marginTop: 4 }}>Hold Shift for metadata</div>}
-                    </div>
-                )
+                edgeTransfer: {
+                  value: val,
+                  typedValue: typedVal,
+                  inferredType: type,
+                  sourceNodeId: edge.source,
+                  sourceHandleId: edge.sourceHandle,
+                  targetNodeId: edge.target,
+                  targetHandleId: edge.targetHandle,
+                }
             });
           }
         }}
@@ -1323,7 +1390,7 @@ function Flow() {
             backdropFilter: 'blur(10px)',
             transition: 'opacity 0.2s',
         }}>
-            {dataTooltip.text}
+            <DataTooltipContent tooltip={dataTooltip} isShiftPressed={isShiftPressed} />
         </div>,
         document.body
       )}

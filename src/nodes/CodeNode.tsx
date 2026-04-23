@@ -1,12 +1,14 @@
-import { memo, useEffect } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
 import useStore, { type AppState, type AppNode, type NodeData } from '../store/useStore';
 import { NodeFrame } from '../components/NodeFrame';
 import { Icons } from '../components/Icons';
 import type { MathValue } from '../types/mathTypes';
+import { mathTypeCatalog } from '../config/mathTypeCatalog';
 
 const defaultCode = `return inputs.input;`;
 const GLOBAL_DECLARATION_PATTERN = /^(\s*)global\s+([A-Za-z_$][\w$]*)\s*=\s*(.+);?\s*$/gm;
+const DECLARED_TYPE_PATTERN = String.raw`(?:\[[A-Za-z_,\s]+\]|[A-Za-z_]+)`;
 
 const stringifyOutput = (value: unknown): string => {
     if (value === undefined) return '';
@@ -57,6 +59,13 @@ const buildGlobals = (state: AppState) => {
 };
 
 const normalizeGlobalName = (name: string) => name.startsWith('$') ? name : `$${name}`;
+const parseDeclaredTypes = (typeName: string) => typeName
+    .replace(/^\[|\]$/g, '')
+    .split(',')
+    .map(type => type.trim())
+    .filter(Boolean);
+
+const formatDeclaredTypes = (types: string[]) => types.length > 1 ? `[${types.join(',')}]` : (types[0] || 'unknown');
 
 const transformGlobalDeclarations = (code: string) =>
     code.replace(GLOBAL_DECLARATION_PATTERN, (_match, indent: string, name: string, expression: string) => {
@@ -73,6 +82,52 @@ const buildOutputCollectionTrailer = (outputNames: string[]) => {
     }).join('\n');
 
     return `\n${assignments}`;
+};
+
+const getTypeCompletionContext = (code: string, cursorIndex: number) => {
+    const lineStart = code.lastIndexOf('\n', Math.max(0, cursorIndex - 1)) + 1;
+    const lineBeforeCursor = code.slice(lineStart, cursorIndex);
+    const match = lineBeforeCursor.match(/^\s*(?:input|output)\s+[A-Za-z_$][\w$]*\s+as\s+(\[?)([A-Za-z_,\s]*)$/);
+
+    if (!match) return null;
+
+    const hasBracket = match[1] === '[';
+    const rawTypeText = match[2] || '';
+    if (!hasBracket && rawTypeText.includes(',')) return null;
+
+    const segmentStart = hasBracket ? rawTypeText.lastIndexOf(',') + 1 : 0;
+    const segment = rawTypeText.slice(segmentStart);
+    const leadingSpaces = segment.match(/^\s*/)?.[0].length || 0;
+    const query = segment.slice(leadingSpaces);
+
+    return {
+        query,
+        hasBracket,
+        replaceStart: cursorIndex - rawTypeText.length + segmentStart + leadingSpaces,
+        replaceEnd: cursorIndex,
+    };
+};
+
+const getInvalidTypeNames = (code: string, validTypes: Set<string>) => {
+    const invalid = new Set<string>();
+
+    code.split('\n').forEach(line => {
+        const match = line.match(/^\s*(?:input|output)\s+[A-Za-z_$][\w$]*\s+as\s+(.+?)\s*$/);
+        if (!match) return;
+
+        const rawTypeText = match[1].trim();
+        const typeText = rawTypeText.startsWith('[')
+            ? rawTypeText.replace(/^\[/, '').replace(/\]$/, '')
+            : rawTypeText;
+
+        typeText.split(',').map(type => type.trim()).filter(Boolean).forEach(typeName => {
+            if (!validTypes.has(typeName)) {
+                invalid.add(typeName);
+            }
+        });
+    });
+
+    return Array.from(invalid);
 };
 
 const buildInputs = (node: AppNode) => {
@@ -179,15 +234,15 @@ export const executeCodeNode = async (node: AppNode, state: AppState): Promise<v
     let baseCode = node.data.code?.trim() || defaultCode;
     
     // [NEW] Extract input & output declarations
-    const INPUT_DECLARATION_REGEX = /^\s*input\s+([A-Za-z_$][\w$]*)\s+as\s+([\[\]a-zA-Z_]+)\s*$/gm;
-    const OUTPUT_DECLARATION_REGEX = /^\s*output\s+([A-Za-z_$][\w$]*)\s+as\s+([\[\]a-zA-Z_]+)\s*$/gm;
+    const INPUT_DECLARATION_REGEX = new RegExp(String.raw`^\s*input\s+([A-Za-z_$][\w$]*)\s+as\s+(${DECLARED_TYPE_PATTERN})\s*$`, 'gm');
+    const OUTPUT_DECLARATION_REGEX = new RegExp(String.raw`^\s*output\s+([A-Za-z_$][\w$]*)\s+as\s+(${DECLARED_TYPE_PATTERN})\s*$`, 'gm');
     
     const declaredVars: string[] = [];
-    const outputDeclarations: Record<string, string> = {};
+    const outputDeclarations: Record<string, string[]> = {};
     
     Array.from(baseCode.matchAll(INPUT_DECLARATION_REGEX)).forEach(match => declaredVars.push(match[1]));
     Array.from(baseCode.matchAll(OUTPUT_DECLARATION_REGEX)).forEach(match => {
-        outputDeclarations[match[1]] = match[2];
+        outputDeclarations[match[1]] = parseDeclaredTypes(match[2]);
     });
     
     // Strip declarations
@@ -317,17 +372,53 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
     const executeNode = useStore((state: AppState) => state.executeNode);
 
     const currentCode = data.code ?? defaultCode;
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const [cursorIndex, setCursorIndex] = useState(0);
+    const typeIds = useMemo(() => mathTypeCatalog.map(type => type.id), []);
+    const validTypeSet = useMemo(() => new Set<string>(typeIds), [typeIds]);
+    const typeCompletionContext = useMemo(() => getTypeCompletionContext(currentCode, cursorIndex), [currentCode, cursorIndex]);
+    const typeSuggestions = useMemo(() => {
+        if (!typeCompletionContext) return [];
+        const query = typeCompletionContext.query.toLowerCase();
+        return mathTypeCatalog
+            .filter(type => type.id.toLowerCase().startsWith(query) || type.label.toLowerCase().startsWith(query))
+            .slice(0, 8);
+    }, [typeCompletionContext]);
+    const invalidTypeNames = useMemo(() => getInvalidTypeNames(currentCode, validTypeSet), [currentCode, validTypeSet]);
+
+    const syncCursorIndex = () => {
+        setCursorIndex(textareaRef.current?.selectionStart ?? 0);
+    };
+
+    const insertTypeSuggestion = (typeId: string) => {
+        if (!typeCompletionContext) return;
+
+        const suffix = '';
+        const nextCode = `${currentCode.slice(0, typeCompletionContext.replaceStart)}${typeId}${suffix}${currentCode.slice(typeCompletionContext.replaceEnd)}`;
+        const nextCursor = typeCompletionContext.replaceStart + typeId.length + suffix.length;
+
+        updateNodeData(id, { code: nextCode, language: 'javascript' });
+        requestAnimationFrame(() => {
+            textareaRef.current?.focus();
+            textareaRef.current?.setSelectionRange(nextCursor, nextCursor);
+            setCursorIndex(nextCursor);
+        });
+    };
 
     // [NEW] Sync handles based on input/output declarations
     useEffect(() => {
-        const INPUT_DECLARATION_REGEX = /^\s*input\s+([A-Za-z_$][\w$]*)\s+as\s+([\[\]a-zA-Z_]+)\s*$/gm;
-        const OUTPUT_DECLARATION_REGEX = /^\s*output\s+([A-Za-z_$][\w$]*)\s+as\s+([\[\]a-zA-Z_]+)\s*$/gm;
+        const INPUT_DECLARATION_REGEX = new RegExp(String.raw`^\s*input\s+([A-Za-z_$][\w$]*)\s+as\s+(${DECLARED_TYPE_PATTERN})\s*$`, 'gm');
+        const OUTPUT_DECLARATION_REGEX = new RegExp(String.raw`^\s*output\s+([A-Za-z_$][\w$]*)\s+as\s+(${DECLARED_TYPE_PATTERN})\s*$`, 'gm');
         
         const newInputs: { name: string, type: string }[] = [];
-        Array.from(currentCode.matchAll(INPUT_DECLARATION_REGEX)).forEach(match => newInputs.push({ name: match[1], type: match[2] }));
+        Array.from(currentCode.matchAll(INPUT_DECLARATION_REGEX)).forEach(match => {
+            newInputs.push({ name: match[1], type: formatDeclaredTypes(parseDeclaredTypes(match[2])) });
+        });
         
         const newOutputs: { name: string, type: string }[] = [];
-        Array.from(currentCode.matchAll(OUTPUT_DECLARATION_REGEX)).forEach(match => newOutputs.push({ name: match[1], type: match[2] }));
+        Array.from(currentCode.matchAll(OUTPUT_DECLARATION_REGEX)).forEach(match => {
+            newOutputs.push({ name: match[1], type: formatDeclaredTypes(parseDeclaredTypes(match[2])) });
+        });
 
         const hasReturn = /\breturn\b/.test(currentCode);
         const currentHandles = data.handles || [];
@@ -442,10 +533,24 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
         >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
                 <textarea
+                    ref={textareaRef}
                     className="nodrag"
                     spellCheck={false}
                     value={data.code ?? defaultCode}
-                    onChange={(event) => updateNodeData(id, { code: event.target.value, language: 'javascript' })}
+                    onChange={(event) => {
+                        updateNodeData(id, { code: event.target.value, language: 'javascript' });
+                        setCursorIndex(event.target.selectionStart);
+                    }}
+                    onClick={syncCursorIndex}
+                    onKeyUp={syncCursorIndex}
+                    onSelect={syncCursorIndex}
+                    onKeyDown={(event) => {
+                        if (typeSuggestions.length === 0) return;
+                        if (event.key === 'Tab' || event.key === 'Enter') {
+                            event.preventDefault();
+                            insertTypeSuggestion(typeSuggestions[0].id);
+                        }
+                    }}
                     style={{
                         width: '100%',
                         minHeight: '112px',
@@ -462,6 +567,57 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
                         boxSizing: 'border-box'
                     }}
                 />
+                {typeSuggestions.length > 0 && (
+                    <div
+                        className="nodrag"
+                        style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(86px, 1fr))',
+                            gap: '4px',
+                            padding: '6px',
+                            background: 'rgba(15, 23, 42, 0.96)',
+                            border: '1px solid rgba(148, 163, 184, 0.35)',
+                            borderRadius: '8px',
+                        }}
+                    >
+                        {typeSuggestions.map(type => (
+                            <button
+                                key={type.id}
+                                type="button"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => insertTypeSuggestion(type.id)}
+                                title={`${type.label} (${type.category})`}
+                                style={{
+                                    border: '1px solid rgba(148, 163, 184, 0.25)',
+                                    borderRadius: '6px',
+                                    background: 'rgba(56, 189, 248, 0.12)',
+                                    color: '#d7e2ff',
+                                    fontSize: '0.66rem',
+                                    padding: '4px 6px',
+                                    cursor: 'pointer',
+                                    textAlign: 'left',
+                                }}
+                            >
+                                <span style={{ fontWeight: 800 }}>{type.id}</span>
+                                <span style={{ opacity: 0.65 }}> · {type.category}</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
+                {invalidTypeNames.length > 0 && (
+                    <div
+                        style={{
+                            color: '#fca5a5',
+                            background: 'rgba(127, 29, 29, 0.22)',
+                            border: '1px solid rgba(248, 113, 113, 0.32)',
+                            borderRadius: '8px',
+                            padding: '6px 8px',
+                            fontSize: '0.66rem',
+                        }}
+                    >
+                        Unknown type: {invalidTypeNames.join(', ')}
+                    </div>
+                )}
                 <div style={{ display: 'grid', gap: '6px' }}>
                     <div style={{ fontSize: '0.65rem', color: 'var(--text-sub)' }}>
                         Input: <span style={{ color: 'var(--text-main)' }}>{data.input ?? 'None'}</span>
