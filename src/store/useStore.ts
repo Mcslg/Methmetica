@@ -165,6 +165,7 @@ export type AppState = {
     handleProximitySnap: (nodeId: string) => void;
     evaluateGraph: () => void;
     setGraph: (nodes: AppNode[], edges: Edge[]) => void;
+    setGraphWithSavedBaseline: (nodes: AppNode[], edges: Edge[], savedNodes: AppNode[], savedEdges: Edge[]) => void;
     isAltPressed: boolean;
     setAltPressed: (pressed: boolean) => void;
     isCtrlPressed: boolean;
@@ -685,6 +686,15 @@ const useStore = create<AppState>()(
 
                 set({ nodes: finalNodes, edges, savedGraphSignature: createGraphSignature(finalNodes, edges) });
                 // Defer evaluation
+                setTimeout(() => get().evaluateGraph(), 50);
+            },
+
+            setGraphWithSavedBaseline: (nodes, edges, savedNodes, savedEdges) => {
+                set({
+                    nodes,
+                    edges,
+                    savedGraphSignature: createGraphSignature(savedNodes, savedEdges),
+                });
                 setTimeout(() => get().evaluateGraph(), 50);
             },
 

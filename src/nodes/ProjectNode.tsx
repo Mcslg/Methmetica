@@ -2,6 +2,7 @@ import React from 'react';
 import { type NodeProps, Handle, Position, useReactFlow } from '@xyflow/react';
 import { Icons } from '../components/Icons';
 import { NodeFrame } from '../components/NodeFrame';
+import { LiveNodePreview } from '../components/LiveNodePreview';
 import useStore, { type AppNode, type CustomHandle, type NodeData } from '../store/useStore';
 import { useLanguage } from '../contexts/LanguageContext';
 import { CommunityNodeMaker, buildTemplateFromBlocks, validateDraft } from '../components/CommunityNodeMaker';
@@ -22,6 +23,7 @@ import { publishNodeTemplateToSupabase } from '../integrations/supabase/nodeTemp
 import { getUserRole } from '../integrations/supabase/auth';
 import { mathTypeCatalog, getAllCapabilities, getTypesByCapability } from '../config/mathTypeCatalog';
 import { buildWorkflowNode, runBuiltWorkflowNode } from '../utils/workflowTestRunner';
+import { clearPublicWorkflowEdit } from '../utils/localDraftService';
 
 const parseTags = (value: string) => value
   .split(',')
@@ -252,6 +254,15 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
   const projectContentRef = React.useRef<HTMLDivElement | null>(null);
   const builderDraft = localBuilderDraft;
   const linkedTemplateNodeId = data.linkedTemplateNodeId as string | undefined;
+  const linkedTemplateNode = React.useMemo(() => (
+    nodes.find(node => node.id === linkedTemplateNodeId) ||
+    nodes.find(node =>
+      node.type === 'communityTemplateNode' &&
+      node.data?.builderSourceId === id &&
+      node.data?.autoManagedTemplateNode
+    ) ||
+    null
+  ), [id, linkedTemplateNodeId, nodes]);
   const publishStatus = data.publishStatus || '發布此工作流，就等於發布這個節點。';
   const lastSyncedDraftSignatureRef = React.useRef(serializeDraft(data.builderDraft as CommunityNodeTemplate | undefined));
   const localizedTemplateTitle = React.useCallback((template: CommunityNodeTemplate) => (
@@ -691,6 +702,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         supabaseWorkflowId: blueprint.card.id,
         publishStatus: `已發布 "${publishedTemplate.title}" 到公開社群，可透過右鍵搜尋找到，也會出現在 Public Workflows。`,
       });
+      clearPublicWorkflowEdit(blueprint.card.id, effectiveUser.id);
       syncLinkedTemplateNode(publishedTemplate, localVisibility);
       setTimeout(() => markCurrentGraphSaved(), 0);
     } catch (error) {
@@ -1306,7 +1318,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                     </div>
 
                     <div style={{
-                      minHeight: '140px',
+                      minHeight: '160px',
                       display: 'grid',
                       placeItems: 'center',
                       border: '1px solid rgba(255,255,255,0.12)',
@@ -1314,13 +1326,24 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                       background: 'radial-gradient(circle at 50% 0%, rgba(56,189,248,0.16), rgba(255,255,255,0.04) 58%, rgba(0,0,0,0.18))',
                       boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.03)'
                     }}>
-                      <div style={{ textAlign: 'center', display: 'grid', gap: '6px', padding: '16px' }}>
-                        <Icons.Package size={28} />
-                        <strong style={{ color: 'var(--text-main)' }}>{builderDraft.title || 'Community Template'}</strong>
-                        <span style={{ color: 'var(--text-sub)', fontSize: '0.76rem' }}>
-                          External preview node
-                        </span>
-                      </div>
+                      {linkedTemplateNode ? (
+                        <LiveNodePreview
+                          node={linkedTemplateNode}
+                          className="project-test-node-preview"
+                          maxWidth={260}
+                          maxHeight={150}
+                          minHeight={120}
+                          fallbackLabel={builderDraft.title || 'Community Template'}
+                        />
+                      ) : (
+                        <div style={{ textAlign: 'center', display: 'grid', gap: '6px', padding: '16px' }}>
+                          <Icons.Package size={28} />
+                          <strong style={{ color: 'var(--text-main)' }}>{builderDraft.title || 'Community Template'}</strong>
+                          <span style={{ color: 'var(--text-sub)', fontSize: '0.76rem' }}>
+                            External preview node
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     <div style={{ display: 'grid', gap: '10px' }}>

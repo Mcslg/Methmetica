@@ -184,10 +184,6 @@ export const validateDraft = (draft: CommunityNodeTemplate): string | null => {
   if (!draft.slug.trim()) return 'Slug 不能為空。';
   if (!slugPattern.test(draft.slug.trim())) return 'Slug 只能包含小寫英數字與連字號。';
 
-  if (draft.builderBlocks.length === 0) {
-    return '至少要加入一個 block。';
-  }
-
   const blockIds = new Set<string>();
   const interfaceSchema = getTemplateInterfaceSchema(draft);
   const interfaceCount = interfaceSchema.inputs.length + interfaceSchema.outputs.length;

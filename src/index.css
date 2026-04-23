@@ -1298,7 +1298,7 @@ math-field::part(virtual-keyboard-toggle) {
   font-size: 13px;
 }
 
-.quick-nav-node-preview {
+.live-node-preview {
   width: 100%;
   border: 1px solid var(--border-node);
   border-radius: 8px;
@@ -1311,28 +1311,28 @@ math-field::part(virtual-keyboard-toggle) {
   box-sizing: border-box;
 }
 
-.quick-nav-node-preview-inner {
+.live-node-preview-inner {
   position: relative;
   overflow: visible;
   pointer-events: none;
 }
 
-.quick-nav-live-node-clone,
-.quick-nav-live-node-clone * {
+.live-node-preview-clone,
+.live-node-preview-clone * {
   pointer-events: none !important;
 }
 
-.quick-nav-live-node-clone.math-node:hover,
-.quick-nav-live-node-clone .math-node:hover {
+.live-node-preview-clone.math-node:hover,
+.live-node-preview-clone .math-node:hover {
   transform: none;
   box-shadow: var(--node-shadow);
 }
 
-.quick-nav-live-node-clone .react-flow__handle::after {
+.live-node-preview-clone .react-flow__handle::after {
   display: none;
 }
 
-.quick-nav-node-preview-fallback {
+.live-node-preview-fallback {
   width: 100%;
   height: 100%;
   display: flex;

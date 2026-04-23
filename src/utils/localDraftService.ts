@@ -3,6 +3,7 @@ import type { AppNode } from '../store/useStore';
 
 const DRAFT_INDEX_KEY = 'methmatica.localDrafts.index.v1';
 const DRAFT_KEY_PREFIX = 'methmatica.localDraft.';
+const PUBLIC_EDIT_KEY_PREFIX = 'methmatica.publicWorkflowEdit.';
 
 export type LocalDraftSummary = {
   id: string;
@@ -15,6 +16,14 @@ type LocalDraftDoc = {
   id: string;
   title: string;
   createdAt: string;
+  updatedAt: string;
+  nodes: AppNode[];
+  edges: Edge[];
+};
+
+type PublicWorkflowEditDoc = {
+  workflowId: string;
+  ownerId: string;
   updatedAt: string;
   nodes: AppNode[];
   edges: Edge[];
@@ -44,6 +53,8 @@ const writeIndex = (index: LocalDraftSummary[]) => {
 };
 
 const keyOf = (id: string) => `${DRAFT_KEY_PREFIX}${id}`;
+const publicEditKeyOf = (workflowId: string, ownerId: string) =>
+  `${PUBLIC_EDIT_KEY_PREFIX}${ownerId}.${workflowId}`;
 
 const getDraftTitle = (nodes: AppNode[]) => {
   const root = nodes.find(node => node.type === 'projectNode');
@@ -113,3 +124,42 @@ export const listLocalDrafts = () =>
   readIndex()
     .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt))
     .filter(item => loadLocalDraft(item.id) !== null);
+
+export const savePublicWorkflowEdit = (
+  workflowId: string,
+  ownerId: string,
+  payload: { nodes: AppNode[]; edges: Edge[] },
+) => {
+  const doc: PublicWorkflowEditDoc = {
+    workflowId,
+    ownerId,
+    updatedAt: nowIso(),
+    nodes: payload.nodes,
+    edges: payload.edges,
+  };
+  window.localStorage.setItem(publicEditKeyOf(workflowId, ownerId), JSON.stringify(doc));
+};
+
+export const loadPublicWorkflowEdit = (workflowId: string, ownerId: string): PublicWorkflowEditDoc | null => {
+  try {
+    const raw = window.localStorage.getItem(publicEditKeyOf(workflowId, ownerId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PublicWorkflowEditDoc;
+    if (
+      !parsed ||
+      parsed.workflowId !== workflowId ||
+      parsed.ownerId !== ownerId ||
+      !Array.isArray(parsed.nodes) ||
+      !Array.isArray(parsed.edges)
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+export const clearPublicWorkflowEdit = (workflowId: string, ownerId: string) => {
+  window.localStorage.removeItem(publicEditKeyOf(workflowId, ownerId));
+};

@@ -1,10 +1,10 @@
-import React, { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { ReactFlow, Background, Controls, ReactFlowProvider, useReactFlow, BackgroundVariant, type Edge } from '@xyflow/react';
 import { useShallow } from 'zustand/react/shallow';
 import '@xyflow/react/dist/style.css';
 
-import useStore, { type AppNode } from './store/useStore';
+import useStore, { createGraphSignature, type AppNode } from './store/useStore';
 import { nodeTypes, getNodeDefinition, buildNodeCatalog } from './nodes/registry';
 import { getTemplateHandles } from './community/types';
 import { Sidebar } from './components/Sidebar';
@@ -14,13 +14,14 @@ import { WorkflowHeader } from './components/WorkflowHeader';
 import { Icons } from './components/Icons';
 import { Dashboard } from './components/Dashboard';
 import { DebugOverlay, countRender } from './components/DebugOverlay';
+import { LiveNodePreview } from './components/LiveNodePreview';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { AuthBootstrap } from './components/AuthBootstrap';
 import { getCommunityWorkflowBlueprint, getCommunityWorkflowBySlug } from './community/catalog';
 import { isSupabaseConfigured } from './integrations/supabase/client';
 import { getWorkflowBlueprintFromSupabaseByRef, getWorkflowVersionBlueprintFromSupabase } from './integrations/supabase/workflows';
 import * as driveService from './utils/googleDriveService';
-import { loadLocalDraft, saveLocalDraft } from './utils/localDraftService';
+import { loadLocalDraft, loadPublicWorkflowEdit, saveLocalDraft, savePublicWorkflowEdit } from './utils/localDraftService';
 import { type AppRoute, parseRouteFromLocation, readEditorSnapshotFromHistory, replaceRoute } from './utils/navigation';
 import type { MathValue } from './types/mathTypes';
 
@@ -111,98 +112,6 @@ function DataTooltipContent({ tooltip, isShiftPressed }: { tooltip: DataTooltipS
   );
 }
 
-const copyLiveFormState = (source: Element, clone: Element) => {
-  const sourceFields = source.querySelectorAll('input, textarea, select');
-  const cloneFields = clone.querySelectorAll('input, textarea, select');
-
-  sourceFields.forEach((field, index) => {
-    const cloneField = cloneFields[index];
-    if (!cloneField) return;
-
-    if (field instanceof HTMLInputElement && cloneField instanceof HTMLInputElement) {
-      cloneField.value = field.value;
-      cloneField.setAttribute('value', field.value);
-      if (field.checked) {
-        cloneField.setAttribute('checked', 'checked');
-      } else {
-        cloneField.removeAttribute('checked');
-      }
-      return;
-    }
-
-    if (field instanceof HTMLTextAreaElement && cloneField instanceof HTMLTextAreaElement) {
-      cloneField.value = field.value;
-      cloneField.textContent = field.value;
-      return;
-    }
-
-    if (field instanceof HTMLSelectElement && cloneField instanceof HTMLSelectElement) {
-      cloneField.value = field.value;
-      Array.from(cloneField.options).forEach((option) => {
-        option.selected = option.value === field.value;
-      });
-    }
-  });
-};
-
-function QuickNavNodePreview({ node }: { node: AppNode }) {
-  const previewRef = useRef<HTMLDivElement>(null);
-  const width = Math.max(120, Math.round(node.measured?.width ?? node.width ?? 220));
-  const height = Math.max(70, Math.round(node.measured?.height ?? node.height ?? 120));
-  const scale = Math.min(1, 156 / width, 92 / height);
-
-  useLayoutEffect(() => {
-    const target = previewRef.current;
-    if (!target) return;
-
-    target.replaceChildren();
-
-    const nodeWrapper = Array.from(document.querySelectorAll<HTMLElement>('.react-flow__node[data-id]'))
-      .find((el) => el.getAttribute('data-id') === node.id);
-    const liveNode = nodeWrapper?.firstElementChild as HTMLElement | null;
-
-    if (!liveNode) {
-      const fallback = document.createElement('div');
-      fallback.className = 'quick-nav-node-preview-fallback';
-      fallback.textContent = String(node.data?.label || node.type || 'Node');
-      target.appendChild(fallback);
-      return;
-    }
-
-    const clone = liveNode.cloneNode(true) as HTMLElement;
-    copyLiveFormState(liveNode, clone);
-    clone.classList.add('quick-nav-live-node-clone');
-    clone.querySelectorAll('.react-flow__resize-control, .edge-hitbox').forEach((el) => el.remove());
-    clone.querySelectorAll<HTMLElement>('[contenteditable="true"]').forEach((el) => {
-      el.setAttribute('contenteditable', 'false');
-    });
-    clone.querySelectorAll<HTMLElement>('input, textarea, select, button').forEach((el) => {
-      el.setAttribute('tabindex', '-1');
-      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement || el instanceof HTMLButtonElement) {
-        el.disabled = true;
-      }
-    });
-    clone.style.width = `${width}px`;
-    clone.style.height = `${height}px`;
-    clone.style.minWidth = '0';
-    clone.style.transform = `scale(${scale})`;
-    clone.style.transformOrigin = 'top left';
-    clone.style.pointerEvents = 'none';
-    clone.style.transition = 'none';
-
-    target.appendChild(clone);
-  }, [height, node, scale, width]);
-
-  return (
-    <div className="quick-nav-node-preview" style={{ height: Math.ceil(height * scale), minHeight: 68 }}>
-      <div
-        ref={previewRef}
-        className="quick-nav-node-preview-inner"
-        style={{ width: Math.ceil(width * scale), height: Math.ceil(height * scale) }}
-      />
-    </div>
-  );
-}
 const annotatePublicWorkflowNodes = (
   nodes: AppNode[],
   meta?: { workflowId?: string; workflowVersionId?: string; workflowVersion?: number; ownerId?: string; authorName?: string },
@@ -1096,7 +1005,7 @@ function Flow() {
                           boxShadow: isActive ? '0 0 16px rgba(79, 172, 254, 0.18)' : 'none'
                         }}
                       >
-                        <QuickNavNodePreview node={node} />
+                        <LiveNodePreview node={node} />
                         <div style={{ fontSize: '0.8rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {info.label}
                         </div>
@@ -1421,9 +1330,12 @@ function App() {
   const theme = useStore(state => state.theme);
   const setCurrentView = useStore(state => state.setCurrentView);
   const setGraph = useStore(state => state.setGraph);
+  const setGraphWithSavedBaseline = useStore(state => state.setGraphWithSavedBaseline);
   const setActiveFileId = useStore(state => state.setActiveFileId);
+  const user = useStore(state => state.user);
   const nodes = useStore(state => state.nodes);
   const edges = useStore(state => state.edges);
+  const savedGraphSignature = useStore(state => state.savedGraphSignature);
   const routeTokenRef = useRef(0);
   const [isRouteResolving, setIsRouteResolving] = useState(true);
 
@@ -1467,10 +1379,21 @@ function App() {
           (() => {
             const localBySlug = getCommunityWorkflowBySlug(route.id!);
             return localBySlug ? getCommunityWorkflowBlueprint(localBySlug.id) : null;
-          })();
+        })();
         if (!blueprint) throw new Error(`Workflow ${route.id} not found`);
         if (token !== routeTokenRef.current) return;
-        setGraph(annotatePublicWorkflowNodes(blueprint.nodes as AppNode[], blueprint.meta), blueprint.edges as Edge[]);
+        const publishedNodes = annotatePublicWorkflowNodes(blueprint.nodes as AppNode[], blueprint.meta);
+        const publishedEdges = blueprint.edges as Edge[];
+        const workflowId = blueprint.meta?.workflowId ?? route.id;
+        const ownerId = blueprint.meta?.ownerId;
+        const localEdit = workflowId && ownerId && user?.id === ownerId
+          ? loadPublicWorkflowEdit(workflowId, ownerId)
+          : null;
+        if (localEdit) {
+          setGraphWithSavedBaseline(localEdit.nodes as AppNode[], localEdit.edges as Edge[], publishedNodes, publishedEdges);
+        } else {
+          setGraph(publishedNodes, publishedEdges);
+        }
         setActiveFileId(null);
         setCurrentView('editor');
         return;
@@ -1520,7 +1443,7 @@ function App() {
         setIsRouteResolving(false);
       }
     }
-  }, [setActiveFileId, setCurrentView, setGraph]);
+  }, [setActiveFileId, setCurrentView, setGraph, setGraphWithSavedBaseline, user?.id]);
 
   useEffect(() => {
     const initialRoute = parseRouteFromLocation(window.location);
@@ -1546,6 +1469,25 @@ function App() {
     }, 500);
     return () => window.clearTimeout(timer);
   }, [currentView, edges, nodes]);
+
+  useEffect(() => {
+    if (currentView !== 'editor' || !user?.id) return;
+    const route = parseRouteFromLocation(window.location);
+    if (route.view !== 'editor' || route.source !== 'public') return;
+    const projectRoot = nodes.find(node => node.type === 'projectNode');
+    const workflowId = typeof projectRoot?.data.supabaseWorkflowId === 'string'
+      ? projectRoot.data.supabaseWorkflowId
+      : route.id;
+    const ownerId = typeof projectRoot?.data.ownerId === 'string'
+      ? projectRoot.data.ownerId
+      : null;
+    const hasUnsavedPublicEdit = createGraphSignature(nodes, edges) !== savedGraphSignature;
+    if (!workflowId || ownerId !== user.id || !hasUnsavedPublicEdit) return;
+    const timer = window.setTimeout(() => {
+      savePublicWorkflowEdit(workflowId, ownerId, { nodes, edges });
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [currentView, edges, nodes, savedGraphSignature, user?.id]);
 
   return (
     <LanguageProvider>
