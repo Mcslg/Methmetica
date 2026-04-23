@@ -103,6 +103,7 @@ export type NodeData = {
     currentFormula?: string; // For BalanceNode interim result
     inputSignature?: string; // A signature combining all incoming variable edge values to trigger calculation hooks
     inputs?: Record<string, string>; // Multi-input support (handleId -> value)
+    manualInputs?: Record<string, string>; // User-entered fallback values for disconnected input handles
     typedInputs?: Record<string, MathValue>; // Typed multi-input support (handleId -> MathValue)
     limitPoint?: string; // For CalculusNode limit target (e.g. x -> a)
     description?: string; // For ProjectNode metadata
@@ -1210,6 +1211,23 @@ const useStore = create<AppState>()(
                 });
             }
 
+            const connectedTargetHandles = new Set(
+                explicitEdges
+                    .map(e => e.targetHandle)
+                    .filter((handleId): handleId is string => Boolean(handleId))
+            );
+            Object.entries(node.data.manualInputs || {}).forEach(([handleId, manualValue]) => {
+                if (connectedTargetHandles.has(handleId)) return;
+                const handle = node.data.handles?.find(h => h.id === handleId);
+                if (handle && handle.type !== 'input' && handle.type !== 'gate-in') return;
+
+                collectedInputs[handleId] = manualValue;
+                if (valIn === undefined) valIn = manualValue;
+                if (handleId === 'h-gate-in') {
+                    gateValFromEdge = manualValue;
+                }
+            });
+
             const updatedData = { ...node.data };
             let isUpdated = false;
 
@@ -1273,6 +1291,10 @@ const useStore = create<AppState>()(
                     }
                 }
 
+                if (!formulaVal && collectedInputs['h-fn-in'] !== undefined) {
+                    formulaVal = collectedInputs['h-fn-in'];
+                }
+
                 if (formulaVal !== node.data.formulaInput) {
                     updatedData.formulaInput = formulaVal;
                     isUpdated = true;
@@ -1316,11 +1338,10 @@ const useStore = create<AppState>()(
 
             // Build input signature to trigger downstream recalculation reliably
             if (['calculateNode', 'solveNode', 'graphNode', 'balanceNode', 'codeNode'].includes(node.type || '')) {
-                const signature = explicitEdges.map(e => {
-                    const source = nodeMap.get(e.source);
-                    const typedValue = e.sourceHandle ? source?.data.typedOutputs?.[e.sourceHandle] : undefined;
-                    return `${e.targetHandle}=${(e.sourceHandle && source?.data.outputs?.[e.sourceHandle]) ?? source?.data.value}|typed=${JSON.stringify(typedValue ?? '')}`;
-                }).sort().join('|');
+                const signature = Object.keys(collectedInputs)
+                    .sort()
+                    .map(handleId => `${handleId}=${collectedInputs[handleId]}|typed=${JSON.stringify(collectedTypedInputs[handleId] ?? '')}`)
+                    .join('|');
 
                 if (signature !== node.data.inputSignature) {
                     updatedData.inputSignature = signature;

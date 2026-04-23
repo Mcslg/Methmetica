@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Handle, Position, useReactFlow, useUpdateNodeInternals } from '@xyflow/react';
 import useStore, { type AppState, type CustomHandle, type HandleType } from '../store/useStore';
+import { MathInput } from '../components/MathInput';
 
 interface DynamicHandlesProps {
     nodeId: string;
@@ -32,6 +33,11 @@ type MenuState = {
     screenY: number;
     activeIndex: number | null;
     items: MenuItem[];
+};
+
+type MathfieldElement = HTMLElement & {
+    value: string;
+    executeCommand?: (command: unknown) => void;
 };
 
 const PANEL_ITEMS: Record<Exclude<MenuActionType, 'close'>, { label: string; desc: string; icon: string; color: string }> = {
@@ -132,9 +138,11 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
     const addHandle = useStore((state: AppState) => state.addHandle);
     const removeHandle = useStore((state: AppState) => state.removeHandle);
     const updateHandle = useStore((state: AppState) => state.updateHandle);
+    const updateNodeData = useStore((state: AppState) => state.updateNodeData);
     const edges = useStore((state: AppState) => state.edges);
     const nodes = useStore((state: AppState) => state.nodes);
     const containerRef = useRef<HTMLDivElement>(null);
+    const manualInputMathRef = useRef<MathfieldElement | null>(null);
     const updateNodeInternals = useUpdateNodeInternals();
     const { setCenter } = useReactFlow();
 
@@ -163,6 +171,23 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
     const [menu, setMenu] = useState<MenuState | null>(null);
     const [movingHandle, setMovingHandle] = useState<{ id: string, side: string, offset: number } | null>(null);
     const [cmdPressed, setCmdPressed] = useState(false);
+    const [manualInputEditor, setManualInputEditor] = useState<{
+        handleId: string;
+        label: string;
+        screenX: number;
+        screenY: number;
+        value: string;
+        isConnected: boolean;
+    } | null>(null);
+
+    useEffect(() => {
+        if (!manualInputEditor || manualInputEditor.isConnected) return;
+        const timer = window.setTimeout(() => {
+            manualInputMathRef.current?.focus();
+            manualInputMathRef.current?.executeCommand?.('showVirtualKeyboard');
+        }, 80);
+        return () => window.clearTimeout(timer);
+    }, [manualInputEditor]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -404,6 +429,23 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
         setCenter(peer.position.x + width / 2, peer.position.y + height / 2, { duration: 320 });
     }, [nodes, setCenter]);
 
+    const currentNode = nodes.find((node) => node.id === nodeId);
+    const updateManualInput = useCallback((handleId: string, value: string) => {
+        const nextManualInputs = {
+            ...(useStore.getState().nodes.find(node => node.id === nodeId)?.data.manualInputs || {}),
+            [handleId]: value,
+        };
+        updateNodeData(nodeId, { manualInputs: nextManualInputs });
+    }, [nodeId, updateNodeData]);
+
+    const clearManualInput = useCallback((handleId: string) => {
+        const current = useStore.getState().nodes.find(node => node.id === nodeId)?.data.manualInputs || {};
+        const nextManualInputs = { ...current };
+        delete nextManualInputs[handleId];
+        updateNodeData(nodeId, { manualInputs: nextManualInputs });
+        setManualInputEditor(null);
+    }, [nodeId, updateNodeData]);
+
 
     return (
         <div
@@ -487,14 +529,42 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                     (() => {
                         const wirelessPeerNodeId = getWirelessPeerNodeId(h.id, (h.type === 'input' || h.type === 'gate-in') ? 'target' : 'source');
                         const wirelessClass = wirelessPeerNodeId ? 'wireless-endpoint' : '';
+                        const isInputLike = h.type === 'input' || h.type === 'gate-in';
+                        const isInputConnected = isInputLike && edges.some((edge) => edge.target === nodeId && edge.targetHandle === h.id);
+                        const manualValue = currentNode?.data.manualInputs?.[h.id] ?? '';
+                        const hasManualInput = isInputLike && manualValue !== '';
                         return (
+                    <>
+                    {hasManualInput && (
+                        <div
+                            className={`manual-input-value-popout side-${h.position}`}
+                            style={{
+                                [h.position === 'top' || h.position === 'bottom' ? 'left' : 'top']: `${h.offset}%`,
+                            }}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                setManualInputEditor({
+                                    handleId: h.id,
+                                    label: h.label || h.id,
+                                    screenX: rect.left + rect.width / 2,
+                                    screenY: rect.bottom + 10,
+                                    value: manualValue,
+                                    isConnected: Boolean(isInputConnected),
+                                });
+                            }}
+                        >
+                            <span>{h.label || h.id}</span>
+                            <strong>{manualValue}</strong>
+                        </div>
+                    )}
                     <Handle
                         key={h.id}
                         id={h.id}
                         type={(h.type === 'input' || h.type === 'gate-in') ? 'target' : 'source'}
                         position={getPositionLiteral(h.position)}
                         isConnectable={!cmdPressed}
-                        className={`${getShapeClass(h.type)} handle-${h.type} ${wirelessClass} ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
+                        className={`${getShapeClass(h.type)} handle-${h.type} ${wirelessClass} ${hasManualInput ? 'manual-input-has-value' : ''} ${movingHandle?.id === h.id ? 'handle-moving' : ''}`}
                         style={{
                             [h.position === 'top' || h.position === 'bottom' ? 'left' : 'top']: `${h.offset}%`,
                         }}
@@ -529,6 +599,19 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                             }
                         }}
                         onClick={(e) => {
+                            if (isInputLike) {
+                                e.stopPropagation();
+                                const rect = (e.target as HTMLElement).getBoundingClientRect();
+                                setManualInputEditor({
+                                    handleId: h.id,
+                                    label: h.label || h.id,
+                                    screenX: rect.left + rect.width / 2,
+                                    screenY: rect.bottom + 10,
+                                    value: manualValue,
+                                    isConnected: Boolean(isInputConnected),
+                                });
+                                return;
+                            }
                             if (!wirelessPeerNodeId) return;
                             e.stopPropagation();
                             focusPeerNode(wirelessPeerNodeId);
@@ -550,6 +633,7 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                             </div>
                         )}
                     </Handle>
+                    </>
                         );
                     })()
                 );
@@ -557,6 +641,51 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
 
             {menu && createPortal(
                 <PieMenu menu={menu} onAction={handleAction} />,
+                document.body
+            )}
+
+            {manualInputEditor && createPortal(
+                <>
+                    <div className="manual-input-editor-backdrop" onClick={() => setManualInputEditor(null)} />
+                    <div
+                        className="manual-input-editor nodrag"
+                        style={{ left: manualInputEditor.screenX, top: manualInputEditor.screenY }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="manual-input-editor-head">
+                            <div>
+                                <span>Manual Input</span>
+                                <strong>{manualInputEditor.label}</strong>
+                            </div>
+                            {manualInputEditor.isConnected && <small>Connected value is active</small>}
+                        </div>
+                        <MathInput
+                            ref={manualInputMathRef}
+                            value={manualInputEditor.value}
+                            readOnly={manualInputEditor.isConnected}
+                            className="manual-input-math-field"
+                            onChange={(value) => {
+                                setManualInputEditor((current) => current ? { ...current, value } : current);
+                                updateManualInput(manualInputEditor.handleId, value);
+                            }}
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter' || event.key === 'Escape') {
+                                    event.preventDefault();
+                                    setManualInputEditor(null);
+                                }
+                            }}
+                        />
+                        <div className="manual-input-editor-actions">
+                            <button type="button" onClick={() => clearManualInput(manualInputEditor.handleId)}>
+                                Clear
+                            </button>
+                            <button type="button" onClick={() => setManualInputEditor(null)}>
+                                Done
+                            </button>
+                        </div>
+                    </div>
+                </>,
                 document.body
             )}
         </div>
