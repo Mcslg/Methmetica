@@ -97,6 +97,7 @@ export type NodeData = {
     slots?: Record<string, AppNode | string>; // Absorbed nodes (either whole node or ID string for Proxy)
     gateValue?: string; // Value representing gate pass/block state
     label?: string; // Custom title for the node header
+    hideHeader?: boolean; // Hide the node header/chrome when the user wants a compact view
     parentId?: string; // ID of the container node that absorbed this node (for Option B Proxy)
     operations?: BalanceOperation[]; // For BalanceNode history
     currentFormula?: string; // For BalanceNode interim result

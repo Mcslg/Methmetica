@@ -227,7 +227,7 @@ const annotatePublicWorkflowNodes = (
 function Flow() {
   const { t, language } = useLanguage();
   const {
-    nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, addNodes, removeNode, addHandle, toggleWirelessEdge,
+    nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, addNodes, removeNode, addHandle, updateNodeData, toggleWirelessEdge,
     handleProximitySnap, updatePluginHint, setAltPressed, setCtrlPressed, theme,
     isSidebarOpen, setDeletingHover, draggingEjectPos, hoveredNodeId,
     setHoveredNodeId, updateNodeDimensions, isAltPressed, undo, redo, takeSnapshot, sliceEdges,
@@ -242,6 +242,7 @@ function Flow() {
     addNode: state.addNode,
     addNodes: state.addNodes,
     removeNode: state.removeNode,
+    updateNodeData: state.updateNodeData,
     addHandle: state.addHandle,
     handleProximitySnap: state.handleProximitySnap,
     updatePluginHint: state.updatePluginHint,
@@ -493,8 +494,6 @@ function Flow() {
 
   const onNodeContextMenu = useCallback((e: React.MouseEvent<HTMLElement> | NodeMenuEvent, node: AppNode) => {
     e.preventDefault();
-    // TextNode uses its own right-click to create scope handles; skip the node menu
-    if (node.type === 'textNode') return;
     setPaneMenu(null);
     const currentTarget = 'currentTarget' in e ? e.currentTarget : null;
     const rect = currentTarget instanceof HTMLElement ? currentTarget.getBoundingClientRect() : { top: e.clientY, height: 100 };
@@ -688,6 +687,13 @@ function Flow() {
 
 
   const handleDeleteNode = () => { if (nodeMenu) { removeNode(nodeMenu.nodeId); setNodeMenu(null); } };
+  const handleToggleHeader = () => {
+    if (!nodeMenu) return;
+    const node = nodes.find(n => n.id === nodeMenu.nodeId);
+    if (!node) return;
+    updateNodeData(node.id, { hideHeader: !node.data.hideHeader });
+    setNodeMenu(null);
+  };
   const handleDuplicateNode = () => {
     if (!nodeMenu) return;
     const node = nodes.find(n => n.id === nodeMenu.nodeId);
@@ -1199,6 +1205,11 @@ function Flow() {
       {nodeMenu && (
         <div className="pane-context-menu" style={{ position: 'absolute', left: nodeMenu.x, top: nodeMenu.y, zIndex: 1000 }} onMouseLeave={() => setNodeMenu(null)}>
           <div className="menu-header">{t('common.node_actions')}</div>
+          <div className="menu-item" onClick={handleToggleHeader}>
+            {nodes.find(n => n.id === nodeMenu.nodeId)?.data.hideHeader
+              ? (language === 'zh-TW' ? '顯示 Header' : 'Show Header')
+              : (language === 'zh-TW' ? '隱藏 Header' : 'Hide Header')}
+          </div>
           <div className="menu-item" onClick={handleDuplicateNode}>{t('common.duplicate')}</div>
           <div className="menu-item" style={{ color: '#ff4757' }} onClick={handleDeleteNode}>{t('common.delete')}</div>
         </div>

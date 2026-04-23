@@ -136,7 +136,7 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
                 customDescriptions={customHandleDescriptions}
             />
 
-            <div className="node-header" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+            {!data.hideHeader && <div className="node-header" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1, gap: '4px' }}>
                         {icon}
@@ -354,7 +354,7 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
                         )}
                     </div>
                 )}
-            </div>
+            </div>}
 
 
             <div className="node-content custom-scrollbar" style={{

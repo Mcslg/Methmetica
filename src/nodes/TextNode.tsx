@@ -31,6 +31,8 @@ import { countRender } from '../components/DebugOverlay';
 
 // Helper for implicit multiplication
 const LINE_Y_THRESHOLD = 12; // px
+const TEXT_NODE_MIN_WIDTH = 150;
+const TEXT_NODE_MIN_HEIGHT = 80;
 
 const createTextPageId = () => `page-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -785,6 +787,18 @@ const MathPill = TiptapNode.create({
                 }
             }, [displayVal, sequenceData, isExpanded]);
 
+            const pillAccent = isGlobal ? '#f6c453' : (isConnectedIn ? '#b987ff' : (isCtrlPressed ? '#43e97b' : '#6ab7ff'));
+            const pillBackground = isGlobal
+                ? 'linear-gradient(180deg, rgba(246, 196, 83, 0.15), rgba(246, 196, 83, 0.07))'
+                : isConnectedIn
+                    ? 'linear-gradient(180deg, rgba(185, 135, 255, 0.14), rgba(185, 135, 255, 0.06))'
+                    : isCtrlPressed
+                        ? 'linear-gradient(180deg, rgba(67, 233, 123, 0.14), rgba(67, 233, 123, 0.06))'
+                        : 'linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.035))';
+            const pillBorder = localShowHandle
+                ? `1px solid ${pillAccent}`
+                : `1px solid color-mix(in srgb, ${pillAccent} 35%, transparent)`;
+
             // Right-click: open editor
             const onRightClick = (e: React.MouseEvent) => {
                 e.preventDefault();
@@ -894,39 +908,40 @@ const MathPill = TiptapNode.create({
                         position: 'relative',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        background: isGlobal ? 'rgba(255, 204, 0, 0.15)' : (isConnectedIn ? 'rgba(180, 100, 255, 0.1)' : (isCtrlPressed ? 'rgba(67, 233, 123, 0.1)' : 'rgba(79, 172, 254, 0.05)')),
-                        color: isGlobal ? '#ffcc00' : (isConnectedIn ? '#b464ff' : (isCtrlPressed ? '#43e97b' : '#4facfe')),
-                        padding: '4px 10px',
-                        borderRadius: '6px',
-                        fontSize: '0.9em',
+                        gap: '6px',
+                        background: pillBackground,
+                        color: pillAccent,
+                        padding: name ? '3px 8px 3px 5px' : '3px 8px',
+                        borderRadius: '8px',
+                        fontSize: '0.92em',
                         cursor: 'pointer',
-                        border: localShowHandle
-                            ? (isGlobal ? '1px solid #ffcc00' : (isConnectedIn ? '1px solid #b464ff' : (isCtrlPressed ? '1px solid #43e97b' : '1px solid #4facfe')))
-                            : (isGlobal ? '1px solid rgba(255, 204, 0, 0.5)' : (isConnectedIn ? '1px solid rgba(180, 100, 255, 0.4)' : (isCtrlPressed ? '1px solid rgba(67, 233, 123, 0.4)' : '1px solid rgba(79, 172, 254, 0.3)'))),
-                        margin: name ? '10px 4px 4px 4px' : '0 4px',
+                        border: pillBorder,
+                        margin: '0 4px',
                         userSelect: 'text',
-                        minHeight: '1.4em',
+                        minHeight: '1.55em',
                         transition: 'all 0.2s ease',
                         verticalAlign: 'middle',
                         top: '-1px',
-                        boxShadow: localShowHandle ? (isGlobal ? '0 0 10px rgba(255, 204, 0, 0.4)' : (isConnectedIn ? '0 0 10px rgba(180, 100, 255, 0.3)' : (isCtrlPressed ? '0 0 10px rgba(67, 233, 123, 0.3)' : '0 0 10px rgba(79, 172, 254, 0.3)'))) : 'none',
+                        boxShadow: localShowHandle
+                            ? `0 0 0 1px color-mix(in srgb, ${pillAccent} 28%, transparent), 0 6px 18px rgba(0, 0, 0, 0.22)`
+                            : 'inset 0 1px 0 rgba(255,255,255,0.08)',
                         zIndex: isCtrlPressed ? 10 : 1
                     }}
                 >
                     {name && (
                         <span style={{
-                            position: 'absolute',
-                            top: '-8px',
-                            left: '8px',
-                            fontSize: '0.6rem',
-                            color: isGlobal ? '#ffcc00' : (isCtrlPressed ? '#43e97b' : (theme === 'dark' ? 'rgba(255,255,255,0.5)' : 'rgba(14, 47, 11, 0.6)')),
-                            background: 'var(--bg-node)',
-                            padding: '0 4px',
-                            lineHeight: 1,
+                            color: theme === 'dark' ? 'rgba(255,255,255,0.72)' : 'rgba(14, 47, 11, 0.72)',
+                            background: `color-mix(in srgb, ${pillAccent} 18%, transparent)`,
+                            border: `1px solid color-mix(in srgb, ${pillAccent} 22%, transparent)`,
+                            borderRadius: '5px',
+                            padding: '1px 5px',
+                            fontSize: '0.62rem',
+                            lineHeight: 1.2,
                             fontWeight: 700,
-                            letterSpacing: '0.05em',
+                            letterSpacing: '0.02em',
                             pointerEvents: 'none',
-                            opacity: isGlobal ? 1 : 0.8
+                            opacity: isGlobal ? 1 : 0.9,
+                            whiteSpace: 'nowrap'
                         }}>
                             {name}
                         </span>
@@ -1087,6 +1102,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
     const { screenToFlowPosition } = useReactFlow();
     const containerRef = useRef<HTMLDivElement>(null);
     const contentRef = useRef<HTMLDivElement>(null);
+    const autoResizeFrameRef = useRef<number | null>(null);
 
     const [mathInputOpen, setMathInputOpen] = useState(false);
     const [popupPos, setPopupPos] = useState<{ x: number, y: number } | null>(null);
@@ -1490,6 +1506,53 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
         setTimeout(syncHandlesFromDOM, 10);
     }, [syncHandlesFromDOM]);
 
+    const autoResizeToContent = useCallback(() => {
+        if (!containerRef.current || !contentRef.current) return;
+
+        const headerEl = containerRef.current.querySelector('.node-header') as HTMLElement | null;
+        const editorEl = contentRef.current.querySelector('.tiptap-editor-container') as HTMLElement | null;
+        if (!editorEl) return;
+
+        const headerHeight = headerEl?.getBoundingClientRect().height || 0;
+        const editorHeight = editorEl.scrollHeight;
+        const nextHeight = Math.max(TEXT_NODE_MIN_HEIGHT, Math.ceil(headerHeight + editorHeight));
+
+        const state = useStore.getState();
+        const currentNode = state.nodes.find((node) => node.id === id);
+        if (!currentNode) return;
+
+        const currentHeight = currentNode.height ?? (currentNode.style?.height as number | undefined) ?? currentNode.measured?.height ?? TEXT_NODE_MIN_HEIGHT;
+        if (Math.abs(currentHeight - nextHeight) < 2) return;
+
+        useStore.setState({
+            nodes: state.nodes.map((node) => {
+                if (node.id !== id) return node;
+                return {
+                    ...node,
+                    height: nextHeight,
+                    style: {
+                        ...node.style,
+                        height: nextHeight,
+                    },
+                };
+            }),
+        });
+        requestAnimationFrame(() => {
+            updateNodeInternals(id);
+            syncHandlesFromDOMRef.current();
+        });
+    }, [id, updateNodeInternals]);
+
+    const scheduleAutoResize = useCallback(() => {
+        if (autoResizeFrameRef.current !== null) {
+            cancelAnimationFrame(autoResizeFrameRef.current);
+        }
+        autoResizeFrameRef.current = requestAnimationFrame(() => {
+            autoResizeFrameRef.current = null;
+            autoResizeToContent();
+        });
+    }, [autoResizeToContent]);
+
     useEffect(() => {
         const timer = setTimeout(syncHandlesFromDOM, 50);
         return () => clearTimeout(timer);
@@ -1505,6 +1568,27 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
         observer.observe(containerRef.current);
         return () => observer.disconnect();
     }, []); // ← Created once, stable for component lifetime
+
+    useEffect(() => {
+        if (!contentRef.current) return;
+        const editorEl = contentRef.current.querySelector('.tiptap-editor-container');
+        if (!editorEl) return;
+
+        scheduleAutoResize();
+        const observer = new ResizeObserver(scheduleAutoResize);
+        observer.observe(editorEl);
+        return () => {
+            observer.disconnect();
+            if (autoResizeFrameRef.current !== null) {
+                cancelAnimationFrame(autoResizeFrameRef.current);
+                autoResizeFrameRef.current = null;
+            }
+        };
+    }, [editor, scheduleAutoResize]);
+
+    useEffect(() => {
+        scheduleAutoResize();
+    }, [activePageText, data.style?.fontSize, pages.length, scheduleAutoResize]);
 
 
     // Toolbar application
@@ -1627,14 +1711,12 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                     }
                 }}
                 style={{
-                    minWidth: '150px', minHeight: '80px', width: '100%', height: '100%',
+                    minWidth: `${TEXT_NODE_MIN_WIDTH}px`, minHeight: `${TEXT_NODE_MIN_HEIGHT}px`, width: '100%', height: '100%',
                     position: 'relative', overflow: 'visible',
                     cursor: 'text'
                 }}
                 onMouseDown={(e) => { if (mathInputOpen) e.stopPropagation(); }}
                 onContextMenu={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
                     const rect = containerRef.current?.getBoundingClientRect();
                     if (!rect) return;
                     const relX = e.clientX - rect.left;
@@ -1645,7 +1727,9 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                     const dRight = rect.width - relX;
                     const EDGE_THRESHOLD = 24;
                     const minDist = Math.min(dTop, dBottom, dLeft, dRight);
-                    if (minDist > EDGE_THRESHOLD) return; // not near any edge
+                    if (minDist > EDGE_THRESHOLD) return; // Let React Flow open the node menu.
+                    e.preventDefault();
+                    e.stopPropagation();
                     const side: 'top' | 'bottom' | 'left' | 'right' =
                         minDist === dTop ? 'top' :
                         minDist === dBottom ? 'bottom' :
@@ -1656,9 +1740,9 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                     addHandle(id, { id: `h-scope-${Date.now()}`, type: 'scope', position: side, offset });
                 }}
             >
-                <NodeResizer color="transparent" isVisible={false} minWidth={150} minHeight={80} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
+                <NodeResizer color="transparent" isVisible={false} minWidth={TEXT_NODE_MIN_WIDTH} minHeight={TEXT_NODE_MIN_HEIGHT} lineStyle={{ border: 'none' }} handleStyle={{ width: 8, height: 8, borderRadius: '50%', background: 'transparent', border: 'none' }} />
 
-                <div className="node-header">
+                {!data.hideHeader && <div className="node-header">
                     <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1, gap: '4px', minWidth: 0 }}>
                         <Icons.Text />
                         <input
@@ -1751,7 +1835,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                             +
                         </button>
                     </div>
-                </div>
+                </div>}
 
 
 
@@ -1955,7 +2039,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                 )}
 
                 <div ref={contentRef} className="node-content custom-scrollbar nodrag" style={{
-                    position: 'relative', flexGrow: 1, overflowY: 'auto', padding: '0px'
+                    position: 'relative', flexGrow: 0, overflowY: 'visible', padding: '0px'
                 }}>
                     {editor && (
                         <BubbleMenu
@@ -2031,6 +2115,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                         style={{
                             padding: '12px',
                             fontSize: `${data.style?.fontSize || 1}rem`,
+                            fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", ui-sans-serif, system-ui, sans-serif',
                             color: data.style?.color || 'var(--text-main)',
                             lineHeight: '1.6',
                             outline: 'none',
