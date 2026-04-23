@@ -1,5 +1,5 @@
 import type { CommunityNodeTemplate } from './types';
-import { cloneInterfaceSchema } from './types';
+import { cloneInterfaceSchema, portToHandleSpec, type TemplateInterfaceSchema } from './types';
 import { defaultCommunityTemplates } from './catalog';
 import { ensureLocalizedText } from './localizedText';
 
@@ -60,6 +60,32 @@ export const makeInitialDraft = (
 ): CommunityNodeTemplate => {
   const base = cloneTemplate(defaultCommunityTemplates[0]);
   const now = Date.now();
+  const defaultInterfaceSchema: TemplateInterfaceSchema = {
+    inputs: [
+      {
+        id: 'input',
+        label: 'input',
+        labelI18n: { 'zh-TW': 'input', en: 'input' },
+        type: 'input',
+        position: 'left',
+        offset: 42,
+        source: 'static',
+        valueKind: 'value',
+      },
+    ],
+    outputs: [
+      {
+        id: 'result',
+        label: 'result',
+        labelI18n: { 'zh-TW': 'result', en: 'result' },
+        type: 'output',
+        position: 'right',
+        offset: 42,
+        source: 'static',
+        valueKind: 'value',
+      },
+    ],
+  };
 
   return syncDraftWithWorkflowMetadata({
     ...base,
@@ -83,14 +109,10 @@ export const makeInitialDraft = (
     tutorialSteps: ['步驟一', '步驟二'],
     relatedWorkflowIds: [],
     tags: metadata?.tags || [],
-    interfaceSchemaText: JSON.stringify({
-      inputs: [
-        { id: 'input', label: 'input', type: 'input', position: 'left', offset: 42, source: 'static', valueKind: 'value' }
-      ],
-      outputs: [
-        { id: 'result', label: 'result', type: 'output', position: 'right', offset: 42, source: 'static', valueKind: 'value' }
-      ]
-    }, null, 2),
+    interfaceSchema: defaultInterfaceSchema,
+    interfaceSchemaText: JSON.stringify(defaultInterfaceSchema, null, 2),
+    inputs: defaultInterfaceSchema.inputs.map(portToHandleSpec),
+    outputs: defaultInterfaceSchema.outputs.map(portToHandleSpec),
     builderBlocks: [
       {
         id: `text-${now + 1}`,

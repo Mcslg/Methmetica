@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { ReactFlow, Background, Controls, ReactFlowProvider, useReactFlow, BackgroundVariant, type Edge } from '@xyflow/react';
 import { useShallow } from 'zustand/react/shallow';
@@ -37,6 +37,99 @@ type NodeMenuEvent = PaneMenuEvent & {
 type AddNodeAtCenterEvent = CustomEvent<{ type: string; templateId?: string }>;
 type ConnectStartPayload = { nodeId: string | null; handleId: string | null; handleType: string | null };
 type TouchTargetEvent = React.TouchEvent<HTMLElement>;
+
+const copyLiveFormState = (source: Element, clone: Element) => {
+  const sourceFields = source.querySelectorAll('input, textarea, select');
+  const cloneFields = clone.querySelectorAll('input, textarea, select');
+
+  sourceFields.forEach((field, index) => {
+    const cloneField = cloneFields[index];
+    if (!cloneField) return;
+
+    if (field instanceof HTMLInputElement && cloneField instanceof HTMLInputElement) {
+      cloneField.value = field.value;
+      cloneField.setAttribute('value', field.value);
+      if (field.checked) {
+        cloneField.setAttribute('checked', 'checked');
+      } else {
+        cloneField.removeAttribute('checked');
+      }
+      return;
+    }
+
+    if (field instanceof HTMLTextAreaElement && cloneField instanceof HTMLTextAreaElement) {
+      cloneField.value = field.value;
+      cloneField.textContent = field.value;
+      return;
+    }
+
+    if (field instanceof HTMLSelectElement && cloneField instanceof HTMLSelectElement) {
+      cloneField.value = field.value;
+      Array.from(cloneField.options).forEach((option) => {
+        option.selected = option.value === field.value;
+      });
+    }
+  });
+};
+
+function QuickNavNodePreview({ node }: { node: AppNode }) {
+  const previewRef = useRef<HTMLDivElement>(null);
+  const width = Math.max(120, Math.round(node.measured?.width ?? node.width ?? 220));
+  const height = Math.max(70, Math.round(node.measured?.height ?? node.height ?? 120));
+  const scale = Math.min(1, 156 / width, 92 / height);
+
+  useLayoutEffect(() => {
+    const target = previewRef.current;
+    if (!target) return;
+
+    target.replaceChildren();
+
+    const nodeWrapper = Array.from(document.querySelectorAll<HTMLElement>('.react-flow__node[data-id]'))
+      .find((el) => el.getAttribute('data-id') === node.id);
+    const liveNode = nodeWrapper?.firstElementChild as HTMLElement | null;
+
+    if (!liveNode) {
+      const fallback = document.createElement('div');
+      fallback.className = 'quick-nav-node-preview-fallback';
+      fallback.textContent = String(node.data?.label || node.type || 'Node');
+      target.appendChild(fallback);
+      return;
+    }
+
+    const clone = liveNode.cloneNode(true) as HTMLElement;
+    copyLiveFormState(liveNode, clone);
+    clone.classList.add('quick-nav-live-node-clone');
+    clone.querySelectorAll('.react-flow__resize-control, .edge-hitbox').forEach((el) => el.remove());
+    clone.querySelectorAll<HTMLElement>('[contenteditable="true"]').forEach((el) => {
+      el.setAttribute('contenteditable', 'false');
+    });
+    clone.querySelectorAll<HTMLElement>('input, textarea, select, button').forEach((el) => {
+      el.setAttribute('tabindex', '-1');
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement || el instanceof HTMLButtonElement) {
+        el.disabled = true;
+      }
+    });
+    clone.style.width = `${width}px`;
+    clone.style.height = `${height}px`;
+    clone.style.minWidth = '0';
+    clone.style.transform = `scale(${scale})`;
+    clone.style.transformOrigin = 'top left';
+    clone.style.pointerEvents = 'none';
+    clone.style.transition = 'none';
+
+    target.appendChild(clone);
+  }, [height, node, scale, width]);
+
+  return (
+    <div className="quick-nav-node-preview" style={{ height: Math.ceil(height * scale), minHeight: 68 }}>
+      <div
+        ref={previewRef}
+        className="quick-nav-node-preview-inner"
+        style={{ width: Math.ceil(width * scale), height: Math.ceil(height * scale) }}
+      />
+    </div>
+  );
+}
 const annotatePublicWorkflowNodes = (
   nodes: AppNode[],
   meta?: { workflowId?: string; workflowVersionId?: string; workflowVersion?: number; ownerId?: string; authorName?: string },
@@ -114,7 +207,6 @@ function Flow() {
   const [dataTooltip, setDataTooltip] = useState<{ x: number, y: number, text: React.ReactNode } | null>(null);
   const [isExplainMode, setIsExplainMode] = useState(false);
   const [isQuickNavOpen, setIsQuickNavOpen] = useState(false);
-  const [quickNavMode, setQuickNavMode] = useState<'list' | 'gallery'>('list');
   const [quickNavQuery, setQuickNavQuery] = useState('');
   const [quickNavActiveIndex, setQuickNavActiveIndex] = useState(0);
   const quickNavInputRef = useRef<HTMLInputElement>(null);
@@ -646,7 +738,6 @@ function Flow() {
         className="nodrag"
         onClick={() => {
           setIsQuickNavOpen(true);
-          setQuickNavMode('gallery');
           setQuickNavQuery('');
           setQuickNavActiveIndex(0);
         }}
@@ -858,30 +949,8 @@ function Flow() {
               <div style={{ fontSize: '0.78rem', color: 'var(--text-sub)' }}>
                 {filteredQuickNavNodes.length} nodes
               </div>
-              <div style={{
-                display: 'flex',
-                border: '1px solid var(--border-node)',
-                borderRadius: '8px',
-                overflow: 'hidden'
-              }}>
-                {(['list', 'gallery'] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    onClick={() => setQuickNavMode(mode)}
-                    style={{
-                      border: 'none',
-                      borderRight: mode === 'list' ? '1px solid var(--border-node)' : 'none',
-                      background: quickNavMode === mode ? 'rgba(79, 172, 254, 0.22)' : 'transparent',
-                      color: 'var(--text-main)',
-                      padding: '5px 10px',
-                      fontSize: '0.72rem',
-                      cursor: 'pointer',
-                      textTransform: 'capitalize'
-                    }}
-                  >
-                    {mode}
-                  </button>
-                ))}
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-sub)' }}>
+                Gallery
               </div>
             </div>
             <input
@@ -924,36 +993,6 @@ function Flow() {
                 <div style={{ padding: '14px 16px', color: 'var(--text-sub)', fontSize: '0.85rem' }}>
                   No matching nodes.
                 </div>
-              ) : quickNavMode === 'list' ? (
-                filteredQuickNavNodes.map((node, idx) => {
-                  const { label } = getNodeDisplayInfo(node);
-                  const isActive = idx === quickNavActiveIndex;
-                  return (
-                    <button
-                      key={node.id}
-                      onMouseEnter={() => setQuickNavActiveIndex(idx)}
-                      onClick={() => jumpToNode(node)}
-                      style={{
-                        width: '100%',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        border: 'none',
-                        borderBottom: '1px solid var(--border-header)',
-                        background: isActive ? 'rgba(79, 172, 254, 0.18)' : 'transparent',
-                        color: 'var(--text-main)',
-                        padding: '10px 14px',
-                        cursor: 'pointer',
-                        textAlign: 'left'
-                      }}
-                    >
-                      <span style={{ fontSize: '0.86rem' }}>{label}</span>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-sub)', fontFamily: 'monospace' }}>
-                        {node.type} · {node.id}
-                      </span>
-                    </button>
-                  );
-                })
               ) : (
                 <div style={{
                   display: 'grid',
@@ -964,7 +1003,6 @@ function Flow() {
                   {filteredQuickNavNodes.map((node, idx) => {
                     const info = getNodeDisplayInfo(node);
                     const isActive = idx === quickNavActiveIndex;
-                    const hasScope = (node.data?.handles || []).some((handle) => handle.type === 'scope');
                     return (
                       <button
                         key={node.id}
@@ -985,45 +1023,7 @@ function Flow() {
                           boxShadow: isActive ? '0 0 16px rgba(79, 172, 254, 0.18)' : 'none'
                         }}
                       >
-                        <div style={{
-                          height: '78px',
-                          border: '1px solid var(--border-node)',
-                          borderRadius: '8px',
-                          background: 'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))',
-                          position: 'relative',
-                          overflow: 'hidden'
-                        }}>
-                          <div style={{
-                            height: '20px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            padding: '0 7px',
-                            borderBottom: '1px solid var(--border-header)',
-                            color: 'var(--text-main)',
-                            fontSize: '0.62rem',
-                            fontWeight: 700
-                          }}>
-                            <span style={{ color: info.color }}>{info.definition?.metadata.icon || '■'}</span>
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{info.typeLabel}</span>
-                          </div>
-                          <div style={{
-                            padding: '8px',
-                            fontSize: '0.68rem',
-                            color: 'var(--text-sub)',
-                            lineHeight: 1.35,
-                            overflow: 'hidden',
-                            display: '-webkit-box',
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: 'vertical'
-                          }}>
-                            {node.type === 'textNode'
-                              ? String(node.data?.text || 'Notebook').slice(0, 70)
-                              : String(node.data?.value || node.data?.status || node.data?.description || info.label).slice(0, 70)}
-                          </div>
-                          <span style={{ position: 'absolute', left: 5, top: '50%', width: 8, height: 8, borderRadius: 2, border: '1px solid #2196F3', background: 'var(--bg-page)' }} />
-                          <span style={{ position: 'absolute', right: 5, top: '50%', width: 8, height: 8, borderRadius: 2, border: `1px solid ${hasScope ? '#8a8a8a' : '#E91E63'}`, background: 'var(--bg-page)' }} />
-                        </div>
+                        <QuickNavNodePreview node={node} />
                         <div style={{ fontSize: '0.8rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {info.label}
                         </div>
