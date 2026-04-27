@@ -8,6 +8,7 @@ import type {
 } from '../../community/types';
 import type { AppNode } from '../../store/useStore';
 import type { AppUser } from './types';
+import type { CompiledWorkflowArtifact } from '../../utils/workflowCompiler';
 import { isSupabaseConfigured, supabase } from './client';
 import { withSupabaseTimeout } from './utils';
 
@@ -23,6 +24,7 @@ export type WorkflowPayload = {
   nodes: AppNode[];
   edges: Edge[];
   author: AppUser;
+  compiledArtifact?: CompiledWorkflowArtifact;
 };
 
 type WorkflowRow = {
@@ -46,6 +48,12 @@ type WorkflowRow = {
       tags?: string[];
     };
   } | null;
+  compiled_artifact?: CompiledWorkflowArtifact | null;
+  artifact_status?: string | null;
+  compiler_version?: string | null;
+  runtime_version?: string | null;
+  dependency_manifest?: CompiledWorkflowArtifact['dependencyManifest'] | null;
+  contains_admin_code?: boolean | null;
   published_at: string | null;
   updated_at: string;
   created_at: string;
@@ -79,6 +87,11 @@ export type WorkflowVersionSummary = {
   publishedAt: string;
   createdAt: string;
   isCurrent: boolean;
+  artifactStatus?: string | null;
+  compilerVersion?: string | null;
+  runtimeVersion?: string | null;
+  dependencyCount?: number;
+  containsAdminCode?: boolean;
 };
 
 type WorkflowVersionRow = {
@@ -90,6 +103,12 @@ type WorkflowVersionRow = {
   tags: string[] | null;
   visibility: WorkflowVisibility;
   workflow_json: WorkflowRow['workflow_json'];
+  compiled_artifact?: CompiledWorkflowArtifact | null;
+  artifact_status?: string | null;
+  compiler_version?: string | null;
+  runtime_version?: string | null;
+  dependency_manifest?: CompiledWorkflowArtifact['dependencyManifest'] | null;
+  contains_admin_code?: boolean | null;
   created_by: string;
   published_at: string;
   created_at: string;
@@ -190,6 +209,9 @@ const rowToBlueprint = (row: WorkflowRow): WorkflowBlueprint => ({
     workflowVersion: row.current_version ?? undefined,
     ownerId: row.owner_id,
     authorName: row.workflow_json?.meta?.authorName || FALLBACK_AUTHOR,
+    artifactStatus: row.artifact_status ?? undefined,
+    compilerVersion: row.compiler_version ?? undefined,
+    runtimeVersion: row.runtime_version ?? undefined,
   },
 });
 
@@ -215,6 +237,9 @@ const versionRowToBlueprint = (version: WorkflowVersionRow, workflow: WorkflowRo
     workflowVersion: version.version,
     ownerId: workflow.owner_id,
     authorName: version.workflow_json?.meta?.authorName || FALLBACK_AUTHOR,
+    artifactStatus: version.artifact_status ?? undefined,
+    compilerVersion: version.compiler_version ?? undefined,
+    runtimeVersion: version.runtime_version ?? undefined,
   },
 });
 
@@ -293,7 +318,7 @@ export async function getWorkflowBlueprintFromSupabase(workflowId: string) {
   const { data, error } = await withSupabaseTimeout(
     supabase
       .from('workflows')
-      .select('id, owner_id, slug, title, description, tags, visibility, status, workflow_json, published_at, updated_at, created_at, current_version_id')
+      .select('id, owner_id, slug, title, description, tags, visibility, status, workflow_json, compiled_artifact, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, published_at, updated_at, created_at, current_version_id')
       .eq('id', workflowId)
       .maybeSingle(),
     'Opening workflow'
@@ -310,7 +335,7 @@ export async function getWorkflowBlueprintFromSupabaseByRef(workflowRef: string)
   const { data, error } = await withSupabaseTimeout(
     supabase
       .from('workflows')
-      .select('id, owner_id, slug, title, description, tags, visibility, status, workflow_json, published_at, updated_at, created_at, current_version_id')
+      .select('id, owner_id, slug, title, description, tags, visibility, status, workflow_json, compiled_artifact, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, published_at, updated_at, created_at, current_version_id')
       .or(`id.eq.${workflowRef},slug.eq.${workflowRef}`)
       .limit(1)
       .maybeSingle(),
@@ -339,7 +364,7 @@ export async function listWorkflowVersions(workflowId: string) {
   const { data, error } = await withSupabaseTimeout(
     supabase
       .from('workflow_versions')
-      .select('id, workflow_id, version, title, description, tags, visibility, published_at, created_at')
+      .select('id, workflow_id, version, title, description, tags, visibility, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, published_at, created_at')
       .eq('workflow_id', workflowId)
       .order('version', { ascending: false }),
     'Loading workflow versions'
@@ -359,6 +384,11 @@ export async function listWorkflowVersions(workflowId: string) {
     publishedAt: row.published_at,
     createdAt: row.created_at,
     isCurrent: row.id === currentVersionId,
+    artifactStatus: row.artifact_status,
+    compilerVersion: row.compiler_version,
+    runtimeVersion: row.runtime_version,
+    dependencyCount: row.dependency_manifest?.entries.length ?? 0,
+    containsAdminCode: Boolean(row.contains_admin_code),
   }));
 }
 
@@ -368,7 +398,7 @@ export async function getWorkflowVersionBlueprintFromSupabase(workflowVersionId:
   const { data: versionData, error: versionError } = await withSupabaseTimeout(
     supabase
       .from('workflow_versions')
-      .select('id, workflow_id, version, title, description, tags, visibility, workflow_json, created_by, published_at, created_at')
+      .select('id, workflow_id, version, title, description, tags, visibility, workflow_json, compiled_artifact, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, created_by, published_at, created_at')
       .eq('id', workflowVersionId)
       .maybeSingle(),
     'Opening workflow version'
@@ -381,7 +411,7 @@ export async function getWorkflowVersionBlueprintFromSupabase(workflowVersionId:
   const { data: workflowData, error: workflowError } = await withSupabaseTimeout(
     supabase
       .from('workflows')
-      .select('id, owner_id, slug, title, description, tags, visibility, status, workflow_json, published_at, updated_at, created_at, current_version_id')
+      .select('id, owner_id, slug, title, description, tags, visibility, status, workflow_json, compiled_artifact, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, published_at, updated_at, created_at, current_version_id')
       .eq('id', version.workflow_id)
       .maybeSingle(),
     'Opening version workflow'
@@ -409,6 +439,10 @@ export async function publishWorkflowToSupabase(payload: WorkflowPayload) {
       tags,
       authorName: payload.author.name,
       authorId: payload.author.id,
+      compiledArtifact: payload.compiledArtifact,
+      artifactStatus: payload.compiledArtifact ? 'ready' : 'legacy',
+      compilerVersion: payload.compiledArtifact?.compilerVersion,
+      runtimeVersion: payload.compiledArtifact?.runtimeVersion,
     },
   };
 
@@ -422,6 +456,7 @@ export async function publishWorkflowToSupabase(payload: WorkflowPayload) {
         p_visibility: payload.visibility,
         p_slug: slug,
         p_workflow_json: workflowJson,
+        p_compiled_artifact: payload.compiledArtifact ?? null,
       })
       .single(),
     'Publishing workflow'

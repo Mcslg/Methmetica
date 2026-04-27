@@ -15,6 +15,7 @@ import { CodeNode, executeCodeNode } from './CodeNode';
 import { getTemplateInterfaceSchema, type CommunityNodeTemplate } from '../community/types';
 import { getCommunityTemplateById } from '../community/catalog';
 import { runBuiltWorkflowNode } from '../utils/workflowTestRunner';
+import { runCompiledArtifact } from '../utils/workflowCompiler';
 import {
     dataNodeHandles,
     toolNodeHandles,
@@ -95,9 +96,9 @@ const executeCommunityTemplateNode = async (node: AppNode, state: AppState) => {
         return;
     }
 
-    if (!template.runtimePlan) {
+    if (!template.compiledArtifact && !template.runtimePlan) {
         state.updateNodeData(node.id, {
-            error: '這個 published node 還沒有 runtimePlan。請從 Builder 重新 Publish 一次。',
+            error: '這個 published node 還沒有 Beta artifact。請從 Builder 重新 Publish 一次。',
             outputs: {},
         }, { skipGraphEval: true });
         state.evaluateGraph();
@@ -108,7 +109,9 @@ const executeCommunityTemplateNode = async (node: AppNode, state: AppState) => {
     const runtimeInputs = Object.fromEntries(
         interfaceSchema.inputs.map(port => [port.id, node.data.inputs?.[port.id] ?? ''])
     );
-    const result = await runBuiltWorkflowNode(template.runtimePlan, runtimeInputs);
+    const result = template.compiledArtifact
+        ? await runCompiledArtifact(template.compiledArtifact, runtimeInputs)
+        : await runBuiltWorkflowNode(template.runtimePlan!, runtimeInputs);
     const primaryOutput = interfaceSchema.outputs[0]?.id;
 
     state.updateNodeData(node.id, {

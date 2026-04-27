@@ -5,6 +5,7 @@ interface MathInputProps {
     value: string;
     onChange?: (value: string) => void;
     onKeyDown?: (e: React.KeyboardEvent) => void;
+    onBlur?: (e: React.FocusEvent) => void;
     className?: string;
     style?: React.CSSProperties;
     readOnly?: boolean;
@@ -13,7 +14,7 @@ interface MathInputProps {
 
 type MathfieldElement = HTMLElement & { value: string };
 
-export const MathInput = forwardRef<MathfieldElement, MathInputProps>(({ value, onChange, onKeyDown, className, style, readOnly, id }, ref) => {
+export const MathInput = forwardRef<MathfieldElement, MathInputProps>(({ value, onChange, onKeyDown, onBlur, className, style, readOnly, id }, ref) => {
     const mfRef = useRef<MathfieldElement | null>(null);
     const isSettingValueRef = useRef(false);
     const valueRef = useRef(value);
@@ -101,6 +102,7 @@ export const MathInput = forwardRef<MathfieldElement, MathInputProps>(({ value, 
             style={style}
             read-only={readOnly ? "true" : undefined}
             onKeyDown={onKeyDown}
+            onBlur={onBlur}
         />
     );
 });

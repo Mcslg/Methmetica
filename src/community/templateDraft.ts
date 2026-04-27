@@ -15,6 +15,7 @@ export const cloneTemplate = (template: CommunityNodeTemplate): CommunityNodeTem
   summaryI18n: template.summaryI18n ? { ...template.summaryI18n } : undefined,
   interfaceSchema: cloneInterfaceSchema(template.interfaceSchema),
   runtimePlan: template.runtimePlan ? JSON.parse(JSON.stringify(template.runtimePlan)) : undefined,
+  compiledArtifact: template.compiledArtifact ? JSON.parse(JSON.stringify(template.compiledArtifact)) : undefined,
   fields: template.fields.map(field => ({
     ...field,
     labelI18n: field.labelI18n ? { ...field.labelI18n } : undefined,

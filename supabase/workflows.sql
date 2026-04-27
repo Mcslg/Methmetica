@@ -8,6 +8,12 @@ create table if not exists public.workflows (
   visibility text not null default 'private' check (visibility in ('private', 'public', 'core')),
   status text not null default 'draft' check (status in ('draft', 'published', 'archived')),
   workflow_json jsonb not null default '{}'::jsonb,
+  compiled_artifact jsonb,
+  artifact_status text not null default 'legacy' check (artifact_status in ('legacy', 'ready', 'failed')),
+  compiler_version text,
+  runtime_version text,
+  dependency_manifest jsonb not null default '{"entries":[]}'::jsonb,
+  contains_admin_code boolean not null default false,
   published_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -22,6 +28,12 @@ create table if not exists public.workflow_versions (
   tags text[] not null default '{}',
   visibility text not null check (visibility in ('private', 'public', 'core')),
   workflow_json jsonb not null default '{}'::jsonb,
+  compiled_artifact jsonb,
+  artifact_status text not null default 'legacy' check (artifact_status in ('legacy', 'ready', 'failed')),
+  compiler_version text,
+  runtime_version text,
+  dependency_manifest jsonb not null default '{"entries":[]}'::jsonb,
+  contains_admin_code boolean not null default false,
   created_by uuid not null references auth.users(id) on delete cascade,
   published_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
@@ -31,6 +43,22 @@ create table if not exists public.workflow_versions (
 
 alter table public.workflows
 add column if not exists current_version_id uuid references public.workflow_versions(id) on delete set null;
+
+alter table public.workflows
+add column if not exists compiled_artifact jsonb,
+add column if not exists artifact_status text not null default 'legacy' check (artifact_status in ('legacy', 'ready', 'failed')),
+add column if not exists compiler_version text,
+add column if not exists runtime_version text,
+add column if not exists dependency_manifest jsonb not null default '{"entries":[]}'::jsonb,
+add column if not exists contains_admin_code boolean not null default false;
+
+alter table public.workflow_versions
+add column if not exists compiled_artifact jsonb,
+add column if not exists artifact_status text not null default 'legacy' check (artifact_status in ('legacy', 'ready', 'failed')),
+add column if not exists compiler_version text,
+add column if not exists runtime_version text,
+add column if not exists dependency_manifest jsonb not null default '{"entries":[]}'::jsonb,
+add column if not exists contains_admin_code boolean not null default false;
 
 create index if not exists workflow_versions_workflow_version_idx
   on public.workflow_versions (workflow_id, version desc);
@@ -255,7 +283,8 @@ create or replace function public.publish_workflow_version(
   p_tags text[],
   p_visibility text,
   p_slug text,
-  p_workflow_json jsonb
+  p_workflow_json jsonb,
+  p_compiled_artifact jsonb default null
 )
 returns table (
   id uuid,
@@ -267,6 +296,12 @@ returns table (
   visibility text,
   status text,
   workflow_json jsonb,
+  compiled_artifact jsonb,
+  artifact_status text,
+  compiler_version text,
+  runtime_version text,
+  dependency_manifest jsonb,
+  contains_admin_code boolean,
   published_at timestamptz,
   updated_at timestamptz,
   created_at timestamptz,
@@ -288,6 +323,11 @@ declare
   v_tags text[] := coalesce(p_tags, '{}'::text[]);
   v_visibility text := coalesce(p_visibility, 'public');
   v_slug text := nullif(trim(coalesce(p_slug, '')), '');
+  v_artifact_status text := case when p_compiled_artifact is null then 'legacy' else 'ready' end;
+  v_compiler_version text := p_compiled_artifact #>> '{compilerVersion}';
+  v_runtime_version text := p_compiled_artifact #>> '{runtimeVersion}';
+  v_dependency_manifest jsonb := coalesce(p_compiled_artifact -> 'dependencyManifest', '{"entries":[]}'::jsonb);
+  v_contains_admin_code boolean := coalesce((p_compiled_artifact #>> '{permissions,containsCodeNode}')::boolean, false);
   v_is_admin boolean := false;
   v_can_publish_core boolean := false;
 begin
@@ -329,6 +369,12 @@ begin
       visibility,
       status,
       workflow_json,
+      compiled_artifact,
+      artifact_status,
+      compiler_version,
+      runtime_version,
+      dependency_manifest,
+      contains_admin_code,
       published_at
     )
     values (
@@ -340,6 +386,12 @@ begin
       v_visibility,
       'published',
       coalesce(p_workflow_json, '{}'::jsonb),
+      p_compiled_artifact,
+      v_artifact_status,
+      v_compiler_version,
+      v_runtime_version,
+      v_dependency_manifest,
+      v_contains_admin_code,
       now()
     )
     returning * into v_workflow;
@@ -367,6 +419,12 @@ begin
       visibility = v_visibility,
       status = 'published',
       workflow_json = coalesce(p_workflow_json, '{}'::jsonb),
+      compiled_artifact = p_compiled_artifact,
+      artifact_status = v_artifact_status,
+      compiler_version = v_compiler_version,
+      runtime_version = v_runtime_version,
+      dependency_manifest = v_dependency_manifest,
+      contains_admin_code = v_contains_admin_code,
       published_at = now()
     where public.workflows.id = p_workflow_id
     returning * into v_workflow;
@@ -385,6 +443,12 @@ begin
     tags,
     visibility,
     workflow_json,
+    compiled_artifact,
+    artifact_status,
+    compiler_version,
+    runtime_version,
+    dependency_manifest,
+    contains_admin_code,
     created_by,
     published_at
   )
@@ -396,6 +460,12 @@ begin
     v_tags,
     v_visibility,
     coalesce(p_workflow_json, '{}'::jsonb),
+    p_compiled_artifact,
+    v_artifact_status,
+    v_compiler_version,
+    v_runtime_version,
+    v_dependency_manifest,
+    v_contains_admin_code,
     v_user_id,
     now()
   )
@@ -417,6 +487,12 @@ begin
     v_workflow.visibility,
     v_workflow.status,
     v_workflow.workflow_json,
+    v_workflow.compiled_artifact,
+    v_workflow.artifact_status,
+    v_workflow.compiler_version,
+    v_workflow.runtime_version,
+    v_workflow.dependency_manifest,
+    v_workflow.contains_admin_code,
     v_workflow.published_at,
     v_workflow.updated_at,
     v_workflow.created_at,
@@ -426,4 +502,4 @@ begin
 end;
 $$;
 
-grant execute on function public.publish_workflow_version(uuid, text, text, text[], text, text, jsonb) to authenticated;
+grant execute on function public.publish_workflow_version(uuid, text, text, text[], text, text, jsonb, jsonb) to authenticated;

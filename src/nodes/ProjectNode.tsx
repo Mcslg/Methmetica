@@ -1,5 +1,5 @@
 import React from 'react';
-import { type NodeProps, Handle, Position, useReactFlow } from '@xyflow/react';
+import { type Edge, type NodeProps, Handle, Position, useReactFlow } from '@xyflow/react';
 import { Icons } from '../components/Icons';
 import { NodeFrame } from '../components/NodeFrame';
 import { LiveNodePreview } from '../components/LiveNodePreview';
@@ -21,8 +21,10 @@ import {
 import { publishWorkflowToSupabase } from '../integrations/supabase/workflows';
 import { publishNodeTemplateToSupabase } from '../integrations/supabase/nodeTemplates';
 import { getUserRole } from '../integrations/supabase/auth';
+import type { AppUser } from '../integrations/supabase/types';
 import { mathTypeCatalog, getAllCapabilities, getTypesByCapability } from '../config/mathTypeCatalog';
 import { buildWorkflowNode, runBuiltWorkflowNode } from '../utils/workflowTestRunner';
+import { compileWorkflowToArtifact, formatCompileDiagnostics } from '../utils/workflowCompiler';
 import { clearPublicWorkflowEdit } from '../utils/localDraftService';
 
 const parseTags = (value: string) => value
@@ -115,9 +117,19 @@ const buildProjectControlHandles = (
 
 const attachRuntimePlan = (
   draft: CommunityNodeTemplate,
-  params: { nodes: AppNode[]; edges: any[]; bridgeNodeId?: string | null }
+  params: { nodes: AppNode[]; edges: Edge[]; bridgeNodeId?: string | null; user?: AppUser | null; templates?: CommunityNodeTemplate[] }
 ): CommunityNodeTemplate => {
   if (!params.bridgeNodeId) return draft;
+  const interfaceSchema = getTemplateInterfaceSchema(draft);
+  const compileResult = compileWorkflowToArtifact({
+    nodes: params.nodes,
+    edges: params.edges,
+    bridgeNodeId: params.bridgeNodeId,
+    interfaceSchema,
+  }, {
+    author: params.user ?? null,
+    templates: params.templates,
+  });
 
   return {
     ...draft,
@@ -125,14 +137,17 @@ const attachRuntimePlan = (
       sourceNodes: params.nodes,
       sourceEdges: params.edges,
       bridgeNodeId: params.bridgeNodeId,
-      interfaceSchema: getTemplateInterfaceSchema(draft),
+      interfaceSchema,
     }),
+    ...(compileResult.artifact ? { compiledArtifact: compileResult.artifact } : {}),
   };
 };
 
 const stripRuntimePlan = (draft: CommunityNodeTemplate): CommunityNodeTemplate => {
-  const { runtimePlan: _runtimePlan, ...rest } = draft;
-  return rest;
+  const next = { ...draft };
+  delete next.runtimePlan;
+  delete next.compiledArtifact;
+  return next;
 };
 
 function SearchableConstraintSelect({
@@ -587,13 +602,63 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         discovery: 'search-only',
         visibility: localVisibility,
       });
+      if (localVisibility !== 'private' && !user) {
+        updateProjectData({
+          publishStatus: '先登入，才能把這條工作流發布到公開社群。',
+        });
+        return;
+      }
+
+      let effectiveUser = user;
+      if (user) {
+        const fetchedRole = await getUserRole(user.id);
+        if (fetchedRole !== user.role) {
+          effectiveUser = { ...user, role: fetchedRole };
+          setUser(effectiveUser);
+        }
+
+        if (localVisibility === 'core' && !['trusted_editor', 'admin'].includes(fetchedRole)) {
+          updateProjectData({
+            publishStatus: '只有 trusted_editor 或 admin 能發布 core workflow。先改成 public，或提升身份後再發布。',
+          });
+          return;
+        }
+      }
+
       const { nodes, edges } = useStore.getState();
       const bridgeNodeId = linkedTemplateNodeId || nodes.find(node =>
         node.type === 'communityTemplateNode' &&
         node.data?.builderSourceId === id &&
         node.data?.autoManagedTemplateNode
       )?.id || `builder-template-${id}`;
-      const packaged = attachRuntimePlan(packagedBase, { nodes, edges, bridgeNodeId });
+      const interfaceSchema = getTemplateInterfaceSchema(packagedBase);
+      const compileResult = compileWorkflowToArtifact({
+        nodes,
+        edges,
+        bridgeNodeId,
+        interfaceSchema,
+      }, {
+        author: effectiveUser,
+        templates: useStore.getState().communityTemplates,
+      });
+
+      if (!compileResult.ok || !compileResult.artifact) {
+        updateProjectData({
+          publishStatus: `發布前請先修正 Beta artifact：${formatCompileDiagnostics(compileResult.diagnostics)}`,
+        });
+        return;
+      }
+
+      const packaged = {
+        ...attachRuntimePlan(packagedBase, {
+          nodes,
+          edges,
+          bridgeNodeId,
+          user: effectiveUser,
+          templates: useStore.getState().communityTemplates,
+        }),
+        compiledArtifact: compileResult.artifact,
+      };
 
       if (localVisibility === 'private') {
         const localTemplate = {
@@ -617,28 +682,11 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         return;
       }
 
-      if (!user) {
+      if (!effectiveUser) {
         updateProjectData({
           publishStatus: '先登入，才能把這條工作流發布到公開社群。',
         });
         return;
-      }
-
-      let effectiveUser = user;
-
-      if (localVisibility === 'core' && !['trusted_editor', 'admin'].includes(user.role)) {
-        const fetchedRole = await getUserRole(user.id);
-        if (fetchedRole !== user.role) {
-          effectiveUser = { ...user, role: fetchedRole };
-          setUser(effectiveUser);
-        }
-
-        if (!['trusted_editor', 'admin'].includes(fetchedRole)) {
-          updateProjectData({
-            publishStatus: '只有 trusted_editor 或 admin 能發布 core workflow。先改成 public，或提升身份後再發布。',
-          });
-          return;
-        }
       }
 
       const publishedNodes = nodes.map(node => (
@@ -676,6 +724,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         nodes: publishedNodes,
         edges,
         author: effectiveUser,
+        compiledArtifact: packaged.compiledArtifact,
       });
 
       const publishedTemplate = {

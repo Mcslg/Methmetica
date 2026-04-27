@@ -250,7 +250,7 @@ const hasCommunityRuntimePlan = (node: AppNode, state: AppState) => {
     const template =
         (node.data.templateDraft as CommunityNodeTemplate | undefined) ??
         state.communityTemplates.find(item => item.id === node.data.templateId);
-    return Boolean(template?.runtimePlan);
+    return Boolean(template?.compiledArtifact || template?.runtimePlan);
 };
 
 const useStore = create<AppState>()(

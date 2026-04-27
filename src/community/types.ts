@@ -2,6 +2,7 @@ import type { Edge } from '@xyflow/react';
 import type { CSSProperties } from 'react';
 import type { AppNode } from '../store/useStore';
 import type { LocalizedText } from './localizedText';
+import type { CompiledWorkflowArtifact } from '../utils/workflowCompiler';
 
 export type WorkflowVisibility = 'public' | 'private' | 'core';
 
@@ -107,6 +108,7 @@ export type CommunityNodeTemplate = {
   controlPorts?: TemplateControlPort[];
   elementBindings?: TemplateElementBinding[];
   runtimePlan?: BuiltWorkflowNode;
+  compiledArtifact?: CompiledWorkflowArtifact;
   fields: TemplateFieldSpec[];
   inputs: TemplateHandleSpec[];
   outputs: TemplateHandleSpec[];
@@ -172,6 +174,9 @@ export type WorkflowBlueprint = {
     workflowVersion?: number;
     ownerId?: string;
     authorName?: string;
+    artifactStatus?: string;
+    compilerVersion?: string;
+    runtimeVersion?: string;
   };
 };
 

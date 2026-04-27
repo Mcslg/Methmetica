@@ -554,6 +554,9 @@ const MathPill = TiptapNode.create({
             const [isHovered, setIsHovered] = useState(false);
             const pillRef = useRef<HTMLSpanElement>(null);
             const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
+            const inlineMathFieldRef = useRef<any>(null);
+            const [isInlineEditing, setIsInlineEditing] = useState(false);
+            const [draftVal, setDraftVal] = useState(val);
 
             useEffect(() => {
                 let rafId: number;
@@ -697,6 +700,12 @@ const MathPill = TiptapNode.create({
                 }
             }, [globalVars, name, isGlobal, val, editor, getPos, localVal]);
 
+            useEffect(() => {
+                if (!isInlineEditing) {
+                    setDraftVal(localVal);
+                }
+            }, [isInlineEditing, localVal]);
+
             const finalBaseVal = hasTypedRemoteVal ? getMathValueDisplay(typedRemoteVal) : hasRemoteVal ? remoteVal : localVal;
             const displayVal = useMemo(() => (isCtrlPressed && evaluatedVal !== null) ? evaluatedVal : finalBaseVal, [isCtrlPressed, evaluatedVal, finalBaseVal]);
 
@@ -787,17 +796,18 @@ const MathPill = TiptapNode.create({
                 }
             }, [displayVal, sequenceData, isExpanded]);
 
-            const pillAccent = isGlobal ? '#f6c453' : (isConnectedIn ? '#b987ff' : (isCtrlPressed ? '#43e97b' : '#6ab7ff'));
+            const pillAccent = isGlobal ? '#d4a72c' : (isConnectedIn ? '#8d6ccf' : (isCtrlPressed ? '#2fa56f' : '#7f8f85'));
+            const pillText = theme === 'dark' ? 'rgba(245, 247, 244, 0.96)' : 'rgba(23, 29, 24, 0.92)';
             const pillBackground = isGlobal
-                ? 'linear-gradient(180deg, rgba(246, 196, 83, 0.15), rgba(246, 196, 83, 0.07))'
+                ? (theme === 'dark' ? 'rgba(212, 167, 44, 0.17)' : 'rgba(212, 167, 44, 0.16)')
                 : isConnectedIn
-                    ? 'linear-gradient(180deg, rgba(185, 135, 255, 0.14), rgba(185, 135, 255, 0.06))'
+                    ? (theme === 'dark' ? 'rgba(141, 108, 207, 0.16)' : 'rgba(141, 108, 207, 0.14)')
                     : isCtrlPressed
-                        ? 'linear-gradient(180deg, rgba(67, 233, 123, 0.14), rgba(67, 233, 123, 0.06))'
-                        : 'linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.035))';
-            const pillBorder = localShowHandle
-                ? `1px solid ${pillAccent}`
-                : `1px solid color-mix(in srgb, ${pillAccent} 35%, transparent)`;
+                        ? (theme === 'dark' ? 'rgba(47, 165, 111, 0.16)' : 'rgba(47, 165, 111, 0.14)')
+                        : (theme === 'dark' ? 'rgba(214, 223, 214, 0.12)' : 'rgba(120, 136, 123, 0.14)');
+            const pillUnderline = localShowHandle
+                ? `0 2px 0 0 ${pillAccent}`
+                : `0 1px 0 0 color-mix(in srgb, ${pillAccent} 45%, transparent)`;
 
             // Right-click: open editor
             const onRightClick = (e: React.MouseEvent) => {
@@ -805,6 +815,42 @@ const MathPill = TiptapNode.create({
                 e.stopPropagation();
                 ctx.editMath(localVal, { x: e.clientX, y: e.clientY });
             };
+
+            const commitInlineEdit = useCallback((nextRawValue?: string) => {
+                const nextValue = (nextRawValue ?? draftVal).trim();
+                setIsInlineEditing(false);
+                if (!nextValue || nextValue === localVal) {
+                    setDraftVal(localVal);
+                    return;
+                }
+
+                const currentPos = typeof getPos === 'function' ? getPos() : null;
+                if (typeof currentPos !== 'number' || editor.isDestroyed) return;
+
+                setLocalVal(nextValue);
+                editor.commands.command(({ tr }) => {
+                    tr.setNodeMarkup(currentPos, undefined, { ...node.attrs, value: nextValue });
+                    return true;
+                });
+
+                if (isGlobal) {
+                    setGlobalVar(name, nextValue);
+                }
+            }, [draftVal, editor, getPos, isGlobal, localVal, name, node.attrs, setGlobalVar]);
+
+            const cancelInlineEdit = useCallback(() => {
+                setDraftVal(localVal);
+                setIsInlineEditing(false);
+            }, [localVal]);
+
+            useEffect(() => {
+                if (!isInlineEditing) return;
+                const focusTimer = window.setTimeout(() => {
+                    inlineMathFieldRef.current?.focus?.();
+                    inlineMathFieldRef.current?.executeCommand?.(['selectAll']);
+                }, 30);
+                return () => window.clearTimeout(focusTimer);
+            }, [isInlineEditing]);
 
             // Ctrl/Cmd+Click: split pill into multiple pills
             const handleMouseDown = async (e: React.MouseEvent) => {
@@ -897,6 +943,12 @@ const MathPill = TiptapNode.create({
                     data-show-handle={effectiveShowHandle ? 'true' : 'false'}
                     onContextMenu={onRightClick}
                     onPointerDown={handleMouseDown}
+                    onDoubleClick={(e: React.MouseEvent) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDraftVal(localVal);
+                        setIsInlineEditing(true);
+                    }}
                     onCopy={handleCopy}
                     onMouseEnter={() => setIsHovered(true)}
 
@@ -910,32 +962,30 @@ const MathPill = TiptapNode.create({
                         justifyContent: 'center',
                         gap: '6px',
                         background: pillBackground,
-                        color: pillAccent,
-                        padding: name ? '3px 8px 3px 5px' : '3px 8px',
-                        borderRadius: '8px',
+                        color: pillText,
+                        padding: name ? '2px 7px 2px 5px' : '2px 7px',
+                        borderRadius: '5px',
                         fontSize: '0.92em',
                         cursor: 'pointer',
-                        border: pillBorder,
-                        margin: '0 4px',
+                        border: 'none',
+                        margin: '0 2px',
                         userSelect: 'text',
-                        minHeight: '1.55em',
+                        minHeight: '1.45em',
                         transition: 'all 0.2s ease',
                         verticalAlign: 'middle',
-                        top: '-1px',
-                        boxShadow: localShowHandle
-                            ? `0 0 0 1px color-mix(in srgb, ${pillAccent} 28%, transparent), 0 6px 18px rgba(0, 0, 0, 0.22)`
-                            : 'inset 0 1px 0 rgba(255,255,255,0.08)',
+                        top: '0',
+                        boxShadow: pillUnderline,
                         zIndex: isCtrlPressed ? 10 : 1
                     }}
                 >
                     {name && (
                         <span style={{
-                            color: theme === 'dark' ? 'rgba(255,255,255,0.72)' : 'rgba(14, 47, 11, 0.72)',
-                            background: `color-mix(in srgb, ${pillAccent} 18%, transparent)`,
-                            border: `1px solid color-mix(in srgb, ${pillAccent} 22%, transparent)`,
-                            borderRadius: '5px',
-                            padding: '1px 5px',
-                            fontSize: '0.62rem',
+                            color: pillAccent,
+                            background: 'transparent',
+                            border: 'none',
+                            borderRadius: '0',
+                            padding: '0',
+                            fontSize: '0.64rem',
                             lineHeight: 1.2,
                             fontWeight: 700,
                             letterSpacing: '0.02em',
@@ -975,10 +1025,10 @@ const MathPill = TiptapNode.create({
                     <span style={{
                         position: 'absolute',
                         color: 'transparent',
-                        opacity: 1, // Visible to show selection background
+                        opacity: isInlineEditing ? 0 : 1, // Visible to show selection background
                         zIndex: 0,
-                        pointerEvents: 'auto',
-                        userSelect: 'text',
+                        pointerEvents: isInlineEditing ? 'none' : 'auto',
+                        userSelect: isInlineEditing ? 'none' : 'text',
                         whiteSpace: 'nowrap',
                         overflow: 'hidden',
                         width: '100%',
@@ -990,30 +1040,73 @@ const MathPill = TiptapNode.create({
                         {displayVal}
                     </span>
 
-                    {renderedMath.isSafeHtml ? (
-                        <span
-                            dangerouslySetInnerHTML={{ __html: renderedMath.html }}
-                            style={{
-                                pointerEvents: 'none',
-                                userSelect: 'none', // Strictly unselectable so text is never mixed
-                                lineHeight: 1,
-                                zIndex: 1,
-                                position: 'relative'
-                            }}
-                        />
-                    ) : (
+                    {isInlineEditing ? (
                         <span
                             style={{
-                                pointerEvents: 'none',
-                                userSelect: 'none',
-                                lineHeight: 1,
-                                zIndex: 1,
                                 position: 'relative',
-                                whiteSpace: 'pre-wrap'
+                                zIndex: 1,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                minWidth: '48px'
                             }}
+                            onPointerDown={(e) => e.stopPropagation()}
                         >
-                            {renderedMath.html}
+                            <MathInput
+                                ref={inlineMathFieldRef}
+                                value={draftVal}
+                                onChange={(next) => setDraftVal(next)}
+                                onKeyDown={(e: React.KeyboardEvent) => {
+                                    e.stopPropagation();
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        commitInlineEdit();
+                                    } else if (e.key === 'Escape') {
+                                        e.preventDefault();
+                                        cancelInlineEdit();
+                                    }
+                                }}
+                                onBlur={() => commitInlineEdit()}
+                                style={{
+                                    minWidth: '44px',
+                                    maxWidth: '240px',
+                                    width: `${Math.max(draftVal.length + 1, 4)}ch`,
+                                    fontSize: '0.92em',
+                                    color: pillText,
+                                    padding: '0',
+                                    margin: '0',
+                                    border: 'none',
+                                    background: 'transparent',
+                                    outline: 'none',
+                                    lineHeight: '1.1'
+                                }}
+                            />
                         </span>
+                    ) : (
+                        renderedMath.isSafeHtml ? (
+                            <span
+                                dangerouslySetInnerHTML={{ __html: renderedMath.html }}
+                                style={{
+                                    pointerEvents: 'none',
+                                    userSelect: 'none', // Strictly unselectable so text is never mixed
+                                    lineHeight: 1,
+                                    zIndex: 1,
+                                    position: 'relative'
+                                }}
+                            />
+                        ) : (
+                            <span
+                                style={{
+                                    pointerEvents: 'none',
+                                    userSelect: 'none',
+                                    lineHeight: 1,
+                                    zIndex: 1,
+                                    position: 'relative',
+                                    whiteSpace: 'pre-wrap'
+                                }}
+                            >
+                                {renderedMath.html}
+                            </span>
+                        )
                     )}
 
                     {sequenceData && sequenceData.length > 4 && (
@@ -1021,25 +1114,25 @@ const MathPill = TiptapNode.create({
                             onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
                             style={{
                                 marginLeft: '8px',
-                                background: isCtrlPressed ? 'rgba(67, 233, 123, 0.15)' : 'rgba(255,255,255,0.08)',
+                                background: isCtrlPressed ? 'rgba(47, 165, 111, 0.12)' : (theme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'),
                                 borderRadius: '4px',
                                 padding: '1px 5px',
                                 fontSize: '0.6rem',
-                                color: isCtrlPressed ? '#43e97b' : 'rgba(255,255,255,0.4)',
+                                color: isCtrlPressed ? '#2fa56f' : (theme === 'dark' ? 'rgba(255,255,255,0.5)' : 'rgba(23,29,24,0.45)'),
                                 cursor: 'pointer',
                                 transition: 'all 0.2s',
-                                border: '1px solid rgba(255,255,255,0.05)',
+                                border: 'none',
                                 fontWeight: 700,
                                 userSelect: 'none'
                             }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
-                            onMouseLeave={(e) => e.currentTarget.style.background = isCtrlPressed ? 'rgba(67, 233, 123, 0.15)' : 'rgba(255,255,255,0.08)'}
+                            onMouseEnter={(e) => e.currentTarget.style.background = theme === 'dark' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = isCtrlPressed ? 'rgba(47, 165, 111, 0.12)' : (theme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)')}
                         >
                             {isExpanded ? 'Collapse' : `${sequenceData.length} items`}
                         </span>
                     )}
 
-                    {isHovered && !isCtrlPressed && coords.width > 0 && createPortal(
+                    {isHovered && !isCtrlPressed && !isInlineEditing && coords.width > 0 && createPortal(
                         <div className="nodrag" style={{
                             position: 'fixed',
                             top: coords.top - 10,
