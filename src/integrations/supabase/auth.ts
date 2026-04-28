@@ -53,7 +53,24 @@ export async function getCurrentSession(): Promise<Session | null> {
 
 export async function buildAppUserFromSession(session: Session | null): Promise<AppUser | null> {
   if (!session?.user) return null;
-  return profileToAppUser(session.user, null);
+  if (!supabase) return profileToAppUser(session.user, null);
+
+  try {
+    const { data, error } = await withSupabaseTimeout(
+      supabase
+        .from('profiles')
+        .select('id, email, display_name, avatar_url, role')
+        .eq('id', session.user.id)
+        .maybeSingle(),
+      'Loading profile'
+    );
+
+    if (error) throw error;
+    return profileToAppUser(session.user, data as AppProfile | null);
+  } catch (error) {
+    console.warn('[auth] buildAppUserFromSession fallback without profile:', error);
+    return profileToAppUser(session.user, null);
+  }
 }
 
 export async function getUserRole(userId: string): Promise<AppRole> {

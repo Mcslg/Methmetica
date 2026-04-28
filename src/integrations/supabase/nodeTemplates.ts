@@ -15,6 +15,8 @@ type NodeTemplatePayload = {
 
 type NodeTemplateRow = Omit<SupabaseNodeTemplateRow, 'payload' | 'visibility'> & {
   visibility: NodeTemplateVisibility;
+  review_status?: 'unreviewed' | 'approved' | null;
+  review_count?: number | null;
   source_workflow_id?: string | null;
   source_workflow_slug?: string | null;
   payload: NodeTemplatePayload | CommunityNodeTemplate | null;
@@ -76,6 +78,8 @@ export async function publishNodeTemplateToSupabase({
     title: template.title,
     summary: template.summary,
     visibility: toTemplateVisibility(workflowVisibility),
+    review_status: 'unreviewed',
+    review_count: 0,
     version: template.version,
     source_workflow_id: sourceWorkflowId,
     source_workflow_slug: sourceWorkflowSlug,
@@ -86,7 +90,7 @@ export async function publishNodeTemplateToSupabase({
     supabase
       .from('node_templates')
       .upsert(record, { onConflict: 'id' })
-      .select('id, slug, title, summary, visibility, version, source_workflow_id, source_workflow_slug, payload, updated_at')
+      .select('id, slug, title, summary, visibility, review_status, review_count, version, source_workflow_id, source_workflow_slug, payload, updated_at')
       .single(),
     'Publishing node template'
   );
@@ -101,8 +105,9 @@ export async function listPublicNodeTemplates() {
   const { data, error } = await withSupabaseTimeout(
     supabase
       .from('node_templates')
-      .select('id, slug, title, summary, visibility, version, source_workflow_id, source_workflow_slug, payload, updated_at')
+      .select('id, slug, title, summary, visibility, review_status, review_count, version, source_workflow_id, source_workflow_slug, payload, updated_at')
       .in('visibility', ['community', 'core'])
+      .eq('review_status', 'approved')
       .order('updated_at', { ascending: false }),
     'Loading public node templates'
   );

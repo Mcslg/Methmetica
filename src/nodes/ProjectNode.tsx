@@ -363,6 +363,9 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     linkedTemplateNodeId: string;
     supabaseWorkflowId: string;
     handles: CustomHandle[];
+    reviewStatus: 'unreviewed' | 'approved';
+    reviewCount: number;
+    reviewedByMe: boolean;
   }>) => {
     updateNodeData(id, patch, { skipGraphEval: true });
   }, [id, updateNodeData]);
@@ -702,6 +705,9 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                 builderDraft: packaged,
                 hasPublishedTemplate: true,
                 supabaseWorkflowId: data.supabaseWorkflowId,
+                reviewStatus: 'unreviewed' as const,
+                reviewCount: 0,
+                reviewedByMe: false,
               },
             }
           : node.type === 'communityTemplateNode' && node.data?.builderSourceId === id && node.data?.autoManagedTemplateNode && node.data?.templateDraft
@@ -749,7 +755,10 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         builderDraft: publishedTemplate,
         hasPublishedTemplate: true,
         supabaseWorkflowId: blueprint.card.id,
-        publishStatus: `已發布 "${publishedTemplate.title}" 到公開社群，可透過右鍵搜尋找到，也會出現在 Public Workflows。`,
+        reviewStatus: blueprint.meta?.reviewStatus ?? 'unreviewed',
+        reviewCount: blueprint.meta?.reviewCount ?? 0,
+        reviewedByMe: false,
+        publishStatus: `已送出 "${publishedTemplate.title}"，目前未審核。需要 3 位貢獻者審核後才會開放使用。`,
       });
       clearPublicWorkflowEdit(blueprint.card.id, effectiveUser.id);
       syncLinkedTemplateNode(publishedTemplate, localVisibility);

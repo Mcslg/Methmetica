@@ -11,11 +11,22 @@ select
   w.visibility,
   w.tags,
   w.updated_at,
+  w.review_status,
+  w.review_count,
   coalesce(jsonb_array_length(w.workflow_json -> 'nodes'), 0) as node_count,
   coalesce(jsonb_array_length(w.workflow_json -> 'edges'), 0) as edge_count
 from public.workflows w
 where
-  w.status = 'published'
-  and w.visibility in ('public', 'core');
+  w.visibility in ('public', 'core')
+  and (
+    w.status = 'published'
+    or exists (
+      select 1
+      from public.profiles reviewer_profile
+      where reviewer_profile.id = auth.uid()
+        and reviewer_profile.role in ('contributor', 'trusted_editor', 'admin')
+        and w.status = 'pending_review'
+    )
+  );
 
 grant select on public.public_workflow_cards to anon, authenticated;

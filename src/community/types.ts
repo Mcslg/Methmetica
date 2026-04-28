@@ -139,6 +139,8 @@ export type CommunityWorkflowCard = {
   liked?: boolean;
   bookmarked?: boolean;
   forked?: boolean;
+  reviewStatus?: 'unreviewed' | 'approved';
+  reviewCount?: number;
   seoTitle: string;
   seoDescription: string;
 };
@@ -174,6 +176,9 @@ export type WorkflowBlueprint = {
     workflowVersion?: number;
     ownerId?: string;
     authorName?: string;
+    reviewStatus?: 'unreviewed' | 'approved';
+    reviewCount?: number;
+    reviewedByMe?: boolean;
     artifactStatus?: string;
     compilerVersion?: string;
     runtimeVersion?: string;

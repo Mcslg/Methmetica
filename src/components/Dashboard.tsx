@@ -30,7 +30,7 @@ type CommunitySortMode = 'recent' | 'popular';
 
 const annotatePublicWorkflowNodes = (
   nodes: AppNode[],
-  meta?: { ownerId?: string; authorName?: string },
+  meta?: { ownerId?: string; authorName?: string; reviewStatus?: 'unreviewed' | 'approved'; reviewCount?: number; reviewedByMe?: boolean },
 ) => nodes.map(node => (
   node.type === 'projectNode'
     ? {
@@ -41,6 +41,9 @@ const annotatePublicWorkflowNodes = (
           readOnlyPreview: true,
           ownerId: meta?.ownerId ?? node.data.ownerId,
           authorName: meta?.authorName ?? node.data.authorName,
+          reviewStatus: meta?.reviewStatus ?? node.data.reviewStatus,
+          reviewCount: meta?.reviewCount ?? node.data.reviewCount,
+          reviewedByMe: meta?.reviewedByMe ?? node.data.reviewedByMe,
         },
       }
     : node
@@ -606,7 +609,9 @@ export function Dashboard() {
                   <div className="card-icon-box" style={{ background: 'rgba(74, 222, 128, 0.1)', color: 'var(--accent-bright)' }}>
                     <Icons.Languages size={20} />
                   </div>
-                  <span className={`status-pill ${workflow.visibility}`}>{workflow.visibility}</span>
+                  <span className={`status-pill ${workflow.reviewStatus === 'unreviewed' ? 'review' : workflow.visibility}`}>
+                    {workflow.reviewStatus === 'unreviewed' ? `review ${workflow.reviewCount ?? 0}/3` : workflow.visibility}
+                  </span>
                 </div>
                 <div className="card-metrics">
                   <span>View {workflow.viewCount ?? 0}</span>
@@ -1240,6 +1245,9 @@ export function Dashboard() {
         }
         .status-pill.core {
           color: #60a5fa;
+        }
+        .status-pill.review {
+          color: #fbbf24;
         }
         .status-pill.complete {
           color: #fbbf24;

@@ -1,6 +1,6 @@
 export type AuthStatus = 'idle' | 'loading' | 'authenticated' | 'anonymous' | 'error';
 
-export type AppRole = 'user' | 'trusted_editor' | 'admin';
+export type AppRole = 'user' | 'contributor' | 'trusted_editor' | 'admin';
 
 export type AppUser = {
   id: string;
@@ -21,4 +21,3 @@ export type AppProfile = {
   created_at?: string;
   updated_at?: string;
 };
-

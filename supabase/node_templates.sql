@@ -7,6 +7,8 @@ create table if not exists public.node_templates (
   title text not null,
   summary text not null default '',
   visibility text not null default 'community' check (visibility in ('private', 'community', 'core')),
+  review_status text not null default 'unreviewed' check (review_status in ('unreviewed', 'approved')),
+  review_count integer not null default 0,
   version text not null default '1.0.0',
   payload jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
@@ -14,6 +16,23 @@ create table if not exists public.node_templates (
 );
 
 alter table public.node_templates enable row level security;
+
+alter table public.node_templates
+add column if not exists review_status text not null default 'unreviewed' check (review_status in ('unreviewed', 'approved')),
+add column if not exists review_count integer not null default 0;
+
+update public.node_templates
+set review_status = 'approved', review_count = greatest(review_count, 3)
+where review_status = 'unreviewed'
+  and (
+    source_workflow_id is null
+    or exists (
+      select 1
+      from public.workflows w
+      where w.id = public.node_templates.source_workflow_id
+        and w.status = 'published'
+    )
+  );
 
 create or replace function public.set_node_templates_updated_at()
 returns trigger
@@ -37,14 +56,17 @@ on public.node_templates
 for select
 to authenticated, anon
 using (
-  visibility = 'community'
+  (visibility = 'community' and review_status = 'approved')
   or owner_id = auth.uid()
   or exists (
     select 1
     from public.profiles editor_profile
     where editor_profile.id = auth.uid()
-      and editor_profile.role in ('trusted_editor', 'admin')
-      and public.node_templates.visibility = 'core'
+      and editor_profile.role in ('contributor', 'trusted_editor', 'admin')
+      and (
+        public.node_templates.visibility = 'core'
+        or public.node_templates.review_status = 'unreviewed'
+      )
   )
 );
 

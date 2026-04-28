@@ -13,6 +13,7 @@ import { setWorkflowInteraction } from '../integrations/supabase/workflowInterac
 import {
     getWorkflowVersionBlueprintFromSupabase,
     listWorkflowVersions,
+    reviewWorkflowInSupabase,
     type WorkflowVersionSummary,
 } from '../integrations/supabase/workflows';
 
@@ -21,7 +22,7 @@ export function Sidebar() {
     const { 
         nodes, edges, setGraph, theme, setTheme, isSidebarOpen, setSidebarOpen, 
         isDeletingHover, isPaletteFloating, setPaletteFloating, setCurrentView,
-        user, driveConnected, activeFileId, setActiveFileId, savedGraphSignature, markCurrentGraphSaved
+        user, driveConnected, activeFileId, setActiveFileId, savedGraphSignature, markCurrentGraphSaved, updateNodeData
     } = useStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [holdProgress, setHoldProgress] = React.useState(0);
@@ -30,12 +31,16 @@ export function Sidebar() {
     const [workflowVersions, setWorkflowVersions] = React.useState<WorkflowVersionSummary[]>([]);
     const [isLoadingVersions, setIsLoadingVersions] = React.useState(false);
     const [versionError, setVersionError] = React.useState<string | null>(null);
-    const holdTimerRef = useRef<any>(null);
+    const holdTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const isDirty = createGraphSignature(nodes, edges) !== savedGraphSignature;
     const projectRoot = nodes.find(node => node.type === 'projectNode');
     const hasBuilderDraft = Boolean(projectRoot?.data.builderDraft);
     const hasPublishedTemplate = Boolean(projectRoot?.data.hasPublishedTemplate || projectRoot?.data.supabaseWorkflowId);
     const isCurrentUserOwner = Boolean(projectRoot?.data.ownerId && user?.id === projectRoot.data.ownerId);
+    const isContributor = Boolean(user && ['contributor', 'trusted_editor', 'admin'].includes(user.role));
+    const reviewStatus = projectRoot?.data.reviewStatus;
+    const reviewCount = typeof projectRoot?.data.reviewCount === 'number' ? projectRoot.data.reviewCount : 0;
+    const reviewedByMe = Boolean(projectRoot?.data.reviewedByMe);
     const isForkablePublicWorkflow = Boolean(projectRoot?.data.readOnlyPreview && !isCurrentUserOwner);
     const publishTemplateLabel = isForkablePublicWorkflow ? 'Fork' : hasPublishedTemplate ? '更新' : '發布';
     const publishStatus = typeof projectRoot?.data.publishStatus === 'string' ? projectRoot.data.publishStatus : '';
@@ -59,6 +64,16 @@ export function Sidebar() {
     const supabaseWorkflowId = typeof projectRoot?.data.supabaseWorkflowId === 'string'
         ? projectRoot.data.supabaseWorkflowId
         : null;
+    const canReviewWorkflow = Boolean(
+        supabaseWorkflowId &&
+        projectRoot &&
+        user &&
+        isContributor &&
+        !isCurrentUserOwner &&
+        reviewStatus === 'unreviewed' &&
+        reviewCount < 3 &&
+        !reviewedByMe
+    );
     const activeWorkflowVersionId = typeof projectRoot?.data.workflowVersionId === 'string'
         ? projectRoot.data.workflowVersionId
         : null;
@@ -102,7 +117,7 @@ export function Sidebar() {
                 } else {
                     alert(t('common.invalid_file') || 'Invalid project file format.');
                 }
-            } catch (err) {
+            } catch {
                 alert(t('common.parse_error') || 'Failed to parse project file.');
             }
         };
@@ -115,7 +130,7 @@ export function Sidebar() {
         holdTimerRef.current = setInterval(() => {
             setHoldProgress(prev => {
                 if (prev >= 100) {
-                    clearInterval(holdTimerRef.current);
+                    if (holdTimerRef.current) clearInterval(holdTimerRef.current);
                     setGraph([], []);
                     return 0;
                 }
@@ -163,6 +178,36 @@ export function Sidebar() {
         window.dispatchEvent(new CustomEvent('publish-project-template', {
             detail: { projectNodeId: projectRoot.id },
         }));
+    };
+
+    const handleReviewWorkflow = async () => {
+        if (!supabaseWorkflowId || !projectRoot || !canReviewWorkflow) return;
+        setIsSyncing(true);
+        try {
+            const result = await reviewWorkflowInSupabase(supabaseWorkflowId);
+            updateNodeData(projectRoot.id, {
+                reviewStatus: result.reviewStatus,
+                reviewCount: result.reviewCount,
+                reviewedByMe: result.reviewedByMe,
+                publishStatus: result.reviewStatus === 'approved'
+                    ? '已通過 3 位貢獻者審核，現在可被其他人使用。'
+                    : `已完成審核，目前 ${result.reviewCount}/3。`,
+            }, { skipGraphEval: true });
+            setWorkflowVersions((versions) => versions.map(version => (
+                version.id === result.workflowVersionId
+                    ? {
+                        ...version,
+                        reviewStatus: result.reviewStatus,
+                        reviewCount: result.reviewCount,
+                    }
+                    : version
+            )));
+        } catch (error) {
+            console.error('Failed to review workflow', error);
+            alert(error instanceof Error ? error.message : '審核 workflow 失敗。');
+        } finally {
+            setIsSyncing(false);
+        }
     };
 
     React.useEffect(() => {
@@ -214,6 +259,9 @@ export function Sidebar() {
                                 workflowVersion: blueprint.meta?.workflowVersion ?? version.version,
                                 ownerId: blueprint.meta?.ownerId ?? node.data.ownerId,
                                 authorName: blueprint.meta?.authorName ?? node.data.authorName,
+                                reviewStatus: blueprint.meta?.reviewStatus ?? node.data.reviewStatus,
+                                reviewCount: blueprint.meta?.reviewCount ?? node.data.reviewCount,
+                                reviewedByMe: blueprint.meta?.reviewedByMe ?? node.data.reviewedByMe,
                                 publishStatus: `正在查看歷史版本 v${version.version}。Fork 後才能編輯。`,
                             },
                         }
@@ -352,6 +400,23 @@ export function Sidebar() {
                     {hasPublishFailure && (
                         <div className="publish-failure-inline" title={publishFailureReason}>
                             {publishFailureReason}
+                        </div>
+                    )}
+                    {supabaseWorkflowId && reviewStatus === 'unreviewed' && (
+                        <div className="workflow-review-panel">
+                            <div className="workflow-review-status">
+                                未審核 <span>{reviewCount}/3</span>
+                            </div>
+                            {isContributor && !isCurrentUserOwner && (
+                                <button
+                                    className="sidebar-btn review"
+                                    onClick={handleReviewWorkflow}
+                                    disabled={!canReviewWorkflow || isSyncing}
+                                    title={reviewedByMe ? '你已審核過這個 workflow' : '審核這個 workflow'}
+                                >
+                                    <Icons.Check /> 審核
+                                </button>
+                            )}
                         </div>
                     )}
                     {supabaseWorkflowId && (
@@ -709,6 +774,38 @@ export function Sidebar() {
                     color: #f87171;
                     font-size: 0.7rem;
                     line-height: 1.35;
+                }
+                .workflow-review-panel {
+                    display: grid;
+                    gap: 8px;
+                    padding: 10px;
+                    border: 1px solid rgba(245, 158, 11, 0.35);
+                    border-radius: 8px;
+                    background: rgba(245, 158, 11, 0.08);
+                }
+                .workflow-review-status {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 8px;
+                    color: #fbbf24;
+                    font-size: 0.76rem;
+                    font-weight: 700;
+                }
+                .workflow-review-status span {
+                    color: var(--text-main);
+                    font-variant-numeric: tabular-nums;
+                }
+                .sidebar-btn.review {
+                    justify-content: center;
+                    border-color: rgba(16, 185, 129, 0.45);
+                    background: rgba(16, 185, 129, 0.12);
+                    color: #86efac;
+                }
+                .sidebar-btn.review:hover:not(:disabled) {
+                    background: #059669;
+                    border-color: #10b981;
+                    color: #fff;
                 }
                 .workflow-version-panel {
                     display: grid;

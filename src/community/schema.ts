@@ -32,6 +32,8 @@ export type SupabaseNodeTemplateRow = {
   title: string;
   summary: string;
   visibility: 'community' | 'core';
+  review_status?: 'unreviewed' | 'approved';
+  review_count?: number;
   version: string;
   payload: Record<string, unknown>;
   updated_at: string;

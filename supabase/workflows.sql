@@ -6,7 +6,9 @@ create table if not exists public.workflows (
   description text not null default '',
   tags text[] not null default '{}',
   visibility text not null default 'private' check (visibility in ('private', 'public', 'core')),
-  status text not null default 'draft' check (status in ('draft', 'published', 'archived')),
+  status text not null default 'draft' check (status in ('draft', 'pending_review', 'published', 'archived')),
+  review_status text not null default 'unreviewed' check (review_status in ('unreviewed', 'approved')),
+  review_count integer not null default 0,
   workflow_json jsonb not null default '{}'::jsonb,
   compiled_artifact jsonb,
   artifact_status text not null default 'legacy' check (artifact_status in ('legacy', 'ready', 'failed')),
@@ -27,6 +29,8 @@ create table if not exists public.workflow_versions (
   description text not null default '',
   tags text[] not null default '{}',
   visibility text not null check (visibility in ('private', 'public', 'core')),
+  review_status text not null default 'unreviewed' check (review_status in ('unreviewed', 'approved')),
+  review_count integer not null default 0,
   workflow_json jsonb not null default '{}'::jsonb,
   compiled_artifact jsonb,
   artifact_status text not null default 'legacy' check (artifact_status in ('legacy', 'ready', 'failed')),
@@ -44,8 +48,17 @@ create table if not exists public.workflow_versions (
 alter table public.workflows
 add column if not exists current_version_id uuid references public.workflow_versions(id) on delete set null;
 
+do $$
+begin
+  alter table public.workflows drop constraint if exists workflows_status_check;
+  alter table public.workflows
+    add constraint workflows_status_check check (status in ('draft', 'pending_review', 'published', 'archived'));
+end $$;
+
 alter table public.workflows
 add column if not exists compiled_artifact jsonb,
+add column if not exists review_status text not null default 'unreviewed' check (review_status in ('unreviewed', 'approved')),
+add column if not exists review_count integer not null default 0,
 add column if not exists artifact_status text not null default 'legacy' check (artifact_status in ('legacy', 'ready', 'failed')),
 add column if not exists compiler_version text,
 add column if not exists runtime_version text,
@@ -54,11 +67,27 @@ add column if not exists contains_admin_code boolean not null default false;
 
 alter table public.workflow_versions
 add column if not exists compiled_artifact jsonb,
+add column if not exists review_status text not null default 'unreviewed' check (review_status in ('unreviewed', 'approved')),
+add column if not exists review_count integer not null default 0,
 add column if not exists artifact_status text not null default 'legacy' check (artifact_status in ('legacy', 'ready', 'failed')),
 add column if not exists compiler_version text,
 add column if not exists runtime_version text,
 add column if not exists dependency_manifest jsonb not null default '{"entries":[]}'::jsonb,
 add column if not exists contains_admin_code boolean not null default false;
+
+update public.workflows
+set review_status = 'approved', review_count = greatest(review_count, 3)
+where status = 'published' and review_status = 'unreviewed';
+
+update public.workflow_versions
+set review_status = 'approved', review_count = greatest(review_count, 3)
+where review_status = 'unreviewed'
+  and exists (
+    select 1
+    from public.workflows w
+    where w.id = public.workflow_versions.workflow_id
+      and w.status = 'published'
+  );
 
 create index if not exists workflow_versions_workflow_version_idx
   on public.workflow_versions (workflow_id, version desc);
@@ -68,6 +97,17 @@ create index if not exists workflow_versions_published_at_idx
 
 alter table public.workflows enable row level security;
 alter table public.workflow_versions enable row level security;
+
+create table if not exists public.workflow_reviews (
+  id uuid primary key default gen_random_uuid(),
+  workflow_id uuid not null references public.workflows(id) on delete cascade,
+  workflow_version_id uuid references public.workflow_versions(id) on delete cascade,
+  reviewer_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (workflow_id, reviewer_id)
+);
+
+alter table public.workflow_reviews enable row level security;
 
 create or replace function public.set_workflows_updated_at()
 returns trigger
@@ -91,14 +131,17 @@ on public.workflows
 for select
 to authenticated, anon
 using (
-  visibility = 'public'
+  (status = 'published' and visibility = 'public')
   or owner_id = auth.uid()
   or exists (
     select 1
     from public.profiles editor_profile
     where editor_profile.id = auth.uid()
-      and editor_profile.role in ('trusted_editor', 'admin')
-      and public.workflows.visibility = 'core'
+      and editor_profile.role in ('contributor', 'trusted_editor', 'admin')
+      and (
+        public.workflows.visibility = 'core'
+        or public.workflows.status = 'pending_review'
+      )
   )
 );
 
@@ -187,12 +230,45 @@ using (
           select 1
           from public.profiles editor_profile
           where editor_profile.id = auth.uid()
-            and editor_profile.role in ('trusted_editor', 'admin')
-            and w.visibility = 'core'
+            and editor_profile.role in ('contributor', 'trusted_editor', 'admin')
+            and (
+              w.visibility = 'core'
+              or w.status = 'pending_review'
+            )
         )
       )
   )
 );
+
+drop policy if exists "workflow_reviews_select_participants" on public.workflow_reviews;
+create policy "workflow_reviews_select_participants"
+on public.workflow_reviews
+for select
+to authenticated
+using (
+  reviewer_id = auth.uid()
+  or exists (
+    select 1
+    from public.workflows w
+    where w.id = public.workflow_reviews.workflow_id
+      and (
+        w.owner_id = auth.uid()
+        or exists (
+          select 1
+          from public.profiles reviewer_profile
+          where reviewer_profile.id = auth.uid()
+            and reviewer_profile.role in ('contributor', 'trusted_editor', 'admin')
+        )
+      )
+  )
+);
+
+drop policy if exists "workflow_reviews_insert_via_rpc" on public.workflow_reviews;
+create policy "workflow_reviews_insert_via_rpc"
+on public.workflow_reviews
+for insert
+to authenticated
+with check (false);
 
 drop policy if exists "workflow_versions_insert_via_rpc" on public.workflow_versions;
 create policy "workflow_versions_insert_via_rpc"
@@ -238,6 +314,8 @@ insert into public.workflow_versions (
   description,
   tags,
   visibility,
+  review_status,
+  review_count,
   workflow_json,
   created_by,
   published_at,
@@ -250,6 +328,8 @@ select
   w.description,
   w.tags,
   w.visibility,
+  coalesce(w.review_status, 'approved'),
+  coalesce(w.review_count, 3),
   w.workflow_json,
   w.owner_id,
   coalesce(w.published_at, w.created_at, now()),
@@ -295,6 +375,8 @@ returns table (
   tags text[],
   visibility text,
   status text,
+  review_status text,
+  review_count integer,
   workflow_json jsonb,
   compiled_artifact jsonb,
   artifact_status text,
@@ -328,6 +410,9 @@ declare
   v_runtime_version text := p_compiled_artifact #>> '{runtimeVersion}';
   v_dependency_manifest jsonb := coalesce(p_compiled_artifact -> 'dependencyManifest', '{"entries":[]}'::jsonb);
   v_contains_admin_code boolean := coalesce((p_compiled_artifact #>> '{permissions,containsCodeNode}')::boolean, false);
+  v_publish_status text;
+  v_review_status text;
+  v_review_count integer;
   v_is_admin boolean := false;
   v_can_publish_core boolean := false;
 begin
@@ -338,6 +423,10 @@ begin
   if v_visibility not in ('private', 'public', 'core') then
     raise exception 'Unsupported workflow visibility: %', v_visibility;
   end if;
+
+  v_publish_status := case when v_visibility in ('public', 'core') then 'pending_review' else 'published' end;
+  v_review_status := case when v_visibility in ('public', 'core') then 'unreviewed' else 'approved' end;
+  v_review_count := case when v_visibility in ('public', 'core') then 0 else 3 end;
 
   select exists (
     select 1
@@ -368,6 +457,8 @@ begin
       tags,
       visibility,
       status,
+      review_status,
+      review_count,
       workflow_json,
       compiled_artifact,
       artifact_status,
@@ -384,7 +475,9 @@ begin
       v_description,
       v_tags,
       v_visibility,
-      'published',
+      v_publish_status,
+      v_review_status,
+      v_review_count,
       coalesce(p_workflow_json, '{}'::jsonb),
       p_compiled_artifact,
       v_artifact_status,
@@ -417,7 +510,9 @@ begin
       description = v_description,
       tags = v_tags,
       visibility = v_visibility,
-      status = 'published',
+      status = v_publish_status,
+      review_status = v_review_status,
+      review_count = v_review_count,
       workflow_json = coalesce(p_workflow_json, '{}'::jsonb),
       compiled_artifact = p_compiled_artifact,
       artifact_status = v_artifact_status,
@@ -435,6 +530,9 @@ begin
   from public.workflow_versions
   where public.workflow_versions.workflow_id = v_workflow.id;
 
+  delete from public.workflow_reviews
+  where public.workflow_reviews.workflow_id = v_workflow.id;
+
   insert into public.workflow_versions (
     workflow_id,
     version,
@@ -442,6 +540,8 @@ begin
     description,
     tags,
     visibility,
+    review_status,
+    review_count,
     workflow_json,
     compiled_artifact,
     artifact_status,
@@ -459,6 +559,8 @@ begin
     v_description,
     v_tags,
     v_visibility,
+    v_review_status,
+    v_review_count,
     coalesce(p_workflow_json, '{}'::jsonb),
     p_compiled_artifact,
     v_artifact_status,
@@ -486,6 +588,8 @@ begin
     v_workflow.tags,
     v_workflow.visibility,
     v_workflow.status,
+    v_workflow.review_status,
+    v_workflow.review_count,
     v_workflow.workflow_json,
     v_workflow.compiled_artifact,
     v_workflow.artifact_status,
@@ -503,3 +607,113 @@ end;
 $$;
 
 grant execute on function public.publish_workflow_version(uuid, text, text, text[], text, text, jsonb, jsonb) to authenticated;
+
+create or replace function public.review_workflow(
+  p_workflow_id uuid
+)
+returns table (
+  workflow_id uuid,
+  workflow_version_id uuid,
+  review_status text,
+  review_count integer,
+  status text,
+  reviewed_by_me boolean
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_workflow public.workflows%rowtype;
+  v_is_reviewer boolean := false;
+  v_count integer := 0;
+begin
+  if v_user_id is null then
+    raise exception 'Authentication required';
+  end if;
+
+  select exists (
+    select 1
+    from public.profiles reviewer_profile
+    where reviewer_profile.id = v_user_id
+      and reviewer_profile.role in ('contributor', 'trusted_editor', 'admin')
+  )
+  into v_is_reviewer;
+
+  if not v_is_reviewer then
+    raise exception 'Only contributors can review workflows';
+  end if;
+
+  select *
+  into v_workflow
+  from public.workflows
+  where public.workflows.id = p_workflow_id
+  for update;
+
+  if not found then
+    raise exception 'Workflow not found';
+  end if;
+
+  if v_workflow.owner_id = v_user_id then
+    raise exception 'Workflow owners cannot review their own workflow';
+  end if;
+
+  if v_workflow.status <> 'pending_review' or v_workflow.review_status = 'approved' then
+    raise exception 'Workflow is not pending review';
+  end if;
+
+  insert into public.workflow_reviews (
+    workflow_id,
+    workflow_version_id,
+    reviewer_id
+  )
+  values (
+    v_workflow.id,
+    v_workflow.current_version_id,
+    v_user_id
+  )
+  on conflict (workflow_id, reviewer_id) do nothing;
+
+  select count(*)::integer
+  into v_count
+  from public.workflow_reviews
+  where public.workflow_reviews.workflow_id = v_workflow.id;
+
+  update public.workflows
+  set
+    review_count = v_count,
+    review_status = case when v_count >= 3 then 'approved' else 'unreviewed' end,
+    status = case when v_count >= 3 then 'published' else 'pending_review' end
+  where public.workflows.id = v_workflow.id
+  returning * into v_workflow;
+
+  update public.workflow_versions
+  set
+    review_count = v_workflow.review_count,
+    review_status = v_workflow.review_status
+  where public.workflow_versions.id = v_workflow.current_version_id;
+
+  update public.node_templates
+  set
+    review_count = v_workflow.review_count,
+    review_status = v_workflow.review_status
+  where public.node_templates.source_workflow_id = v_workflow.id;
+
+  return query
+  select
+    v_workflow.id,
+    v_workflow.current_version_id,
+    v_workflow.review_status,
+    v_workflow.review_count,
+    v_workflow.status,
+    exists (
+      select 1
+      from public.workflow_reviews my_review
+      where my_review.workflow_id = v_workflow.id
+        and my_review.reviewer_id = v_user_id
+    );
+end;
+$$;
+
+grant execute on function public.review_workflow(uuid) to authenticated;

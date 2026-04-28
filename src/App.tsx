@@ -114,7 +114,16 @@ function DataTooltipContent({ tooltip, isShiftPressed }: { tooltip: DataTooltipS
 
 const annotatePublicWorkflowNodes = (
   nodes: AppNode[],
-  meta?: { workflowId?: string; workflowVersionId?: string; workflowVersion?: number; ownerId?: string; authorName?: string },
+  meta?: {
+    workflowId?: string;
+    workflowVersionId?: string;
+    workflowVersion?: number;
+    ownerId?: string;
+    authorName?: string;
+    reviewStatus?: 'unreviewed' | 'approved';
+    reviewCount?: number;
+    reviewedByMe?: boolean;
+  },
 ) => nodes.map(node => (
   node.type === 'projectNode'
     ? {
@@ -128,6 +137,9 @@ const annotatePublicWorkflowNodes = (
           workflowVersion: meta?.workflowVersion,
           ownerId: meta?.ownerId ?? node.data.ownerId,
           authorName: meta?.authorName ?? node.data.authorName,
+          reviewStatus: meta?.reviewStatus ?? node.data.reviewStatus,
+          reviewCount: meta?.reviewCount ?? node.data.reviewCount,
+          reviewedByMe: meta?.reviewedByMe ?? node.data.reviewedByMe,
         },
       }
     : node
