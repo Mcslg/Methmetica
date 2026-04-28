@@ -10,7 +10,7 @@ interface NodeLibraryProps {
 export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 'sidebar' }) => {
     const { t } = useLanguage();
     const [isLibraryExpanded, setLibraryExpanded] = useState(false);
-    const basicNodeTypes = ['textNode', 'calculateNode', 'graphNode', 'sliderNode'];
+    const basicNodeTypes = ['textNode', 'driveImageNode', 'calculateNode', 'graphNode', 'sliderNode'];
     const basicNodes = nodeLibrary.filter(n => basicNodeTypes.includes(n.type));
     const otherNodes = nodeLibrary.filter(n => !basicNodeTypes.includes(n.type));
 

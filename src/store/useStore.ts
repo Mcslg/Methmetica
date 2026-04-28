@@ -134,6 +134,11 @@ export type NodeData = {
     workflowVersion?: number;
      visibility?: WorkflowVisibility;
     autoRun?: boolean; // For nodes that can toggle automatic execution
+    driveFileId?: string;
+    driveFileName?: string;
+    driveMimeType?: string;
+    driveWebViewUrl?: string;
+    driveThumbnailUrl?: string;
 };
 
 export type AppNode = Node<NodeData>;

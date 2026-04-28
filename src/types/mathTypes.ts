@@ -1,7 +1,7 @@
 export type MathTypeId =
   | 'integer' | 'rational' | 'real' | 'complex' | 'boolean' | 'string' | 'symbol'
   | 'expression' | 'equation' | 'inequality' | 'list' | 'sequence' | 'vector'
-  | 'matrix' | 'set' | 'interval' | 'function' | 'point' | 'error' | 'unknown' | 'any';
+  | 'matrix' | 'set' | 'interval' | 'function' | 'point' | 'image' | 'error' | 'unknown' | 'any';
 
 export type MathCapability =
   | 'comparable' | 'ordered' | 'additive' | 'multiplicative' | 'divisible'
@@ -17,7 +17,7 @@ export type MathTypeDescriptor = {
   belongsTo: MathTypeId[];
   capabilities: MathCapability[];
   convertibleTo?: MathTypeId[];
-  preferredDisplay?: 'plain' | 'latex' | 'json' | 'matrix';
+  preferredDisplay?: 'plain' | 'latex' | 'json' | 'matrix' | 'image';
   notes?: string;
 };
 

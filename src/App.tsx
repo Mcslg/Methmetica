@@ -596,6 +596,28 @@ function Flow() {
 
 
   const handleDeleteNode = () => { if (nodeMenu) { removeNode(nodeMenu.nodeId); setNodeMenu(null); } };
+  const handleToggleDriveImageOutput = () => {
+    if (!nodeMenu) return;
+    const node = nodes.find(n => n.id === nodeMenu.nodeId);
+    if (!node || node.type !== 'driveImageNode') return;
+
+    const hasImageOutput = (node.data.handles || []).some(handle => handle.id === 'h-image');
+    if (hasImageOutput) {
+      const nextHandles = (node.data.handles || []).filter(handle => handle.id !== 'h-image');
+      updateNodeData(node.id, { handles: nextHandles });
+    } else {
+      addHandle(node.id, {
+        id: 'h-image',
+        type: 'output',
+        position: 'right',
+        offset: 50,
+        label: 'image',
+        declaredType: 'image',
+        description: 'Google Drive image data',
+      });
+    }
+    setNodeMenu(null);
+  };
   const handleToggleHeader = () => {
     if (!nodeMenu) return;
     const node = nodes.find(n => n.id === nodeMenu.nodeId);
@@ -1119,6 +1141,13 @@ function Flow() {
               ? (language === 'zh-TW' ? '顯示 Header' : 'Show Header')
               : (language === 'zh-TW' ? '隱藏 Header' : 'Hide Header')}
           </div>
+          {nodes.find(n => n.id === nodeMenu.nodeId)?.type === 'driveImageNode' && (
+            <div className="menu-item" onClick={handleToggleDriveImageOutput}>
+              {(nodes.find(n => n.id === nodeMenu.nodeId)?.data.handles || []).some(handle => handle.id === 'h-image')
+                ? (language === 'zh-TW' ? '隱藏圖片輸出' : 'Hide Image Output')
+                : (language === 'zh-TW' ? '新增圖片輸出' : 'Add Image Output')}
+            </div>
+          )}
           <div className="menu-item" onClick={handleDuplicateNode}>{t('common.duplicate')}</div>
           <div className="menu-item" style={{ color: '#ff4757' }} onClick={handleDeleteNode}>{t('common.delete')}</div>
         </div>

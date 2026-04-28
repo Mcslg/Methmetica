@@ -796,18 +796,19 @@ const MathPill = TiptapNode.create({
                 }
             }, [displayVal, sequenceData, isExpanded]);
 
-            const pillAccent = isGlobal ? '#d4a72c' : (isConnectedIn ? '#8d6ccf' : (isCtrlPressed ? '#2fa56f' : '#7f8f85'));
-            const pillText = theme === 'dark' ? 'rgba(245, 247, 244, 0.96)' : 'rgba(23, 29, 24, 0.92)';
-            const pillBackground = isGlobal
-                ? (theme === 'dark' ? 'rgba(212, 167, 44, 0.17)' : 'rgba(212, 167, 44, 0.16)')
-                : isConnectedIn
-                    ? (theme === 'dark' ? 'rgba(141, 108, 207, 0.16)' : 'rgba(141, 108, 207, 0.14)')
-                    : isCtrlPressed
-                        ? (theme === 'dark' ? 'rgba(47, 165, 111, 0.16)' : 'rgba(47, 165, 111, 0.14)')
-                        : (theme === 'dark' ? 'rgba(214, 223, 214, 0.12)' : 'rgba(120, 136, 123, 0.14)');
-            const pillUnderline = localShowHandle
-                ? `0 2px 0 0 ${pillAccent}`
-                : `0 1px 0 0 color-mix(in srgb, ${pillAccent} 45%, transparent)`;
+            const pillAccent = isGlobal ? '#d4a72c' : (isConnectedIn ? '#9d7cf2' : (isCtrlPressed ? '#33b679' : '#8c9690'));
+            const pillText = theme === 'dark' ? 'rgba(248, 250, 248, 0.95)' : 'rgba(21, 26, 22, 0.92)';
+            const pillBackground = theme === 'dark'
+                ? 'rgba(255, 255, 255, 0.045)'
+                : 'rgba(255, 255, 255, 0.82)';
+            const pillBorder = localShowHandle
+                ? `color-mix(in srgb, ${pillAccent} 50%, ${theme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(16,24,20,0.08)'})`
+                : theme === 'dark'
+                    ? 'rgba(255, 255, 255, 0.08)'
+                    : 'rgba(16, 24, 20, 0.08)';
+            const pillGlow = localShowHandle
+                ? `0 0 0 1px color-mix(in srgb, ${pillAccent} 42%, transparent), 0 10px 24px rgba(0, 0, 0, 0.16)`
+                : `0 1px 0 rgba(255,255,255,${theme === 'dark' ? '0.04' : '0.55'}), 0 0 0 1px ${pillBorder}`;
 
             // Right-click: open editor
             const onRightClick = (e: React.MouseEvent) => {
@@ -960,37 +961,38 @@ const MathPill = TiptapNode.create({
                         position: 'relative',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: '6px',
+                        gap: '7px',
                         background: pillBackground,
                         color: pillText,
-                        padding: name ? '2px 7px 2px 5px' : '2px 7px',
-                        borderRadius: '5px',
-                        fontSize: '0.92em',
+                        padding: name ? '3px 9px 3px 7px' : '3px 9px',
+                        borderRadius: '999px',
+                        fontSize: '0.9em',
                         cursor: 'pointer',
-                        border: 'none',
+                        border: `1px solid ${pillBorder}`,
                         margin: '0 2px',
                         userSelect: 'text',
-                        minHeight: '1.45em',
+                        minHeight: '1.6em',
                         transition: 'all 0.2s ease',
                         verticalAlign: 'middle',
                         top: '0',
-                        boxShadow: pillUnderline,
+                        boxShadow: pillGlow,
+                        backdropFilter: 'blur(10px)',
                         zIndex: isCtrlPressed ? 10 : 1
                     }}
                 >
                     {name && (
                         <span style={{
-                            color: pillAccent,
+                            color: theme === 'dark' ? 'rgba(255,255,255,0.52)' : 'rgba(21,26,22,0.5)',
                             background: 'transparent',
                             border: 'none',
                             borderRadius: '0',
                             padding: '0',
-                            fontSize: '0.64rem',
+                            fontSize: '0.62rem',
                             lineHeight: 1.2,
-                            fontWeight: 700,
-                            letterSpacing: '0.02em',
+                            fontWeight: 600,
+                            letterSpacing: '0.01em',
                             pointerEvents: 'none',
-                            opacity: isGlobal ? 1 : 0.9,
+                            opacity: 1,
                             whiteSpace: 'nowrap'
                         }}>
                             {name}
@@ -1070,7 +1072,7 @@ const MathPill = TiptapNode.create({
                                     minWidth: '44px',
                                     maxWidth: '240px',
                                     width: `${Math.max(draftVal.length + 1, 4)}ch`,
-                                    fontSize: '0.92em',
+                                    fontSize: '0.9em',
                                     color: pillText,
                                     padding: '0',
                                     margin: '0',

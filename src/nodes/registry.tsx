@@ -12,6 +12,7 @@ import { ProjectNode } from './ProjectNode';
 import { CommunityTemplateNode } from './deprecated/CommunityTemplateNode';
 import { WorkflowLinkNode } from './deprecated/WorkflowLinkNode';
 import { CodeNode, executeCodeNode } from './CodeNode';
+import { DriveImageNode, executeDriveImageNode } from './DriveImageNode';
 import { getTemplateInterfaceSchema, type CommunityNodeTemplate } from '../community/types';
 import { getCommunityTemplateById } from '../community/catalog';
 import { runBuiltWorkflowNode } from '../utils/workflowTestRunner';
@@ -238,6 +239,14 @@ export const nodeRegistry: NodeDefinition[] = [
         defaultSize: { width: 280, height: 240 },
         defaultHandles: codeNodeHandles,
         execute: executeCodeNode
+    },
+    {
+        type: 'driveImageNode',
+        component: DriveImageNode,
+        metadata: { label: 'Drive Image', desc: 'Use a private Google Drive image', category: 'Media', icon: <Icons.Image />, color: '#22c55e' },
+        defaultSize: { width: 280, height: 280 },
+        defaultHandles: [],
+        execute: executeDriveImageNode
     },
     {
         type: 'numberNode',

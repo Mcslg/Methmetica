@@ -124,6 +124,14 @@ export const mathTypeCatalog: MathTypeDescriptor[] = [
     preferredDisplay: 'plain'
   },
   {
+    id: 'image',
+    label: 'Image',
+    category: 'media',
+    belongsTo: [],
+    capabilities: ['serializable', 'renderable'],
+    preferredDisplay: 'image'
+  },
+  {
     id: 'any',
     label: 'Any Type',
     category: 'structural',
