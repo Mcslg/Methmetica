@@ -6,6 +6,22 @@ import type { CompiledWorkflowArtifact } from '../utils/workflowCompiler';
 
 export type WorkflowVisibility = 'public' | 'private' | 'core';
 
+export type ReviewStatus = 'unreviewed' | 'approved';
+
+export type ReviewMetadata = {
+  reviewStatus?: ReviewStatus;
+  reviewCount?: number;
+  reviewRequired?: boolean;
+  reviewWarning?: boolean;
+  requiredContributorReviews?: number;
+  requiredExpertReviews?: number;
+  contributorReviewCount?: number;
+  expertReviewCount?: number;
+  extraContributorReviews?: number;
+  extraExpertReviews?: number;
+  reviewedByMe?: boolean;
+};
+
 export type TemplateFieldKind = 'text' | 'textarea' | 'number' | 'select' | 'link';
 
 export type TemplateBuilderBlockKind = 'input' | 'output' | 'text' | 'toggle' | 'math';
@@ -139,8 +155,16 @@ export type CommunityWorkflowCard = {
   liked?: boolean;
   bookmarked?: boolean;
   forked?: boolean;
-  reviewStatus?: 'unreviewed' | 'approved';
+  reviewStatus?: ReviewStatus;
   reviewCount?: number;
+  reviewRequired?: boolean;
+  reviewWarning?: boolean;
+  requiredContributorReviews?: number;
+  requiredExpertReviews?: number;
+  contributorReviewCount?: number;
+  expertReviewCount?: number;
+  extraContributorReviews?: number;
+  extraExpertReviews?: number;
   seoTitle: string;
   seoDescription: string;
 };
@@ -176,8 +200,16 @@ export type WorkflowBlueprint = {
     workflowVersion?: number;
     ownerId?: string;
     authorName?: string;
-    reviewStatus?: 'unreviewed' | 'approved';
+    reviewStatus?: ReviewStatus;
     reviewCount?: number;
+    reviewRequired?: boolean;
+    reviewWarning?: boolean;
+    requiredContributorReviews?: number;
+    requiredExpertReviews?: number;
+    contributorReviewCount?: number;
+    expertReviewCount?: number;
+    extraContributorReviews?: number;
+    extraExpertReviews?: number;
     reviewedByMe?: boolean;
     artifactStatus?: string;
     compilerVersion?: string;

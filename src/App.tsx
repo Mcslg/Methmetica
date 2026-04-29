@@ -6,7 +6,7 @@ import '@xyflow/react/dist/style.css';
 
 import useStore, { createGraphSignature, type AppNode } from './store/useStore';
 import { nodeTypes, getNodeDefinition, buildNodeCatalog } from './nodes/registry';
-import { getTemplateHandles } from './community/types';
+import { getTemplateHandles, type ReviewMetadata } from './community/types';
 import { Sidebar } from './components/Sidebar';
 import { ExplainOverlay } from './components/ExplainOverlay';
 import { FloatingPalette } from './components/FloatingPalette';
@@ -120,10 +120,7 @@ const annotatePublicWorkflowNodes = (
     workflowVersion?: number;
     ownerId?: string;
     authorName?: string;
-    reviewStatus?: 'unreviewed' | 'approved';
-    reviewCount?: number;
-    reviewedByMe?: boolean;
-  },
+  } & ReviewMetadata,
 ) => nodes.map(node => (
   node.type === 'projectNode'
     ? {
@@ -139,6 +136,14 @@ const annotatePublicWorkflowNodes = (
           authorName: meta?.authorName ?? node.data.authorName,
           reviewStatus: meta?.reviewStatus ?? node.data.reviewStatus,
           reviewCount: meta?.reviewCount ?? node.data.reviewCount,
+          reviewRequired: meta?.reviewRequired ?? node.data.reviewRequired,
+          reviewWarning: meta?.reviewWarning ?? node.data.reviewWarning,
+          requiredContributorReviews: meta?.requiredContributorReviews ?? node.data.requiredContributorReviews,
+          requiredExpertReviews: meta?.requiredExpertReviews ?? node.data.requiredExpertReviews,
+          contributorReviewCount: meta?.contributorReviewCount ?? node.data.contributorReviewCount,
+          expertReviewCount: meta?.expertReviewCount ?? node.data.expertReviewCount,
+          extraContributorReviews: meta?.extraContributorReviews ?? node.data.extraContributorReviews,
+          extraExpertReviews: meta?.extraExpertReviews ?? node.data.extraExpertReviews,
           reviewedByMe: meta?.reviewedByMe ?? node.data.reviewedByMe,
         },
       }

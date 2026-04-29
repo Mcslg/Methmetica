@@ -1,6 +1,7 @@
 import type { Edge } from '@xyflow/react';
 import type {
   CommunityWorkflowCard,
+  ReviewMetadata,
   WorkflowBlueprint,
   WorkflowGraphEdge,
   WorkflowGraphNode,
@@ -9,7 +10,7 @@ import type {
 import type { AppNode } from '../../store/useStore';
 import type { AppUser } from './types';
 import type { CompiledWorkflowArtifact } from '../../utils/workflowCompiler';
-import { isSupabaseConfigured, supabase } from './client';
+import { isSupabaseConfigured, supabase, supabaseConfig } from './client';
 import { withSupabaseTimeout } from './utils';
 
 type WorkflowStatus = 'draft' | 'pending_review' | 'published' | 'archived';
@@ -39,6 +40,14 @@ type WorkflowRow = {
   status: WorkflowStatus;
   review_status?: WorkflowReviewStatus | null;
   review_count?: number | null;
+  review_required?: boolean | null;
+  review_warning?: boolean | null;
+  required_contributor_reviews?: number | null;
+  required_expert_reviews?: number | null;
+  contributor_review_count?: number | null;
+  expert_review_count?: number | null;
+  extra_contributor_reviews?: number | null;
+  extra_expert_reviews?: number | null;
   reviewed_by_me?: boolean | null;
   workflow_json: {
     nodes?: AppNode[];
@@ -80,6 +89,14 @@ type PublicWorkflowCardRow = {
   edge_count: number | null;
   review_status?: WorkflowReviewStatus | null;
   review_count?: number | null;
+  review_required?: boolean | null;
+  review_warning?: boolean | null;
+  required_contributor_reviews?: number | null;
+  required_expert_reviews?: number | null;
+  contributor_review_count?: number | null;
+  expert_review_count?: number | null;
+  extra_contributor_reviews?: number | null;
+  extra_expert_reviews?: number | null;
 };
 
 export type WorkflowVersionSummary = {
@@ -100,6 +117,14 @@ export type WorkflowVersionSummary = {
   containsAdminCode?: boolean;
   reviewStatus?: WorkflowReviewStatus | null;
   reviewCount?: number;
+  reviewRequired?: boolean;
+  reviewWarning?: boolean;
+  requiredContributorReviews?: number;
+  requiredExpertReviews?: number;
+  contributorReviewCount?: number;
+  expertReviewCount?: number;
+  extraContributorReviews?: number;
+  extraExpertReviews?: number;
 };
 
 type WorkflowVersionRow = {
@@ -113,6 +138,14 @@ type WorkflowVersionRow = {
   workflow_json: WorkflowRow['workflow_json'];
   review_status?: WorkflowReviewStatus | null;
   review_count?: number | null;
+  review_required?: boolean | null;
+  review_warning?: boolean | null;
+  required_contributor_reviews?: number | null;
+  required_expert_reviews?: number | null;
+  contributor_review_count?: number | null;
+  expert_review_count?: number | null;
+  extra_contributor_reviews?: number | null;
+  extra_expert_reviews?: number | null;
   reviewed_by_me?: boolean | null;
   compiled_artifact?: CompiledWorkflowArtifact | null;
   artifact_status?: string | null;
@@ -149,11 +182,55 @@ const slugify = (value: string) =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 80) || `workflow-${Date.now()}`;
 
+const WORKFLOW_REVIEW_COLUMNS = 'review_status, review_count, review_required, review_warning, required_contributor_reviews, required_expert_reviews, contributor_review_count, expert_review_count, extra_contributor_reviews, extra_expert_reviews';
+const SUPABASE_HEALTH_TIMEOUT_MS = 1500;
+const WORKFLOW_INTERACTION_TIMEOUT_MS = 2000;
+
+const getReviewMetadata = (row: {
+  review_status?: WorkflowReviewStatus | null;
+  review_count?: number | null;
+  review_required?: boolean | null;
+  review_warning?: boolean | null;
+  required_contributor_reviews?: number | null;
+  required_expert_reviews?: number | null;
+  contributor_review_count?: number | null;
+  expert_review_count?: number | null;
+  extra_contributor_reviews?: number | null;
+  extra_expert_reviews?: number | null;
+  reviewed_by_me?: boolean | null;
+}): ReviewMetadata => ({
+  reviewStatus: row.review_status ?? 'approved',
+  reviewCount: row.review_count ?? 0,
+  reviewRequired: Boolean(row.review_required),
+  reviewWarning: Boolean(row.review_warning),
+  requiredContributorReviews: row.required_contributor_reviews ?? 0,
+  requiredExpertReviews: row.required_expert_reviews ?? 0,
+  contributorReviewCount: row.contributor_review_count ?? 0,
+  expertReviewCount: row.expert_review_count ?? 0,
+  extraContributorReviews: row.extra_contributor_reviews ?? 0,
+  extraExpertReviews: row.extra_expert_reviews ?? 0,
+  reviewedByMe: row.reviewed_by_me ?? undefined,
+});
+
+const fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs: number) => {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(timeout);
+  }
+};
+
 const rowToCard = (row: WorkflowRow): CommunityWorkflowCard => {
   const graphNodes = row.workflow_json?.nodes ?? [];
   const graphEdges = row.workflow_json?.edges ?? [];
   const tags = row.tags ?? [];
   const author = row.workflow_json?.meta?.authorName || FALLBACK_AUTHOR;
+  const review = getReviewMetadata(row);
 
   return {
     id: row.id,
@@ -168,8 +245,7 @@ const rowToCard = (row: WorkflowRow): CommunityWorkflowCard => {
     featuredTemplateIds: [],
     nodeCount: graphNodes.length,
     edgeCount: graphEdges.length,
-    reviewStatus: row.review_status ?? 'approved',
-    reviewCount: row.review_count ?? 0,
+    ...review,
     seoTitle: `${row.title} | Methmatica`,
     seoDescription: row.description || `${row.title} 的工作流頁面`,
   };
@@ -177,6 +253,7 @@ const rowToCard = (row: WorkflowRow): CommunityWorkflowCard => {
 
 const publicRowToCard = (row: PublicWorkflowCardRow): CommunityWorkflowCard => {
   const tags = row.tags ?? [];
+  const review = getReviewMetadata(row);
 
   return {
     id: row.id,
@@ -191,8 +268,7 @@ const publicRowToCard = (row: PublicWorkflowCardRow): CommunityWorkflowCard => {
     featuredTemplateIds: [],
     nodeCount: row.node_count ?? 0,
     edgeCount: row.edge_count ?? 0,
-    reviewStatus: row.review_status ?? 'approved',
-    reviewCount: row.review_count ?? 0,
+    ...review,
     seoTitle: `${row.title} | Methmatica`,
     seoDescription: row.summary || `${row.title} 的工作流頁面`,
   };
@@ -224,9 +300,7 @@ const rowToBlueprint = (row: WorkflowRow): WorkflowBlueprint => ({
     workflowVersion: row.current_version ?? undefined,
     ownerId: row.owner_id,
     authorName: row.workflow_json?.meta?.authorName || FALLBACK_AUTHOR,
-    reviewStatus: row.review_status ?? undefined,
-    reviewCount: row.review_count ?? undefined,
-    reviewedByMe: row.reviewed_by_me ?? undefined,
+    ...getReviewMetadata(row),
     artifactStatus: row.artifact_status ?? undefined,
     compilerVersion: row.compiler_version ?? undefined,
     runtimeVersion: row.runtime_version ?? undefined,
@@ -255,30 +329,39 @@ const versionRowToBlueprint = (version: WorkflowVersionRow, workflow: WorkflowRo
     workflowVersion: version.version,
     ownerId: workflow.owner_id,
     authorName: version.workflow_json?.meta?.authorName || FALLBACK_AUTHOR,
-    reviewStatus: version.review_status ?? undefined,
-    reviewCount: version.review_count ?? undefined,
-    reviewedByMe: version.reviewed_by_me ?? undefined,
+    ...getReviewMetadata(version),
     artifactStatus: version.artifact_status ?? undefined,
     compilerVersion: version.compiler_version ?? undefined,
     runtimeVersion: version.runtime_version ?? undefined,
   },
 });
 
-export async function listPublicWorkflows() {
-  if (!supabase) return [];
+export async function listPublicWorkflows(options?: { includeInteractions?: boolean; limit?: number }) {
+  if (!supabase || !supabaseConfig.url || !supabaseConfig.anonKey) return [];
+  const includeInteractions = options?.includeInteractions ?? true;
+  const params = new URLSearchParams({
+    select: `id,slug,title,summary,author,difficulty,visibility,tags,updated_at,node_count,edge_count,${WORKFLOW_REVIEW_COLUMNS.replaceAll(' ', '')}`,
+    order: 'updated_at.desc',
+  });
+  if (options?.limit) params.set('limit', String(options.limit));
 
-  const { data, error } = await withSupabaseTimeout(
-    supabase
-      .from('public_workflow_cards')
-      .select('id, slug, title, summary, author, difficulty, visibility, tags, updated_at, node_count, edge_count, review_status, review_count')
-      .order('updated_at', { ascending: false }),
-    'Loading public workflows'
+  const response = await withSupabaseTimeout(
+    fetch(`${supabaseConfig.url}/rest/v1/public_workflow_cards?${params.toString()}`, {
+      headers: {
+        apikey: supabaseConfig.anonKey,
+        Authorization: `Bearer ${supabaseConfig.anonKey}`,
+      },
+    }),
+    'Loading public workflows',
   );
 
-  if (error) throw error;
+  if (!response.ok) {
+    throw new Error(`Loading public workflows failed with HTTP ${response.status}`);
+  }
 
+  const data = await response.json();
   const cards = ((data ?? []) as PublicWorkflowCardRow[]).map(publicRowToCard);
-  if (cards.length === 0) return cards;
+  if (cards.length === 0 || !includeInteractions) return cards;
 
   const workflowIds = cards.map(card => card.id);
   let engagementByWorkflowId = new Map<string, WorkflowEngagementRow>();
@@ -288,9 +371,10 @@ export async function listPublicWorkflows() {
     const [engagementResult, sessionResult] = await Promise.all([
       withSupabaseTimeout(
         supabase.rpc('get_workflow_engagement', { p_workflow_ids: workflowIds }),
-        'Loading workflow engagement'
+        'Loading workflow engagement',
+        WORKFLOW_INTERACTION_TIMEOUT_MS,
       ),
-      withSupabaseTimeout(supabase.auth.getSession(), 'Loading current session'),
+      withSupabaseTimeout(supabase.auth.getSession(), 'Loading current session', WORKFLOW_INTERACTION_TIMEOUT_MS),
     ]);
 
     if (engagementResult.error) throw engagementResult.error;
@@ -305,7 +389,8 @@ export async function listPublicWorkflows() {
     if (currentUserId) {
       const myInteractionResult = await withSupabaseTimeout(
         supabase.rpc('get_my_workflow_interactions', { p_workflow_ids: workflowIds }),
-        'Loading my workflow interactions'
+        'Loading my workflow interactions',
+        WORKFLOW_INTERACTION_TIMEOUT_MS,
       );
       if (myInteractionResult.error) throw myInteractionResult.error;
       const myRows = (myInteractionResult.data ?? []) as MyWorkflowInteractionRow[];
@@ -339,7 +424,7 @@ export async function getWorkflowBlueprintFromSupabase(workflowId: string) {
   const { data, error } = await withSupabaseTimeout(
     supabase
       .from('workflows')
-      .select('id, owner_id, slug, title, description, tags, visibility, status, review_status, review_count, workflow_json, compiled_artifact, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, published_at, updated_at, created_at, current_version_id')
+      .select(`id, owner_id, slug, title, description, tags, visibility, status, ${WORKFLOW_REVIEW_COLUMNS}, workflow_json, compiled_artifact, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, published_at, updated_at, created_at, current_version_id`)
       .eq('id', workflowId)
       .maybeSingle(),
     'Opening workflow'
@@ -356,7 +441,7 @@ export async function getWorkflowBlueprintFromSupabaseByRef(workflowRef: string)
   const { data, error } = await withSupabaseTimeout(
     supabase
       .from('workflows')
-      .select('id, owner_id, slug, title, description, tags, visibility, status, review_status, review_count, workflow_json, compiled_artifact, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, published_at, updated_at, created_at, current_version_id')
+      .select(`id, owner_id, slug, title, description, tags, visibility, status, ${WORKFLOW_REVIEW_COLUMNS}, workflow_json, compiled_artifact, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, published_at, updated_at, created_at, current_version_id`)
       .or(`id.eq.${workflowRef},slug.eq.${workflowRef}`)
       .limit(1)
       .maybeSingle(),
@@ -385,7 +470,7 @@ export async function listWorkflowVersions(workflowId: string) {
   const { data, error } = await withSupabaseTimeout(
     supabase
       .from('workflow_versions')
-      .select('id, workflow_id, version, title, description, tags, visibility, review_status, review_count, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, published_at, created_at')
+      .select(`id, workflow_id, version, title, description, tags, visibility, ${WORKFLOW_REVIEW_COLUMNS}, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, published_at, created_at`)
       .eq('workflow_id', workflowId)
       .order('version', { ascending: false }),
     'Loading workflow versions'
@@ -410,8 +495,7 @@ export async function listWorkflowVersions(workflowId: string) {
     runtimeVersion: row.runtime_version,
     dependencyCount: row.dependency_manifest?.entries.length ?? 0,
     containsAdminCode: Boolean(row.contains_admin_code),
-    reviewStatus: row.review_status,
-    reviewCount: row.review_count ?? 0,
+    ...getReviewMetadata(row),
   }));
 }
 
@@ -421,7 +505,7 @@ export async function getWorkflowVersionBlueprintFromSupabase(workflowVersionId:
   const { data: versionData, error: versionError } = await withSupabaseTimeout(
     supabase
       .from('workflow_versions')
-      .select('id, workflow_id, version, title, description, tags, visibility, workflow_json, review_status, review_count, compiled_artifact, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, created_by, published_at, created_at')
+      .select(`id, workflow_id, version, title, description, tags, visibility, workflow_json, ${WORKFLOW_REVIEW_COLUMNS}, compiled_artifact, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, created_by, published_at, created_at`)
       .eq('id', workflowVersionId)
       .maybeSingle(),
     'Opening workflow version'
@@ -434,7 +518,7 @@ export async function getWorkflowVersionBlueprintFromSupabase(workflowVersionId:
   const { data: workflowData, error: workflowError } = await withSupabaseTimeout(
     supabase
       .from('workflows')
-      .select('id, owner_id, slug, title, description, tags, visibility, status, review_status, review_count, workflow_json, compiled_artifact, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, published_at, updated_at, created_at, current_version_id')
+      .select(`id, owner_id, slug, title, description, tags, visibility, status, ${WORKFLOW_REVIEW_COLUMNS}, workflow_json, compiled_artifact, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, published_at, updated_at, created_at, current_version_id`)
       .eq('id', version.workflow_id)
       .maybeSingle(),
     'Opening version workflow'
@@ -494,6 +578,14 @@ type ReviewWorkflowRow = {
   workflow_version_id: string | null;
   review_status: WorkflowReviewStatus;
   review_count: number;
+  review_required: boolean;
+  review_warning: boolean;
+  required_contributor_reviews: number;
+  required_expert_reviews: number;
+  contributor_review_count: number;
+  expert_review_count: number;
+  extra_contributor_reviews: number;
+  extra_expert_reviews: number;
   status: WorkflowStatus;
   reviewed_by_me: boolean;
 };
@@ -513,10 +605,59 @@ export async function reviewWorkflowInSupabase(workflowId: string) {
   return {
     workflowId: row.workflow_id,
     workflowVersionId: row.workflow_version_id,
-    reviewStatus: row.review_status,
-    reviewCount: row.review_count,
+    ...getReviewMetadata(row),
+    status: row.status,
+  };
+}
+
+export async function adminApproveWorkflowInSupabase(workflowId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { data, error } = await withSupabaseTimeout(
+    supabase
+      .rpc('admin_approve_workflow', { p_workflow_id: workflowId })
+      .single(),
+    'Approving workflow'
+  );
+
+  if (error) throw error;
+  const row = data as ReviewWorkflowRow;
+  return {
+    workflowId: row.workflow_id,
+    workflowVersionId: row.workflow_version_id,
+    ...getReviewMetadata(row),
     status: row.status,
     reviewedByMe: row.reviewed_by_me,
+  };
+}
+
+export async function requestExtraWorkflowReviewInSupabase(
+  workflowId: string,
+  extraContributors: number,
+  extraExperts: number,
+  reason?: string,
+) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { data, error } = await withSupabaseTimeout(
+    supabase
+      .rpc('request_extra_workflow_review', {
+        p_workflow_id: workflowId,
+        p_extra_contributors: extraContributors,
+        p_extra_experts: extraExperts,
+        p_reason: reason ?? null,
+      })
+      .single(),
+    'Requesting extra workflow review'
+  );
+
+  if (error) throw error;
+  const row = data as ReviewWorkflowRow;
+  return {
+    workflowId: row.workflow_id,
+    workflowVersionId: row.workflow_version_id,
+    ...getReviewMetadata(row),
+    status: row.status,
   };
 }
 
@@ -527,55 +668,50 @@ export async function runSupabaseHealthCheck() {
     ? Object.keys(window.localStorage).find((key) => key.startsWith(storageKeyPrefix) && key.endsWith(authTokenSuffix)) || null
     : null;
 
-  if (!supabase || !isSupabaseConfigured) {
+  if (!supabase || !isSupabaseConfigured || !supabaseConfig.url || !supabaseConfig.anonKey) {
     return {
       configured: false,
       storedSession: false,
       authApiReachable: false,
       workflowsReachable: false,
-      message: 'Supabase envs are missing.',
+      message: 'Supabase envs are missing. If .env.local exists, restart the Vite dev server so import.meta.env is refreshed.',
     };
   }
 
-  try {
-    const {
-      data: sessionData,
-      error: sessionError,
-    } = await withSupabaseTimeout(
-      supabase.auth.getSession(),
-      'Checking auth session'
-    );
+  const authUrl = `${supabaseConfig.url}/auth/v1/settings`;
+  const workflowsUrl = `${supabaseConfig.url}/rest/v1/workflows?select=id&limit=1`;
+  const headers = {
+    apikey: supabaseConfig.anonKey,
+    Authorization: `Bearer ${supabaseConfig.anonKey}`,
+  };
 
-    const authApiReachable = !sessionError;
+  const [authResult, workflowResult] = await Promise.allSettled([
+    fetchWithTimeout(authUrl, { headers }, SUPABASE_HEALTH_TIMEOUT_MS),
+    fetchWithTimeout(workflowsUrl, { headers }, SUPABASE_HEALTH_TIMEOUT_MS),
+  ]);
 
-    const { error: workflowError } = await withSupabaseTimeout(
-      supabase
-        .from('workflows')
-        .select('id', { count: 'exact', head: true }),
-      'Checking workflows table'
-    );
+  const authError = authResult.status === 'rejected'
+    ? authResult.reason
+    : authResult.value.ok ? null : new Error(`Auth API returned ${authResult.value.status}`);
+  const workflowError = workflowResult.status === 'rejected'
+    ? workflowResult.reason
+    : workflowResult.value.ok ? null : new Error(`Workflows table returned ${workflowResult.value.status}`);
+  const authApiReachable = !authError;
+  const workflowsReachable = !workflowError;
+  const messageParts = [
+    authError instanceof Error ? authError.message : authError?.message,
+    workflowError instanceof Error ? workflowError.message : workflowError?.message,
+  ].filter(Boolean);
 
-    const workflowsReachable = !workflowError;
-
-    return {
-      configured: true,
-      storedSession: Boolean(storedSessionKey),
-      authApiReachable,
-      workflowsReachable,
-      sessionUserId: sessionData.session?.user?.id ?? null,
-      storedSessionKey,
-      message: workflowError?.message || sessionError?.message || 'Supabase session and workflows table are ready.',
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Supabase health check failed.';
-    return {
-      configured: true,
-      storedSession: Boolean(storedSessionKey),
-      authApiReachable: false,
-      workflowsReachable: false,
-      sessionUserId: null,
-      storedSessionKey,
-      message,
-    };
-  }
+  return {
+    configured: true,
+    storedSession: Boolean(storedSessionKey),
+    authApiReachable,
+    workflowsReachable,
+    sessionUserId: null,
+    storedSessionKey,
+    message: messageParts.length > 0
+      ? messageParts.join(' · ')
+      : 'Supabase session and workflows table are ready.',
+  };
 }

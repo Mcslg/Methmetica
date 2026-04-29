@@ -25,3 +25,6 @@ Thumbs.db
 note.txt
 Note_merge.txt
 .agent/scratch/
+
+# Supabase CLI local state
+supabase/.temp/

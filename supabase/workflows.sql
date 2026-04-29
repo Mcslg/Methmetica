@@ -9,6 +9,14 @@ create table if not exists public.workflows (
   status text not null default 'draft' check (status in ('draft', 'pending_review', 'published', 'archived')),
   review_status text not null default 'unreviewed' check (review_status in ('unreviewed', 'approved')),
   review_count integer not null default 0,
+  review_required boolean not null default false,
+  review_warning boolean not null default false,
+  required_contributor_reviews integer not null default 0,
+  required_expert_reviews integer not null default 0,
+  contributor_review_count integer not null default 0,
+  expert_review_count integer not null default 0,
+  extra_contributor_reviews integer not null default 0,
+  extra_expert_reviews integer not null default 0,
   workflow_json jsonb not null default '{}'::jsonb,
   compiled_artifact jsonb,
   artifact_status text not null default 'legacy' check (artifact_status in ('legacy', 'ready', 'failed')),
@@ -31,6 +39,14 @@ create table if not exists public.workflow_versions (
   visibility text not null check (visibility in ('private', 'public', 'core')),
   review_status text not null default 'unreviewed' check (review_status in ('unreviewed', 'approved')),
   review_count integer not null default 0,
+  review_required boolean not null default false,
+  review_warning boolean not null default false,
+  required_contributor_reviews integer not null default 0,
+  required_expert_reviews integer not null default 0,
+  contributor_review_count integer not null default 0,
+  expert_review_count integer not null default 0,
+  extra_contributor_reviews integer not null default 0,
+  extra_expert_reviews integer not null default 0,
   workflow_json jsonb not null default '{}'::jsonb,
   compiled_artifact jsonb,
   artifact_status text not null default 'legacy' check (artifact_status in ('legacy', 'ready', 'failed')),
@@ -59,6 +75,14 @@ alter table public.workflows
 add column if not exists compiled_artifact jsonb,
 add column if not exists review_status text not null default 'unreviewed' check (review_status in ('unreviewed', 'approved')),
 add column if not exists review_count integer not null default 0,
+add column if not exists review_required boolean not null default false,
+add column if not exists review_warning boolean not null default false,
+add column if not exists required_contributor_reviews integer not null default 0,
+add column if not exists required_expert_reviews integer not null default 0,
+add column if not exists contributor_review_count integer not null default 0,
+add column if not exists expert_review_count integer not null default 0,
+add column if not exists extra_contributor_reviews integer not null default 0,
+add column if not exists extra_expert_reviews integer not null default 0,
 add column if not exists artifact_status text not null default 'legacy' check (artifact_status in ('legacy', 'ready', 'failed')),
 add column if not exists compiler_version text,
 add column if not exists runtime_version text,
@@ -69,6 +93,14 @@ alter table public.workflow_versions
 add column if not exists compiled_artifact jsonb,
 add column if not exists review_status text not null default 'unreviewed' check (review_status in ('unreviewed', 'approved')),
 add column if not exists review_count integer not null default 0,
+add column if not exists review_required boolean not null default false,
+add column if not exists review_warning boolean not null default false,
+add column if not exists required_contributor_reviews integer not null default 0,
+add column if not exists required_expert_reviews integer not null default 0,
+add column if not exists contributor_review_count integer not null default 0,
+add column if not exists expert_review_count integer not null default 0,
+add column if not exists extra_contributor_reviews integer not null default 0,
+add column if not exists extra_expert_reviews integer not null default 0,
 add column if not exists artifact_status text not null default 'legacy' check (artifact_status in ('legacy', 'ready', 'failed')),
 add column if not exists compiler_version text,
 add column if not exists runtime_version text,
@@ -76,11 +108,17 @@ add column if not exists dependency_manifest jsonb not null default '{"entries":
 add column if not exists contains_admin_code boolean not null default false;
 
 update public.workflows
-set review_status = 'approved', review_count = greatest(review_count, 3)
+set
+  review_status = 'approved',
+  review_count = greatest(review_count, 3),
+  contributor_review_count = greatest(contributor_review_count, greatest(review_count, 3))
 where status = 'published' and review_status = 'unreviewed';
 
 update public.workflow_versions
-set review_status = 'approved', review_count = greatest(review_count, 3)
+set
+  review_status = 'approved',
+  review_count = greatest(review_count, 3),
+  contributor_review_count = greatest(contributor_review_count, greatest(review_count, 3))
 where review_status = 'unreviewed'
   and exists (
     select 1
@@ -109,6 +147,45 @@ create table if not exists public.workflow_reviews (
 
 alter table public.workflow_reviews enable row level security;
 
+create table if not exists public.review_requests (
+  id uuid primary key default gen_random_uuid(),
+  target_type text not null check (target_type in ('workflow', 'node', 'core_page', 'update')),
+  target_id text not null,
+  workflow_id uuid references public.workflows(id) on delete cascade,
+  workflow_version_id uuid references public.workflow_versions(id) on delete cascade,
+  required boolean not null default false,
+  warning_if_unreviewed boolean not null default false,
+  required_contributor_reviews integer not null default 0,
+  required_expert_reviews integer not null default 0,
+  extra_contributor_reviews integer not null default 0,
+  extra_expert_reviews integer not null default 0,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  reason text,
+  requested_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (target_type, target_id, workflow_version_id)
+);
+
+create table if not exists public.reviews (
+  id uuid primary key default gen_random_uuid(),
+  review_request_id uuid not null references public.review_requests(id) on delete cascade,
+  reviewer_id uuid not null references auth.users(id) on delete cascade,
+  reviewer_role text not null check (reviewer_role in ('contributor', 'expert', 'trusted_editor', 'admin')),
+  review_kind text not null check (review_kind in ('contributor', 'expert')),
+  created_at timestamptz not null default now(),
+  unique (review_request_id, reviewer_id)
+);
+
+alter table public.review_requests enable row level security;
+alter table public.reviews enable row level security;
+
+create index if not exists review_requests_workflow_idx
+  on public.review_requests (workflow_id, workflow_version_id);
+
+create index if not exists reviews_request_kind_idx
+  on public.reviews (review_request_id, review_kind);
+
 create or replace function public.set_workflows_updated_at()
 returns trigger
 language plpgsql
@@ -131,13 +208,13 @@ on public.workflows
 for select
 to authenticated, anon
 using (
-  (status = 'published' and visibility = 'public')
+  (status = 'published' and visibility in ('public', 'core'))
   or owner_id = auth.uid()
   or exists (
     select 1
     from public.profiles editor_profile
     where editor_profile.id = auth.uid()
-      and editor_profile.role in ('contributor', 'trusted_editor', 'admin')
+      and editor_profile.role in ('contributor', 'expert', 'trusted_editor', 'admin')
       and (
         public.workflows.visibility = 'core'
         or public.workflows.status = 'pending_review'
@@ -224,13 +301,13 @@ using (
     from public.workflows w
     where w.id = public.workflow_versions.workflow_id
       and (
-        (w.status = 'published' and w.visibility = 'public')
+        (w.status = 'published' and w.visibility in ('public', 'core'))
         or w.owner_id = auth.uid()
         or exists (
           select 1
           from public.profiles editor_profile
           where editor_profile.id = auth.uid()
-            and editor_profile.role in ('contributor', 'trusted_editor', 'admin')
+            and editor_profile.role in ('contributor', 'expert', 'trusted_editor', 'admin')
             and (
               w.visibility = 'core'
               or w.status = 'pending_review'
@@ -257,7 +334,7 @@ using (
           select 1
           from public.profiles reviewer_profile
           where reviewer_profile.id = auth.uid()
-            and reviewer_profile.role in ('contributor', 'trusted_editor', 'admin')
+            and reviewer_profile.role in ('contributor', 'expert', 'trusted_editor', 'admin')
         )
       )
   )
@@ -266,6 +343,76 @@ using (
 drop policy if exists "workflow_reviews_insert_via_rpc" on public.workflow_reviews;
 create policy "workflow_reviews_insert_via_rpc"
 on public.workflow_reviews
+for insert
+to authenticated
+with check (false);
+
+drop policy if exists "review_requests_select_participants" on public.review_requests;
+create policy "review_requests_select_participants"
+on public.review_requests
+for select
+to authenticated
+using (
+  requested_by = auth.uid()
+  or exists (
+    select 1
+    from public.workflows w
+    where w.id = public.review_requests.workflow_id
+      and (
+        w.owner_id = auth.uid()
+        or w.status = 'published'
+        or exists (
+          select 1
+          from public.profiles reviewer_profile
+          where reviewer_profile.id = auth.uid()
+            and reviewer_profile.role in ('contributor', 'expert', 'trusted_editor', 'admin')
+        )
+      )
+  )
+);
+
+drop policy if exists "review_requests_insert_via_rpc" on public.review_requests;
+create policy "review_requests_insert_via_rpc"
+on public.review_requests
+for insert
+to authenticated
+with check (false);
+
+drop policy if exists "review_requests_update_via_rpc" on public.review_requests;
+create policy "review_requests_update_via_rpc"
+on public.review_requests
+for update
+to authenticated
+using (false)
+with check (false);
+
+drop policy if exists "reviews_select_participants" on public.reviews;
+create policy "reviews_select_participants"
+on public.reviews
+for select
+to authenticated
+using (
+  reviewer_id = auth.uid()
+  or exists (
+    select 1
+    from public.review_requests rr
+    join public.workflows w on w.id = rr.workflow_id
+    where rr.id = public.reviews.review_request_id
+      and (
+        w.owner_id = auth.uid()
+        or exists (
+          select 1
+          from public.profiles reviewer_profile
+          where reviewer_profile.id = auth.uid()
+            and reviewer_profile.role in ('contributor', 'expert', 'trusted_editor', 'admin')
+        )
+      )
+  )
+);
+
+drop policy if exists "reviews_insert_via_rpc" on public.reviews;
+create policy "reviews_insert_via_rpc"
+on public.reviews
 for insert
 to authenticated
 with check (false);
@@ -316,6 +463,14 @@ insert into public.workflow_versions (
   visibility,
   review_status,
   review_count,
+  review_required,
+  review_warning,
+  required_contributor_reviews,
+  required_expert_reviews,
+  contributor_review_count,
+  expert_review_count,
+  extra_contributor_reviews,
+  extra_expert_reviews,
   workflow_json,
   created_by,
   published_at,
@@ -330,6 +485,14 @@ select
   w.visibility,
   coalesce(w.review_status, 'approved'),
   coalesce(w.review_count, 3),
+  coalesce(w.review_required, false),
+  coalesce(w.review_warning, false),
+  coalesce(w.required_contributor_reviews, 0),
+  coalesce(w.required_expert_reviews, 0),
+  coalesce(w.contributor_review_count, coalesce(w.review_count, 0)),
+  coalesce(w.expert_review_count, 0),
+  coalesce(w.extra_contributor_reviews, 0),
+  coalesce(w.extra_expert_reviews, 0),
   w.workflow_json,
   w.owner_id,
   coalesce(w.published_at, w.created_at, now()),
@@ -356,6 +519,8 @@ where
   latest_version.workflow_id = w.id
   and w.current_version_id is null;
 
+drop function if exists public.publish_workflow_version(uuid, text, text, text[], text, text, jsonb, jsonb);
+
 create or replace function public.publish_workflow_version(
   p_workflow_id uuid,
   p_title text,
@@ -377,6 +542,14 @@ returns table (
   status text,
   review_status text,
   review_count integer,
+  review_required boolean,
+  review_warning boolean,
+  required_contributor_reviews integer,
+  required_expert_reviews integer,
+  contributor_review_count integer,
+  expert_review_count integer,
+  extra_contributor_reviews integer,
+  extra_expert_reviews integer,
   workflow_json jsonb,
   compiled_artifact jsonb,
   artifact_status text,
@@ -413,6 +586,10 @@ declare
   v_publish_status text;
   v_review_status text;
   v_review_count integer;
+  v_review_required boolean;
+  v_review_warning boolean;
+  v_required_contributor_reviews integer;
+  v_required_expert_reviews integer;
   v_is_admin boolean := false;
   v_can_publish_core boolean := false;
 begin
@@ -424,9 +601,20 @@ begin
     raise exception 'Unsupported workflow visibility: %', v_visibility;
   end if;
 
-  v_publish_status := case when v_visibility in ('public', 'core') then 'pending_review' else 'published' end;
+  v_publish_status := case
+    when v_visibility = 'core' then 'pending_review'
+    else 'published'
+  end;
   v_review_status := case when v_visibility in ('public', 'core') then 'unreviewed' else 'approved' end;
-  v_review_count := case when v_visibility in ('public', 'core') then 0 else 3 end;
+  v_review_count := 0;
+  v_review_required := v_visibility = 'core';
+  v_review_warning := false;
+  v_required_contributor_reviews := case
+    when v_visibility = 'core' then 1
+    when v_visibility = 'public' then 2
+    else 0
+  end;
+  v_required_expert_reviews := case when v_visibility = 'core' then 1 else 0 end;
 
   select exists (
     select 1
@@ -459,6 +647,14 @@ begin
       status,
       review_status,
       review_count,
+      review_required,
+      review_warning,
+      required_contributor_reviews,
+      required_expert_reviews,
+      contributor_review_count,
+      expert_review_count,
+      extra_contributor_reviews,
+      extra_expert_reviews,
       workflow_json,
       compiled_artifact,
       artifact_status,
@@ -478,6 +674,14 @@ begin
       v_publish_status,
       v_review_status,
       v_review_count,
+      v_review_required,
+      v_review_warning,
+      v_required_contributor_reviews,
+      v_required_expert_reviews,
+      0,
+      0,
+      0,
+      0,
       coalesce(p_workflow_json, '{}'::jsonb),
       p_compiled_artifact,
       v_artifact_status,
@@ -513,6 +717,14 @@ begin
       status = v_publish_status,
       review_status = v_review_status,
       review_count = v_review_count,
+      review_required = v_review_required,
+      review_warning = v_review_warning,
+      required_contributor_reviews = v_required_contributor_reviews,
+      required_expert_reviews = v_required_expert_reviews,
+      contributor_review_count = 0,
+      expert_review_count = 0,
+      extra_contributor_reviews = 0,
+      extra_expert_reviews = 0,
       workflow_json = coalesce(p_workflow_json, '{}'::jsonb),
       compiled_artifact = p_compiled_artifact,
       artifact_status = v_artifact_status,
@@ -530,6 +742,14 @@ begin
   from public.workflow_versions
   where public.workflow_versions.workflow_id = v_workflow.id;
 
+  delete from public.reviews existing_review
+  using public.review_requests existing_request
+  where existing_review.review_request_id = existing_request.id
+    and existing_request.workflow_id = v_workflow.id;
+
+  delete from public.review_requests
+  where public.review_requests.workflow_id = v_workflow.id;
+
   delete from public.workflow_reviews
   where public.workflow_reviews.workflow_id = v_workflow.id;
 
@@ -542,6 +762,14 @@ begin
     visibility,
     review_status,
     review_count,
+    review_required,
+    review_warning,
+    required_contributor_reviews,
+    required_expert_reviews,
+    contributor_review_count,
+    expert_review_count,
+    extra_contributor_reviews,
+    extra_expert_reviews,
     workflow_json,
     compiled_artifact,
     artifact_status,
@@ -561,6 +789,14 @@ begin
     v_visibility,
     v_review_status,
     v_review_count,
+    v_review_required,
+    v_review_warning,
+    v_required_contributor_reviews,
+    v_required_expert_reviews,
+    0,
+    0,
+    0,
+    0,
     coalesce(p_workflow_json, '{}'::jsonb),
     p_compiled_artifact,
     v_artifact_status,
@@ -578,6 +814,31 @@ begin
   where public.workflows.id = v_workflow.id
   returning * into v_workflow;
 
+  if v_visibility in ('public', 'core') then
+    insert into public.review_requests (
+      target_type,
+      target_id,
+      workflow_id,
+      workflow_version_id,
+      required,
+      warning_if_unreviewed,
+      required_contributor_reviews,
+      required_expert_reviews,
+      requested_by
+    )
+    values (
+      'workflow',
+      v_workflow.id::text,
+      v_workflow.id,
+      v_version_id,
+      v_review_required,
+      v_review_warning,
+      v_required_contributor_reviews,
+      v_required_expert_reviews,
+      v_user_id
+    );
+  end if;
+
   return query
   select
     v_workflow.id,
@@ -590,6 +851,14 @@ begin
     v_workflow.status,
     v_workflow.review_status,
     v_workflow.review_count,
+    v_workflow.review_required,
+    v_workflow.review_warning,
+    v_workflow.required_contributor_reviews,
+    v_workflow.required_expert_reviews,
+    v_workflow.contributor_review_count,
+    v_workflow.expert_review_count,
+    v_workflow.extra_contributor_reviews,
+    v_workflow.extra_expert_reviews,
     v_workflow.workflow_json,
     v_workflow.compiled_artifact,
     v_workflow.artifact_status,
@@ -608,6 +877,8 @@ $$;
 
 grant execute on function public.publish_workflow_version(uuid, text, text, text[], text, text, jsonb, jsonb) to authenticated;
 
+drop function if exists public.review_workflow(uuid);
+
 create or replace function public.review_workflow(
   p_workflow_id uuid
 )
@@ -616,6 +887,14 @@ returns table (
   workflow_version_id uuid,
   review_status text,
   review_count integer,
+  review_required boolean,
+  review_warning boolean,
+  required_contributor_reviews integer,
+  required_expert_reviews integer,
+  contributor_review_count integer,
+  expert_review_count integer,
+  extra_contributor_reviews integer,
+  extra_expert_reviews integer,
   status text,
   reviewed_by_me boolean
 )
@@ -626,23 +905,27 @@ as $$
 declare
   v_user_id uuid := auth.uid();
   v_workflow public.workflows%rowtype;
-  v_is_reviewer boolean := false;
-  v_count integer := 0;
+  v_request public.review_requests%rowtype;
+  v_reviewer_role text;
+  v_review_kind text;
+  v_contributor_count integer := 0;
+  v_expert_count integer := 0;
+  v_total_count integer := 0;
+  v_contributor_target integer := 0;
+  v_expert_target integer := 0;
+  v_is_approved boolean := false;
 begin
   if v_user_id is null then
     raise exception 'Authentication required';
   end if;
 
-  select exists (
-    select 1
-    from public.profiles reviewer_profile
-    where reviewer_profile.id = v_user_id
-      and reviewer_profile.role in ('contributor', 'trusted_editor', 'admin')
-  )
-  into v_is_reviewer;
+  select reviewer_profile.role
+  into v_reviewer_role
+  from public.profiles reviewer_profile
+  where reviewer_profile.id = v_user_id;
 
-  if not v_is_reviewer then
-    raise exception 'Only contributors can review workflows';
+  if v_reviewer_role not in ('contributor', 'expert', 'trusted_editor', 'admin') then
+    raise exception 'Only contributors or experts can review workflows';
   end if;
 
   select *
@@ -659,9 +942,57 @@ begin
     raise exception 'Workflow owners cannot review their own workflow';
   end if;
 
-  if v_workflow.status <> 'pending_review' or v_workflow.review_status = 'approved' then
+  if v_workflow.review_status = 'approved' then
     raise exception 'Workflow is not pending review';
   end if;
+
+  select *
+  into v_request
+  from public.review_requests
+  where public.review_requests.workflow_id = v_workflow.id
+    and public.review_requests.workflow_version_id = v_workflow.current_version_id
+    and public.review_requests.target_type = 'workflow'
+  for update;
+
+  if not found then
+    raise exception 'Workflow review request not found';
+  end if;
+
+  v_contributor_target := v_request.required_contributor_reviews + v_request.extra_contributor_reviews;
+  v_expert_target := v_request.required_expert_reviews + v_request.extra_expert_reviews;
+  v_review_kind := case
+    when v_reviewer_role in ('expert', 'trusted_editor', 'admin') and v_expert_target > 0 then 'expert'
+    else 'contributor'
+  end;
+
+  select count(*)::integer
+  into v_contributor_count
+  from public.reviews
+  where public.reviews.review_request_id = v_request.id
+    and public.reviews.review_kind = 'contributor';
+
+  select count(*)::integer
+  into v_expert_count
+  from public.reviews
+  where public.reviews.review_request_id = v_request.id
+    and public.reviews.review_kind = 'expert';
+
+  if v_review_kind = 'contributor' and v_contributor_count >= v_contributor_target then
+    raise exception 'Contributor reviews are already complete for this workflow';
+  end if;
+
+  if v_review_kind = 'expert' and v_expert_count >= v_expert_target then
+    raise exception 'Expert reviews are already complete for this workflow';
+  end if;
+
+  insert into public.reviews (
+    review_request_id,
+    reviewer_id,
+    reviewer_role,
+    review_kind
+  )
+  values (v_request.id, v_user_id, v_reviewer_role, v_review_kind)
+  on conflict (review_request_id, reviewer_id) do nothing;
 
   insert into public.workflow_reviews (
     workflow_id,
@@ -676,27 +1007,56 @@ begin
   on conflict (workflow_id, reviewer_id) do nothing;
 
   select count(*)::integer
-  into v_count
-  from public.workflow_reviews
-  where public.workflow_reviews.workflow_id = v_workflow.id;
+  into v_contributor_count
+  from public.reviews
+  where public.reviews.review_request_id = v_request.id
+    and public.reviews.review_kind = 'contributor';
+
+  select count(*)::integer
+  into v_expert_count
+  from public.reviews
+  where public.reviews.review_request_id = v_request.id
+    and public.reviews.review_kind = 'expert';
+
+  v_total_count := v_contributor_count + v_expert_count;
+  v_is_approved := v_contributor_count >= v_contributor_target and v_expert_count >= v_expert_target;
+
+  update public.review_requests
+  set
+    status = case when v_is_approved then 'approved' else 'pending' end,
+    updated_at = now()
+  where public.review_requests.id = v_request.id
+  returning * into v_request;
 
   update public.workflows
   set
-    review_count = v_count,
-    review_status = case when v_count >= 3 then 'approved' else 'unreviewed' end,
-    status = case when v_count >= 3 then 'published' else 'pending_review' end
+    review_count = v_total_count,
+    contributor_review_count = v_contributor_count,
+    expert_review_count = v_expert_count,
+    extra_contributor_reviews = v_request.extra_contributor_reviews,
+    extra_expert_reviews = v_request.extra_expert_reviews,
+    review_status = case when v_is_approved then 'approved' else 'unreviewed' end,
+    status = case when v_is_approved or not v_request.required then 'published' else 'pending_review' end
   where public.workflows.id = v_workflow.id
   returning * into v_workflow;
 
   update public.workflow_versions
   set
     review_count = v_workflow.review_count,
+    contributor_review_count = v_workflow.contributor_review_count,
+    expert_review_count = v_workflow.expert_review_count,
+    extra_contributor_reviews = v_workflow.extra_contributor_reviews,
+    extra_expert_reviews = v_workflow.extra_expert_reviews,
     review_status = v_workflow.review_status
   where public.workflow_versions.id = v_workflow.current_version_id;
 
   update public.node_templates
   set
     review_count = v_workflow.review_count,
+    contributor_review_count = v_workflow.contributor_review_count,
+    expert_review_count = v_workflow.expert_review_count,
+    extra_contributor_reviews = v_workflow.extra_contributor_reviews,
+    extra_expert_reviews = v_workflow.extra_expert_reviews,
     review_status = v_workflow.review_status
   where public.node_templates.source_workflow_id = v_workflow.id;
 
@@ -706,14 +1066,283 @@ begin
     v_workflow.current_version_id,
     v_workflow.review_status,
     v_workflow.review_count,
+    v_workflow.review_required,
+    v_workflow.review_warning,
+    v_workflow.required_contributor_reviews + v_workflow.extra_contributor_reviews,
+    v_workflow.required_expert_reviews + v_workflow.extra_expert_reviews,
+    v_workflow.contributor_review_count,
+    v_workflow.expert_review_count,
+    v_workflow.extra_contributor_reviews,
+    v_workflow.extra_expert_reviews,
     v_workflow.status,
     exists (
       select 1
-      from public.workflow_reviews my_review
-      where my_review.workflow_id = v_workflow.id
+      from public.reviews my_review
+      where my_review.review_request_id = v_request.id
         and my_review.reviewer_id = v_user_id
     );
 end;
 $$;
 
 grant execute on function public.review_workflow(uuid) to authenticated;
+
+create or replace function public.request_extra_workflow_review(
+  p_workflow_id uuid,
+  p_extra_contributors integer default 0,
+  p_extra_experts integer default 0,
+  p_reason text default null
+)
+returns table (
+  workflow_id uuid,
+  workflow_version_id uuid,
+  review_status text,
+  review_count integer,
+  review_required boolean,
+  review_warning boolean,
+  required_contributor_reviews integer,
+  required_expert_reviews integer,
+  contributor_review_count integer,
+  expert_review_count integer,
+  extra_contributor_reviews integer,
+  extra_expert_reviews integer,
+  status text,
+  reviewed_by_me boolean
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_workflow public.workflows%rowtype;
+  v_request public.review_requests%rowtype;
+  v_reviewer_role text;
+  v_extra_contributors integer := greatest(coalesce(p_extra_contributors, 0), 0);
+  v_extra_experts integer := greatest(coalesce(p_extra_experts, 0), 0);
+begin
+  if v_user_id is null then
+    raise exception 'Authentication required';
+  end if;
+
+  select reviewer_profile.role
+  into v_reviewer_role
+  from public.profiles reviewer_profile
+  where reviewer_profile.id = v_user_id;
+
+  if v_reviewer_role not in ('contributor', 'expert', 'trusted_editor', 'admin') then
+    raise exception 'Only contributors or experts can request more review';
+  end if;
+
+  if v_extra_contributors = 0 and v_extra_experts = 0 then
+    raise exception 'Request at least one additional contributor or expert review';
+  end if;
+
+  select *
+  into v_workflow
+  from public.workflows
+  where public.workflows.id = p_workflow_id
+  for update;
+
+  if not found then
+    raise exception 'Workflow not found';
+  end if;
+
+  select *
+  into v_request
+  from public.review_requests
+  where public.review_requests.workflow_id = v_workflow.id
+    and public.review_requests.workflow_version_id = v_workflow.current_version_id
+    and public.review_requests.target_type = 'workflow'
+  for update;
+
+  if not found then
+    raise exception 'Workflow review request not found';
+  end if;
+
+  update public.review_requests
+  set
+    extra_contributor_reviews = least(extra_contributor_reviews + v_extra_contributors, 2),
+    extra_expert_reviews = least(extra_expert_reviews + v_extra_experts, 1),
+    status = 'pending',
+    reason = nullif(trim(coalesce(p_reason, '')), ''),
+    updated_at = now()
+  where public.review_requests.id = v_request.id
+  returning * into v_request;
+
+  update public.workflows
+  set
+    review_status = 'unreviewed',
+    status = case when v_request.required then 'pending_review' else 'published' end,
+    extra_contributor_reviews = v_request.extra_contributor_reviews,
+    extra_expert_reviews = v_request.extra_expert_reviews
+  where public.workflows.id = v_workflow.id
+  returning * into v_workflow;
+
+  update public.workflow_versions
+  set
+    review_status = v_workflow.review_status,
+    extra_contributor_reviews = v_workflow.extra_contributor_reviews,
+    extra_expert_reviews = v_workflow.extra_expert_reviews
+  where public.workflow_versions.id = v_workflow.current_version_id;
+
+  update public.node_templates
+  set
+    review_status = v_workflow.review_status,
+    extra_contributor_reviews = v_workflow.extra_contributor_reviews,
+    extra_expert_reviews = v_workflow.extra_expert_reviews
+  where public.node_templates.source_workflow_id = v_workflow.id;
+
+  return query
+  select
+    v_workflow.id,
+    v_workflow.current_version_id,
+    v_workflow.review_status,
+    v_workflow.review_count,
+    v_workflow.review_required,
+    v_workflow.review_warning,
+    v_workflow.required_contributor_reviews + v_workflow.extra_contributor_reviews,
+    v_workflow.required_expert_reviews + v_workflow.extra_expert_reviews,
+    v_workflow.contributor_review_count,
+    v_workflow.expert_review_count,
+    v_workflow.extra_contributor_reviews,
+    v_workflow.extra_expert_reviews,
+    v_workflow.status,
+    exists (
+      select 1
+      from public.reviews my_review
+      join public.review_requests rr on rr.id = my_review.review_request_id
+      where rr.workflow_id = v_workflow.id
+        and rr.workflow_version_id = v_workflow.current_version_id
+        and my_review.reviewer_id = v_user_id
+    );
+end;
+$$;
+
+grant execute on function public.request_extra_workflow_review(uuid, integer, integer, text) to authenticated;
+
+create or replace function public.admin_approve_workflow(
+  p_workflow_id uuid
+)
+returns table (
+  workflow_id uuid,
+  workflow_version_id uuid,
+  review_status text,
+  review_count integer,
+  review_required boolean,
+  review_warning boolean,
+  required_contributor_reviews integer,
+  required_expert_reviews integer,
+  contributor_review_count integer,
+  expert_review_count integer,
+  extra_contributor_reviews integer,
+  extra_expert_reviews integer,
+  status text,
+  reviewed_by_me boolean
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_workflow public.workflows%rowtype;
+  v_request public.review_requests%rowtype;
+  v_is_admin boolean := false;
+  v_contributor_target integer := 0;
+  v_expert_target integer := 0;
+begin
+  if v_user_id is null then
+    raise exception 'Authentication required';
+  end if;
+
+  select exists (
+    select 1
+    from public.profiles admin_profile
+    where admin_profile.id = v_user_id
+      and admin_profile.role = 'admin'
+  )
+  into v_is_admin;
+
+  if not v_is_admin then
+    raise exception 'Only admins can approve workflows';
+  end if;
+
+  select *
+  into v_workflow
+  from public.workflows
+  where public.workflows.id = p_workflow_id
+  for update;
+
+  if not found then
+    raise exception 'Workflow not found';
+  end if;
+
+  select *
+  into v_request
+  from public.review_requests
+  where public.review_requests.workflow_id = v_workflow.id
+    and public.review_requests.workflow_version_id = v_workflow.current_version_id
+    and public.review_requests.target_type = 'workflow'
+  for update;
+
+  if found then
+    v_contributor_target := v_request.required_contributor_reviews + v_request.extra_contributor_reviews;
+    v_expert_target := v_request.required_expert_reviews + v_request.extra_expert_reviews;
+
+    update public.review_requests
+    set
+      status = 'approved',
+      updated_at = now()
+    where public.review_requests.id = v_request.id
+    returning * into v_request;
+  else
+    v_contributor_target := v_workflow.required_contributor_reviews + v_workflow.extra_contributor_reviews;
+    v_expert_target := v_workflow.required_expert_reviews + v_workflow.extra_expert_reviews;
+  end if;
+
+  update public.workflows
+  set
+    review_count = v_contributor_target + v_expert_target,
+    contributor_review_count = v_contributor_target,
+    expert_review_count = v_expert_target,
+    review_status = 'approved',
+    status = 'published'
+  where public.workflows.id = v_workflow.id
+  returning * into v_workflow;
+
+  update public.workflow_versions
+  set
+    review_count = v_workflow.review_count,
+    contributor_review_count = v_workflow.contributor_review_count,
+    expert_review_count = v_workflow.expert_review_count,
+    review_status = v_workflow.review_status
+  where public.workflow_versions.id = v_workflow.current_version_id;
+
+  update public.node_templates
+  set
+    review_count = v_workflow.review_count,
+    contributor_review_count = v_workflow.contributor_review_count,
+    expert_review_count = v_workflow.expert_review_count,
+    review_status = v_workflow.review_status
+  where public.node_templates.source_workflow_id = v_workflow.id;
+
+  return query
+  select
+    v_workflow.id,
+    v_workflow.current_version_id,
+    v_workflow.review_status,
+    v_workflow.review_count,
+    v_workflow.review_required,
+    v_workflow.review_warning,
+    v_workflow.required_contributor_reviews + v_workflow.extra_contributor_reviews,
+    v_workflow.required_expert_reviews + v_workflow.extra_expert_reviews,
+    v_workflow.contributor_review_count,
+    v_workflow.expert_review_count,
+    v_workflow.extra_contributor_reviews,
+    v_workflow.extra_expert_reviews,
+    v_workflow.status,
+    false;
+end;
+$$;
+
+grant execute on function public.admin_approve_workflow(uuid) to authenticated;

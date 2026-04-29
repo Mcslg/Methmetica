@@ -34,6 +34,14 @@ export type SupabaseNodeTemplateRow = {
   visibility: 'community' | 'core';
   review_status?: 'unreviewed' | 'approved';
   review_count?: number;
+  review_required?: boolean;
+  review_warning?: boolean;
+  required_contributor_reviews?: number;
+  required_expert_reviews?: number;
+  contributor_review_count?: number;
+  expert_review_count?: number;
+  extra_contributor_reviews?: number;
+  extra_expert_reviews?: number;
   version: string;
   payload: Record<string, unknown>;
   updated_at: string;

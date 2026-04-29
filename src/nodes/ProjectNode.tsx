@@ -365,6 +365,14 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     handles: CustomHandle[];
     reviewStatus: 'unreviewed' | 'approved';
     reviewCount: number;
+    reviewRequired: boolean;
+    reviewWarning: boolean;
+    requiredContributorReviews: number;
+    requiredExpertReviews: number;
+    contributorReviewCount: number;
+    expertReviewCount: number;
+    extraContributorReviews: number;
+    extraExpertReviews: number;
     reviewedByMe: boolean;
   }>) => {
     updateNodeData(id, patch, { skipGraphEval: true });
@@ -707,6 +715,14 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                 supabaseWorkflowId: data.supabaseWorkflowId,
                 reviewStatus: 'unreviewed' as const,
                 reviewCount: 0,
+                reviewRequired: localVisibility === 'core',
+                reviewWarning: localVisibility !== 'core',
+                requiredContributorReviews: localVisibility === 'core' ? 1 : 2,
+                requiredExpertReviews: localVisibility === 'core' ? 1 : 0,
+                contributorReviewCount: 0,
+                expertReviewCount: 0,
+                extraContributorReviews: 0,
+                extraExpertReviews: 0,
                 reviewedByMe: false,
               },
             }
@@ -757,8 +773,18 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         supabaseWorkflowId: blueprint.card.id,
         reviewStatus: blueprint.meta?.reviewStatus ?? 'unreviewed',
         reviewCount: blueprint.meta?.reviewCount ?? 0,
+        reviewRequired: blueprint.meta?.reviewRequired ?? (localVisibility === 'core'),
+        reviewWarning: blueprint.meta?.reviewWarning ?? (localVisibility !== 'core'),
+        requiredContributorReviews: blueprint.meta?.requiredContributorReviews ?? (localVisibility === 'core' ? 1 : 2),
+        requiredExpertReviews: blueprint.meta?.requiredExpertReviews ?? (localVisibility === 'core' ? 1 : 0),
+        contributorReviewCount: blueprint.meta?.contributorReviewCount ?? 0,
+        expertReviewCount: blueprint.meta?.expertReviewCount ?? 0,
+        extraContributorReviews: blueprint.meta?.extraContributorReviews ?? 0,
+        extraExpertReviews: blueprint.meta?.extraExpertReviews ?? 0,
         reviewedByMe: false,
-        publishStatus: `已送出 "${publishedTemplate.title}"，目前未審核。需要 3 位貢獻者審核後才會開放使用。`,
+        publishStatus: localVisibility === 'core'
+          ? `已送出 "${publishedTemplate.title}"，核心 workflow 需要 1 位貢獻者與 1 位專家審核後才會開放。`
+          : `已發布 "${publishedTemplate.title}"，目前未驗證；2 位貢獻者審核後會標記 verified。`,
       });
       clearPublicWorkflowEdit(blueprint.card.id, effectiveUser.id);
       syncLinkedTemplateNode(publishedTemplate, localVisibility);
@@ -774,6 +800,127 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     }
   };
 
+  const handlePublishWorkflowOnly = React.useCallback(async () => {
+    setIsPublishing(true);
+    try {
+      if (!user) {
+        updateProjectData({
+          publishStatus: '先登入，才能發布 workflow。',
+        });
+        return;
+      }
+
+      let effectiveUser = user;
+      const fetchedRole = await getUserRole(user.id);
+      if (fetchedRole !== user.role) {
+        effectiveUser = { ...user, role: fetchedRole };
+        setUser(effectiveUser);
+      }
+
+      if (localVisibility === 'core' && !['trusted_editor', 'admin'].includes(fetchedRole)) {
+        updateProjectData({
+          publishStatus: '只有 trusted_editor 或 admin 能發布 core workflow。先改成 public，或提升身份後再發布。',
+        });
+        return;
+      }
+
+      const state = useStore.getState();
+      const hasCodeNode = state.nodes.some(node => node.type === 'codeNode');
+      if (hasCodeNode && fetchedRole !== 'admin') {
+        updateProjectData({
+          publishStatus: '只有 admin 可發布含 CodeNode 的 workflow。',
+        });
+        return;
+      }
+
+      const title = (localName || data.label || 'Untitled Workflow').trim() || 'Untitled Workflow';
+      const description = localDesc || data.description || '';
+      const tags = parseTags(localTags);
+      const publishedNodes = state.nodes.map(node => (
+        node.id === id
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                label: title,
+                description,
+                tags,
+                visibility: localVisibility,
+                supabaseWorkflowId: data.supabaseWorkflowId,
+                reviewStatus: 'unreviewed' as const,
+                reviewCount: 0,
+                reviewRequired: localVisibility === 'core',
+                reviewWarning: false,
+                requiredContributorReviews: localVisibility === 'core' ? 1 : 2,
+                requiredExpertReviews: localVisibility === 'core' ? 1 : 0,
+                contributorReviewCount: 0,
+                expertReviewCount: 0,
+                extraContributorReviews: 0,
+                extraExpertReviews: 0,
+                reviewedByMe: false,
+              },
+            }
+          : node
+      ));
+
+      const blueprint = await publishWorkflowToSupabase({
+        id: data.supabaseWorkflowId,
+        title,
+        description,
+        tags,
+        visibility: localVisibility,
+        nodes: publishedNodes,
+        edges: state.edges,
+        author: effectiveUser,
+      });
+
+      updateProjectData({
+        label: title,
+        description,
+        tags,
+        visibility: localVisibility,
+        supabaseWorkflowId: blueprint.card.id,
+        reviewStatus: blueprint.meta?.reviewStatus ?? 'unreviewed',
+        reviewCount: blueprint.meta?.reviewCount ?? 0,
+        reviewRequired: blueprint.meta?.reviewRequired ?? (localVisibility === 'core'),
+        reviewWarning: blueprint.meta?.reviewWarning ?? false,
+        requiredContributorReviews: blueprint.meta?.requiredContributorReviews ?? (localVisibility === 'core' ? 1 : 2),
+        requiredExpertReviews: blueprint.meta?.requiredExpertReviews ?? (localVisibility === 'core' ? 1 : 0),
+        contributorReviewCount: blueprint.meta?.contributorReviewCount ?? 0,
+        expertReviewCount: blueprint.meta?.expertReviewCount ?? 0,
+        extraContributorReviews: blueprint.meta?.extraContributorReviews ?? 0,
+        extraExpertReviews: blueprint.meta?.extraExpertReviews ?? 0,
+        reviewedByMe: false,
+        publishStatus: localVisibility === 'core'
+          ? `已送出 workflow "${title}"，核心 workflow 需要 1 位貢獻者與 1 位專家審核後才會開放。`
+          : `已發布 workflow "${title}"，目前未驗證；2 位貢獻者審核後會標記 verified。`,
+      });
+      clearPublicWorkflowEdit(blueprint.card.id, effectiveUser.id);
+      setTimeout(() => markCurrentGraphSaved(), 0);
+    } catch (error) {
+      console.error('Failed to publish workflow only', error);
+      const message = error instanceof Error ? error.message : '發布失敗';
+      updateProjectData({
+        publishStatus: `發布失敗：${message}`,
+      });
+    } finally {
+      setIsPublishing(false);
+    }
+  }, [
+    data.description,
+    data.label,
+    data.supabaseWorkflowId,
+    id,
+    localDesc,
+    localName,
+    localTags,
+    localVisibility,
+    markCurrentGraphSaved,
+    setUser,
+    updateProjectData,
+    user,
+  ]);
+
   React.useEffect(() => {
     const handleSidebarPublish = (event: Event) => {
       const detail = (event as CustomEvent<{ projectNodeId?: string }>).detail;
@@ -787,6 +934,18 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     window.addEventListener('publish-project-template', handleSidebarPublish);
     return () => window.removeEventListener('publish-project-template', handleSidebarPublish);
   }, [data.builderDraft, handlePublish, id, isPublishing, localBuilderDraft]);
+
+  React.useEffect(() => {
+    const handleSidebarPublishWorkflow = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectNodeId?: string }>).detail;
+      if (detail?.projectNodeId && detail.projectNodeId !== id) return;
+      if (isPublishing) return;
+      void handlePublishWorkflowOnly();
+    };
+
+    window.addEventListener('publish-project-workflow', handleSidebarPublishWorkflow);
+    return () => window.removeEventListener('publish-project-workflow', handleSidebarPublishWorkflow);
+  }, [handlePublishWorkflowOnly, id, isPublishing]);
 
   React.useEffect(() => {
     const incoming = stripLegacyInterfaceBlocks(data.builderDraft as CommunityNodeTemplate | undefined);

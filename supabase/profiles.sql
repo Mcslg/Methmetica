@@ -3,7 +3,7 @@ create table if not exists public.profiles (
   email text not null unique,
   display_name text,
   avatar_url text,
-  role text not null default 'user' check (role in ('user', 'contributor', 'trusted_editor', 'admin')),
+  role text not null default 'user' check (role in ('user', 'contributor', 'expert', 'trusted_editor', 'admin')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -14,7 +14,7 @@ do $$
 begin
   alter table public.profiles drop constraint if exists profiles_role_check;
   alter table public.profiles
-    add constraint profiles_role_check check (role in ('user', 'contributor', 'trusted_editor', 'admin'));
+    add constraint profiles_role_check check (role in ('user', 'contributor', 'expert', 'trusted_editor', 'admin'));
 end $$;
 
 create or replace function public.set_profiles_updated_at()

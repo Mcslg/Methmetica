@@ -10,6 +10,8 @@ export function WorkflowHeader() {
 
   const title = projectNode.data.label || 'Untitled Workflow';
   const visibility = projectNode.data.visibility || 'private';
+  const reviewStatus = projectNode.data.reviewStatus;
+  const isUnverified = visibility !== 'private' && reviewStatus === 'unreviewed';
   const ownerId = projectNode.data.ownerId;
   const authorName = projectNode.data.authorName;
   const isPublicSource = projectNode.data.workflowSource === 'public' || projectNode.data.readOnlyPreview;
@@ -47,8 +49,26 @@ export function WorkflowHeader() {
         <span style={{ fontSize: '0.72rem', color: 'var(--text-sub)', lineHeight: 1.4 }}>
           {shouldShowAuthor ? `by ${authorName} · ` : ''}
           {String(visibility).toUpperCase()}
+          {isUnverified ? ' · 未驗證' : ''}
         </span>
       </div>
+      {isUnverified && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'rgba(251, 191, 36, 0.14)',
+          border: '1px solid rgba(251, 191, 36, 0.38)',
+          borderRadius: '12px',
+          padding: '2px 8px',
+          fontSize: '0.72rem',
+          fontWeight: 700,
+          color: '#fbbf24',
+          whiteSpace: 'nowrap',
+        }} title="此 workflow 尚未通過社群審核">
+          未驗證
+        </div>
+      )}
       <div style={{
         display: 'flex',
         alignItems: 'center',

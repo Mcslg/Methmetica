@@ -6,7 +6,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import * as driveService from '../utils/googleDriveService';
 import LogoIcon from '../assets/icon.svg';
 import { getCommunityWorkflowBlueprint, publicCommunityWorkflows } from '../community/catalog';
-import type { CommunityWorkflowCard } from '../community/types';
+import type { CommunityWorkflowCard, ReviewMetadata } from '../community/types';
 import { isSupabaseConfigured } from '../integrations/supabase/client';
 import { signInWithGoogle, signOutSupabase } from '../integrations/supabase/auth';
 import {
@@ -30,7 +30,7 @@ type CommunitySortMode = 'recent' | 'popular';
 
 const annotatePublicWorkflowNodes = (
   nodes: AppNode[],
-  meta?: { ownerId?: string; authorName?: string; reviewStatus?: 'unreviewed' | 'approved'; reviewCount?: number; reviewedByMe?: boolean },
+  meta?: { ownerId?: string; authorName?: string } & ReviewMetadata,
 ) => nodes.map(node => (
   node.type === 'projectNode'
     ? {
@@ -43,6 +43,14 @@ const annotatePublicWorkflowNodes = (
           authorName: meta?.authorName ?? node.data.authorName,
           reviewStatus: meta?.reviewStatus ?? node.data.reviewStatus,
           reviewCount: meta?.reviewCount ?? node.data.reviewCount,
+          reviewRequired: meta?.reviewRequired ?? node.data.reviewRequired,
+          reviewWarning: meta?.reviewWarning ?? node.data.reviewWarning,
+          requiredContributorReviews: meta?.requiredContributorReviews ?? node.data.requiredContributorReviews,
+          requiredExpertReviews: meta?.requiredExpertReviews ?? node.data.requiredExpertReviews,
+          contributorReviewCount: meta?.contributorReviewCount ?? node.data.contributorReviewCount,
+          expertReviewCount: meta?.expertReviewCount ?? node.data.expertReviewCount,
+          extraContributorReviews: meta?.extraContributorReviews ?? node.data.extraContributorReviews,
+          extraExpertReviews: meta?.extraExpertReviews ?? node.data.extraExpertReviews,
           reviewedByMe: meta?.reviewedByMe ?? node.data.reviewedByMe,
         },
       }
@@ -88,16 +96,11 @@ export function Dashboard() {
   } | null>(null);
 
   useEffect(() => {
-    async function init() {
-      try {
-        await driveService.initGapi();
-        await driveService.initGis(user?.email);
-      } catch (err) {
-        console.error('Failed to initialize Google SDKs', err);
-      }
+    if (!user) {
+      setDriveConnected(false);
+      setWorkflowList([]);
     }
-    init();
-  }, [user?.email]);
+  }, [setDriveConnected, setWorkflowList, user]);
 
   const refreshDriveUserInfo = useCallback(async (token: string) => {
     try {
@@ -130,43 +133,6 @@ export function Dashboard() {
   useEffect(() => {
     let isCancelled = false;
 
-    async function restoreDriveSession() {
-      if (!user) {
-        setDriveConnected(false);
-        setWorkflowList([]);
-        return;
-      }
-
-      try {
-        const token = await driveService.trySilentAuth();
-        if (!token || isCancelled) {
-          setDriveConnected(false);
-          return;
-        }
-
-        await refreshDriveUserInfo(token);
-        if (isCancelled) return;
-
-        setDriveConnected(true);
-        await refreshFiles();
-      } catch (err) {
-        if (!isCancelled) {
-          console.error('Failed to restore Drive session', err);
-          setDriveConnected(false);
-        }
-      }
-    }
-
-    restoreDriveSession();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [refreshDriveUserInfo, refreshFiles, setDriveConnected, setWorkflowList, user]);
-
-  useEffect(() => {
-    let isCancelled = false;
-
     async function loadPublicWorkflows() {
       if (!isSupabaseConfigured) {
         setPublicWorkflows(publicCommunityWorkflows);
@@ -177,12 +143,19 @@ export function Dashboard() {
       setIsLoadingPublicWorkflows(true);
       setPublicWorkflowError(null);
       try {
-        const [workflows, nodeTemplates] = await Promise.all([
-          listPublicWorkflows(),
-          listPublicNodeTemplates(),
-        ]);
+        const workflows = await listPublicWorkflows({ includeInteractions: false, limit: 48 });
         if (!isCancelled) {
           setPublicWorkflows(workflows);
+          setIsLoadingPublicWorkflows(false);
+        }
+
+        const [workflowsWithInteractions, nodeTemplates] = await Promise.all([
+          listPublicWorkflows({ includeInteractions: true, limit: 48 }),
+          listPublicNodeTemplates(),
+        ]);
+
+        if (!isCancelled) {
+          setPublicWorkflows(workflowsWithInteractions);
           const currentTemplates = useStore.getState().communityTemplates;
           setCommunityTemplates([
             ...nodeTemplates,
@@ -230,6 +203,7 @@ export function Dashboard() {
     if (!user) return;
     const isSilent = typeof silent === 'boolean' ? silent : false;
     try {
+      await driveService.ensureDriveReady(user.email);
       const token = await driveService.authenticate(isSilent);
       await refreshDriveUserInfo(token);
       setDriveConnected(true);
@@ -499,25 +473,25 @@ export function Dashboard() {
 
         {import.meta.env.DEV && (
           <section className="supabase-health-panel">
-            <div className={`health-chip ${supabaseHealth?.configured ? 'ok' : 'warn'}`}>
+            <div className={`health-chip ${!supabaseHealth ? '' : supabaseHealth.configured ? 'ok' : 'warn'}`}>
               <span>Supabase config</span>
-              <strong>{supabaseHealth?.configured ? 'ready' : 'missing'}</strong>
+              <strong>{!supabaseHealth ? 'checking' : supabaseHealth.configured ? 'ready' : 'missing'}</strong>
             </div>
-            <div className={`health-chip ${supabaseHealth?.storedSession ? 'ok' : 'warn'}`}>
+            <div className={`health-chip ${!supabaseHealth ? '' : supabaseHealth.storedSession ? 'ok' : 'warn'}`}>
               <span>Stored session</span>
-              <strong>{supabaseHealth?.storedSession ? 'present' : 'missing'}</strong>
+              <strong>{!supabaseHealth ? 'checking' : supabaseHealth.storedSession ? 'present' : 'missing'}</strong>
             </div>
             <div className={`health-chip ${user ? 'ok' : 'warn'}`}>
               <span>UI user</span>
               <strong>{user ? 'present' : 'missing'}</strong>
             </div>
-            <div className={`health-chip ${supabaseHealth?.authApiReachable ? 'ok' : 'warn'}`}>
+            <div className={`health-chip ${!supabaseHealth ? '' : supabaseHealth.authApiReachable ? 'ok' : 'warn'}`}>
               <span>Auth API</span>
-              <strong>{supabaseHealth?.authApiReachable ? 'reachable' : 'not ready'}</strong>
+              <strong>{!supabaseHealth ? 'checking' : supabaseHealth.authApiReachable ? 'reachable' : 'not ready'}</strong>
             </div>
-            <div className={`health-chip ${supabaseHealth?.workflowsReachable ? 'ok' : 'warn'}`}>
+            <div className={`health-chip ${!supabaseHealth ? '' : supabaseHealth.workflowsReachable ? 'ok' : 'warn'}`}>
               <span>Workflows table</span>
-              <strong>{supabaseHealth?.workflowsReachable ? 'reachable' : 'not ready'}</strong>
+              <strong>{!supabaseHealth ? 'checking' : supabaseHealth.workflowsReachable ? 'reachable' : 'not ready'}</strong>
             </div>
             <div className="health-message">
               {supabaseHealth?.message || 'Checking Supabase connection...'}
@@ -610,7 +584,9 @@ export function Dashboard() {
                     <Icons.Languages size={20} />
                   </div>
                   <span className={`status-pill ${workflow.reviewStatus === 'unreviewed' ? 'review' : workflow.visibility}`}>
-                    {workflow.reviewStatus === 'unreviewed' ? `review ${workflow.reviewCount ?? 0}/3` : workflow.visibility}
+                    {workflow.reviewStatus === 'unreviewed'
+                      ? `review ${workflow.contributorReviewCount ?? workflow.reviewCount ?? 0}/${workflow.requiredContributorReviews ?? 0}${workflow.requiredExpertReviews ? ` + expert ${workflow.expertReviewCount ?? 0}/${workflow.requiredExpertReviews}` : ''}`
+                      : workflow.visibility}
                   </span>
                 </div>
                 <div className="card-metrics">

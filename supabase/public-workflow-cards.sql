@@ -1,3 +1,5 @@
+drop view if exists public.public_workflow_cards;
+
 create or replace view public.public_workflow_cards
 with (security_invoker = true)
 as
@@ -13,6 +15,14 @@ select
   w.updated_at,
   w.review_status,
   w.review_count,
+  w.review_required,
+  w.review_warning,
+  w.required_contributor_reviews,
+  w.required_expert_reviews,
+  w.contributor_review_count,
+  w.expert_review_count,
+  w.extra_contributor_reviews,
+  w.extra_expert_reviews,
   coalesce(jsonb_array_length(w.workflow_json -> 'nodes'), 0) as node_count,
   coalesce(jsonb_array_length(w.workflow_json -> 'edges'), 0) as edge_count
 from public.workflows w
@@ -24,7 +34,7 @@ where
       select 1
       from public.profiles reviewer_profile
       where reviewer_profile.id = auth.uid()
-        and reviewer_profile.role in ('contributor', 'trusted_editor', 'admin')
+        and reviewer_profile.role in ('contributor', 'expert', 'trusted_editor', 'admin')
         and w.status = 'pending_review'
     )
   );

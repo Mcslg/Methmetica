@@ -134,6 +134,14 @@ export type NodeData = {
     workflowVersion?: number;
     reviewStatus?: 'unreviewed' | 'approved';
     reviewCount?: number;
+    reviewRequired?: boolean;
+    reviewWarning?: boolean;
+    requiredContributorReviews?: number;
+    requiredExpertReviews?: number;
+    contributorReviewCount?: number;
+    expertReviewCount?: number;
+    extraContributorReviews?: number;
+    extraExpertReviews?: number;
     reviewedByMe?: boolean;
      visibility?: WorkflowVisibility;
     autoRun?: boolean; // For nodes that can toggle automatic execution

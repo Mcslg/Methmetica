@@ -11,8 +11,10 @@ import { forkWorkflowToLocalDraft } from '../utils/workflowFork';
 import { deleteLocalDraft } from '../utils/localDraftService';
 import { setWorkflowInteraction } from '../integrations/supabase/workflowInteractions';
 import {
+    adminApproveWorkflowInSupabase,
     getWorkflowVersionBlueprintFromSupabase,
     listWorkflowVersions,
+    requestExtraWorkflowReviewInSupabase,
     reviewWorkflowInSupabase,
     type WorkflowVersionSummary,
 } from '../integrations/supabase/workflows';
@@ -37,12 +39,22 @@ export function Sidebar() {
     const hasBuilderDraft = Boolean(projectRoot?.data.builderDraft);
     const hasPublishedTemplate = Boolean(projectRoot?.data.hasPublishedTemplate || projectRoot?.data.supabaseWorkflowId);
     const isCurrentUserOwner = Boolean(projectRoot?.data.ownerId && user?.id === projectRoot.data.ownerId);
-    const isContributor = Boolean(user && ['contributor', 'trusted_editor', 'admin'].includes(user.role));
+    const isContributor = Boolean(user && ['contributor', 'expert', 'trusted_editor', 'admin'].includes(user.role));
+    const isExpertReviewer = Boolean(user && ['expert', 'trusted_editor', 'admin'].includes(user.role));
+    const isAdmin = user?.role === 'admin';
     const reviewStatus = projectRoot?.data.reviewStatus;
     const reviewCount = typeof projectRoot?.data.reviewCount === 'number' ? projectRoot.data.reviewCount : 0;
+    const contributorReviewCount = projectRoot?.data.contributorReviewCount ?? reviewCount;
+    const expertReviewCount = projectRoot?.data.expertReviewCount ?? 0;
+    const requiredContributorReviews = projectRoot?.data.requiredContributorReviews ?? 3;
+    const requiredExpertReviews = projectRoot?.data.requiredExpertReviews ?? 0;
     const reviewedByMe = Boolean(projectRoot?.data.reviewedByMe);
     const isForkablePublicWorkflow = Boolean(projectRoot?.data.readOnlyPreview && !isCurrentUserOwner);
-    const publishTemplateLabel = isForkablePublicWorkflow ? 'Fork' : hasPublishedTemplate ? '更新' : '發布';
+    const publishTemplateLabel = isForkablePublicWorkflow
+        ? 'Fork'
+        : hasBuilderDraft
+            ? hasPublishedTemplate ? '更新節點' : '發布節點'
+            : hasPublishedTemplate ? '更新工作流' : '發布工作流';
     const publishStatus = typeof projectRoot?.data.publishStatus === 'string' ? projectRoot.data.publishStatus : '';
     const publishFailureReason = (() => {
         if (!publishStatus) return '';
@@ -71,9 +83,16 @@ export function Sidebar() {
         isContributor &&
         !isCurrentUserOwner &&
         reviewStatus === 'unreviewed' &&
-        reviewCount < 3 &&
+        (
+            isExpertReviewer && requiredExpertReviews > 0
+                ? expertReviewCount < requiredExpertReviews
+                : contributorReviewCount < requiredContributorReviews
+        ) &&
         !reviewedByMe
     );
+    const reviewRequirementLabel = requiredExpertReviews > 0
+        ? `貢獻者 ${contributorReviewCount}/${requiredContributorReviews} · 專家 ${expertReviewCount}/${requiredExpertReviews}`
+        : `貢獻者 ${contributorReviewCount}/${requiredContributorReviews}`;
     const activeWorkflowVersionId = typeof projectRoot?.data.workflowVersionId === 'string'
         ? projectRoot.data.workflowVersionId
         : null;
@@ -174,8 +193,9 @@ export function Sidebar() {
             }
             return;
         }
-        if (!projectRoot || !hasBuilderDraft) return;
-        window.dispatchEvent(new CustomEvent('publish-project-template', {
+        if (!projectRoot) return;
+        const eventName = hasBuilderDraft ? 'publish-project-template' : 'publish-project-workflow';
+        window.dispatchEvent(new CustomEvent(eventName, {
             detail: { projectNodeId: projectRoot.id },
         }));
     };
@@ -188,10 +208,18 @@ export function Sidebar() {
             updateNodeData(projectRoot.id, {
                 reviewStatus: result.reviewStatus,
                 reviewCount: result.reviewCount,
+                reviewRequired: result.reviewRequired,
+                reviewWarning: result.reviewWarning,
+                requiredContributorReviews: result.requiredContributorReviews,
+                requiredExpertReviews: result.requiredExpertReviews,
+                contributorReviewCount: result.contributorReviewCount,
+                expertReviewCount: result.expertReviewCount,
+                extraContributorReviews: result.extraContributorReviews,
+                extraExpertReviews: result.extraExpertReviews,
                 reviewedByMe: result.reviewedByMe,
                 publishStatus: result.reviewStatus === 'approved'
-                    ? '已通過 3 位貢獻者審核，現在可被其他人使用。'
-                    : `已完成審核，目前 ${result.reviewCount}/3。`,
+                    ? '已通過審核，現在標記為 verified。'
+                    : `已完成審核，目前 ${result.contributorReviewCount}/${result.requiredContributorReviews} contributor、${result.expertReviewCount}/${result.requiredExpertReviews} expert。`,
             }, { skipGraphEval: true });
             setWorkflowVersions((versions) => versions.map(version => (
                 version.id === result.workflowVersionId
@@ -199,12 +227,105 @@ export function Sidebar() {
                         ...version,
                         reviewStatus: result.reviewStatus,
                         reviewCount: result.reviewCount,
+                        reviewRequired: result.reviewRequired,
+                        reviewWarning: result.reviewWarning,
+                        requiredContributorReviews: result.requiredContributorReviews,
+                        requiredExpertReviews: result.requiredExpertReviews,
+                        contributorReviewCount: result.contributorReviewCount,
+                        expertReviewCount: result.expertReviewCount,
+                        extraContributorReviews: result.extraContributorReviews,
+                        extraExpertReviews: result.extraExpertReviews,
                     }
                     : version
             )));
         } catch (error) {
             console.error('Failed to review workflow', error);
             alert(error instanceof Error ? error.message : '審核 workflow 失敗。');
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
+    const handleRequestExtraReview = async () => {
+        if (!supabaseWorkflowId || !projectRoot) return;
+        const requestExpert = window.confirm('需要加一位 expert 審核嗎？按取消則加一位 contributor 審核。');
+        const reason = window.prompt('補充原因（可留空）：', '需要額外審核確認品質與安全性。') ?? undefined;
+        setIsSyncing(true);
+        try {
+            const result = await requestExtraWorkflowReviewInSupabase(
+                supabaseWorkflowId,
+                requestExpert ? 0 : 1,
+                requestExpert ? 1 : 0,
+                reason,
+            );
+            updateNodeData(projectRoot.id, {
+                reviewStatus: result.reviewStatus,
+                reviewCount: result.reviewCount,
+                reviewRequired: result.reviewRequired,
+                reviewWarning: result.reviewWarning,
+                requiredContributorReviews: result.requiredContributorReviews,
+                requiredExpertReviews: result.requiredExpertReviews,
+                contributorReviewCount: result.contributorReviewCount,
+                expertReviewCount: result.expertReviewCount,
+                extraContributorReviews: result.extraContributorReviews,
+                extraExpertReviews: result.extraExpertReviews,
+                reviewedByMe: result.reviewedByMe,
+                publishStatus: '已提出額外審核需求。',
+            }, { skipGraphEval: true });
+        } catch (error) {
+            console.error('Failed to request extra review', error);
+            alert(error instanceof Error ? error.message : '提出額外審核需求失敗。');
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
+    const applyWorkflowReviewResult = React.useCallback((result: Awaited<ReturnType<typeof reviewWorkflowInSupabase>>) => {
+        if (!projectRoot) return;
+        updateNodeData(projectRoot.id, {
+            reviewStatus: result.reviewStatus,
+            reviewCount: result.reviewCount,
+            reviewRequired: result.reviewRequired,
+            reviewWarning: result.reviewWarning,
+            requiredContributorReviews: result.requiredContributorReviews,
+            requiredExpertReviews: result.requiredExpertReviews,
+            contributorReviewCount: result.contributorReviewCount,
+            expertReviewCount: result.expertReviewCount,
+            extraContributorReviews: result.extraContributorReviews,
+            extraExpertReviews: result.extraExpertReviews,
+            reviewedByMe: result.reviewedByMe,
+            publishStatus: result.reviewStatus === 'approved'
+                ? '已通過審核，現在標記為 verified。'
+                : `已完成審核，目前 ${result.contributorReviewCount}/${result.requiredContributorReviews} contributor、${result.expertReviewCount}/${result.requiredExpertReviews} expert。`,
+        }, { skipGraphEval: true });
+        setWorkflowVersions((versions) => versions.map(version => (
+            version.id === result.workflowVersionId
+                ? {
+                    ...version,
+                    reviewStatus: result.reviewStatus,
+                    reviewCount: result.reviewCount,
+                    reviewRequired: result.reviewRequired,
+                    reviewWarning: result.reviewWarning,
+                    requiredContributorReviews: result.requiredContributorReviews,
+                    requiredExpertReviews: result.requiredExpertReviews,
+                    contributorReviewCount: result.contributorReviewCount,
+                    expertReviewCount: result.expertReviewCount,
+                    extraContributorReviews: result.extraContributorReviews,
+                    extraExpertReviews: result.extraExpertReviews,
+                }
+                : version
+        )));
+    }, [projectRoot, updateNodeData]);
+
+    const handleAdminApproveWorkflow = async () => {
+        if (!supabaseWorkflowId || !projectRoot || !isAdmin) return;
+        setIsSyncing(true);
+        try {
+            const result = await adminApproveWorkflowInSupabase(supabaseWorkflowId);
+            applyWorkflowReviewResult(result);
+        } catch (error) {
+            console.error('Failed to admin approve workflow', error);
+            alert(error instanceof Error ? error.message : '一鍵通過 workflow 失敗。');
         } finally {
             setIsSyncing(false);
         }
@@ -261,6 +382,14 @@ export function Sidebar() {
                                 authorName: blueprint.meta?.authorName ?? node.data.authorName,
                                 reviewStatus: blueprint.meta?.reviewStatus ?? node.data.reviewStatus,
                                 reviewCount: blueprint.meta?.reviewCount ?? node.data.reviewCount,
+                                reviewRequired: blueprint.meta?.reviewRequired ?? node.data.reviewRequired,
+                                reviewWarning: blueprint.meta?.reviewWarning ?? node.data.reviewWarning,
+                                requiredContributorReviews: blueprint.meta?.requiredContributorReviews ?? node.data.requiredContributorReviews,
+                                requiredExpertReviews: blueprint.meta?.requiredExpertReviews ?? node.data.requiredExpertReviews,
+                                contributorReviewCount: blueprint.meta?.contributorReviewCount ?? node.data.contributorReviewCount,
+                                expertReviewCount: blueprint.meta?.expertReviewCount ?? node.data.expertReviewCount,
+                                extraContributorReviews: blueprint.meta?.extraContributorReviews ?? node.data.extraContributorReviews,
+                                extraExpertReviews: blueprint.meta?.extraExpertReviews ?? node.data.extraExpertReviews,
                                 reviewedByMe: blueprint.meta?.reviewedByMe ?? node.data.reviewedByMe,
                                 publishStatus: `正在查看歷史版本 v${version.version}。Fork 後才能編輯。`,
                             },
@@ -382,7 +511,7 @@ export function Sidebar() {
                         <button
                             className={publishButtonClassName}
                             onClick={handlePublishTemplate}
-                            disabled={!hasBuilderDraft && !isForkablePublicWorkflow}
+                            disabled={!projectRoot && !isForkablePublicWorkflow}
                             title={
                                 isForkablePublicWorkflow
                                     ? 'Fork 這個公開工作流成為你的本機副本'
@@ -390,7 +519,9 @@ export function Sidebar() {
                                         ? publishFailureReason
                                         : isPublishClean
                                             ? '已發布，且目前沒有新的變更'
-                                            : hasBuilderDraft ? `${publishTemplateLabel}此工作流為節點` : '先在 Project Node 建立節點 Builder'
+                                            : hasBuilderDraft
+                                                ? '發布此 workflow 為 community node template'
+                                                : '只發布 workflow，不建立 community node template'
                             }
                         >
                             {isPublishClean ? <Icons.Check /> : hasPublishFailure ? <Icons.Clear /> : <Icons.Package />}
@@ -405,7 +536,7 @@ export function Sidebar() {
                     {supabaseWorkflowId && reviewStatus === 'unreviewed' && (
                         <div className="workflow-review-panel">
                             <div className="workflow-review-status">
-                                未審核 <span>{reviewCount}/3</span>
+                                未審核 <span>{reviewRequirementLabel}</span>
                             </div>
                             {isContributor && !isCurrentUserOwner && (
                                 <button
@@ -415,6 +546,26 @@ export function Sidebar() {
                                     title={reviewedByMe ? '你已審核過這個 workflow' : '審核這個 workflow'}
                                 >
                                     <Icons.Check /> 審核
+                                </button>
+                            )}
+                            {isAdmin && (
+                                <button
+                                    className="sidebar-btn review"
+                                    onClick={handleAdminApproveWorkflow}
+                                    disabled={isSyncing}
+                                    title="Admin 一鍵通過這個 workflow"
+                                >
+                                    <Icons.Check /> 一鍵通過
+                                </button>
+                            )}
+                            {isContributor && !isCurrentUserOwner && (
+                                <button
+                                    className="sidebar-btn review"
+                                    onClick={handleRequestExtraReview}
+                                    disabled={isSyncing}
+                                    title="要求更多 contributor 或 expert 審核"
+                                >
+                                    <Icons.Check /> 額外審核
                                 </button>
                             )}
                         </div>
