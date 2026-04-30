@@ -30,7 +30,13 @@ type CommunitySortMode = 'recent' | 'popular';
 
 const annotatePublicWorkflowNodes = (
   nodes: AppNode[],
-  meta?: { ownerId?: string; authorName?: string } & ReviewMetadata,
+  meta?: {
+    workflowId?: string;
+    workflowVersionId?: string;
+    workflowVersion?: number;
+    ownerId?: string;
+    authorName?: string;
+  } & ReviewMetadata,
 ) => nodes.map(node => (
   node.type === 'projectNode'
     ? {
@@ -39,6 +45,9 @@ const annotatePublicWorkflowNodes = (
           ...node.data,
           workflowSource: 'public' as const,
           readOnlyPreview: true,
+          supabaseWorkflowId: meta?.workflowId ?? node.data.supabaseWorkflowId,
+          workflowVersionId: meta?.workflowVersionId ?? node.data.workflowVersionId,
+          workflowVersion: meta?.workflowVersion ?? node.data.workflowVersion,
           ownerId: meta?.ownerId ?? node.data.ownerId,
           authorName: meta?.authorName ?? node.data.authorName,
           reviewStatus: meta?.reviewStatus ?? node.data.reviewStatus,

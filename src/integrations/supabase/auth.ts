@@ -73,8 +73,8 @@ export async function buildAppUserFromSession(session: Session | null): Promise<
   }
 }
 
-export async function getUserRole(userId: string): Promise<AppRole> {
-  if (!supabase) return 'user';
+export async function getUserRole(userId: string, fallbackRole: AppRole = 'user'): Promise<AppRole> {
+  if (!supabase) return fallbackRole;
 
   try {
     const { data, error } = await withSupabaseTimeout(
@@ -90,10 +90,10 @@ export async function getUserRole(userId: string): Promise<AppRole> {
       throw error;
     }
 
-    return (data?.role as AppRole | undefined) || 'user';
+    return (data?.role as AppRole | undefined) || fallbackRole;
     } catch (error) {
-      console.warn('[auth] getUserRole fallback to user:', error);
-      return 'user';
+      console.warn('[auth] getUserRole fallback to existing role:', error);
+      return fallbackRole;
     }
 }
 

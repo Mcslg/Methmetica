@@ -1004,7 +1004,7 @@ begin
     v_workflow.current_version_id,
     v_user_id
   )
-  on conflict (workflow_id, reviewer_id) do nothing;
+  on conflict on constraint workflow_reviews_workflow_id_reviewer_id_key do nothing;
 
   select count(*)::integer
   into v_contributor_count

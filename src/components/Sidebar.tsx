@@ -10,6 +10,7 @@ import { parseRouteFromLocation, pushRoute } from '../utils/navigation';
 import { forkWorkflowToLocalDraft } from '../utils/workflowFork';
 import { deleteLocalDraft } from '../utils/localDraftService';
 import { setWorkflowInteraction } from '../integrations/supabase/workflowInteractions';
+import { getUserRole } from '../integrations/supabase/auth';
 import {
     adminApproveWorkflowInSupabase,
     getWorkflowVersionBlueprintFromSupabase,
@@ -19,12 +20,21 @@ import {
     type WorkflowVersionSummary,
 } from '../integrations/supabase/workflows';
 
+const getDisplayErrorMessage = (error: unknown, fallback: string) => {
+    if (error instanceof Error && error.message) return error.message;
+    if (error && typeof error === 'object' && 'message' in error) {
+        const message = (error as { message?: unknown }).message;
+        if (typeof message === 'string' && message.trim()) return message;
+    }
+    return fallback;
+};
+
 export function Sidebar() {
     const { t, language, setLanguage } = useLanguage();
     const { 
         nodes, edges, setGraph, theme, setTheme, isSidebarOpen, setSidebarOpen, 
         isDeletingHover, isPaletteFloating, setPaletteFloating, setCurrentView,
-        user, driveConnected, activeFileId, setActiveFileId, savedGraphSignature, markCurrentGraphSaved, updateNodeData
+        user, setUser, driveConnected, activeFileId, setActiveFileId, savedGraphSignature, markCurrentGraphSaved, updateNodeData
     } = useStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [holdProgress, setHoldProgress] = React.useState(0);
@@ -90,6 +100,20 @@ export function Sidebar() {
         ) &&
         !reviewedByMe
     );
+    const reviewDisabledReason = (() => {
+        if (!user) return '請先登入後審核。';
+        if (!isContributor) return `目前身份是 ${user.role}，需要 contributor 以上才能審核。`;
+        if (isCurrentUserOwner) return '作者不能審核自己的 workflow。';
+        if (reviewedByMe) return '你已審核過這個 workflow。';
+        if (isExpertReviewer && requiredExpertReviews > 0 && expertReviewCount >= requiredExpertReviews) {
+            return 'Expert 審核名額已滿。';
+        }
+        if (contributorReviewCount >= requiredContributorReviews) {
+            return 'Contributor 審核名額已滿。';
+        }
+        if (!canReviewWorkflow) return '目前不能審核這個 workflow。';
+        return '審核這個 workflow';
+    })();
     const reviewRequirementLabel = requiredExpertReviews > 0
         ? `貢獻者 ${contributorReviewCount}/${requiredContributorReviews} · 專家 ${expertReviewCount}/${requiredExpertReviews}`
         : `貢獻者 ${contributorReviewCount}/${requiredContributorReviews}`;
@@ -240,7 +264,7 @@ export function Sidebar() {
             )));
         } catch (error) {
             console.error('Failed to review workflow', error);
-            alert(error instanceof Error ? error.message : '審核 workflow 失敗。');
+            alert(getDisplayErrorMessage(error, '審核 workflow 失敗。'));
         } finally {
             setIsSyncing(false);
         }
@@ -274,7 +298,7 @@ export function Sidebar() {
             }, { skipGraphEval: true });
         } catch (error) {
             console.error('Failed to request extra review', error);
-            alert(error instanceof Error ? error.message : '提出額外審核需求失敗。');
+            alert(getDisplayErrorMessage(error, '提出額外審核需求失敗。'));
         } finally {
             setIsSyncing(false);
         }
@@ -325,7 +349,7 @@ export function Sidebar() {
             applyWorkflowReviewResult(result);
         } catch (error) {
             console.error('Failed to admin approve workflow', error);
-            alert(error instanceof Error ? error.message : '一鍵通過 workflow 失敗。');
+            alert(getDisplayErrorMessage(error, '一鍵通過 workflow 失敗。'));
         } finally {
             setIsSyncing(false);
         }
@@ -360,6 +384,24 @@ export function Sidebar() {
             cancelled = true;
         };
     }, [supabaseWorkflowId, projectRoot?.data.publishStatus]);
+
+    React.useEffect(() => {
+        if (!user || !supabaseWorkflowId || reviewStatus !== 'unreviewed') return;
+
+        let cancelled = false;
+        getUserRole(user.id, user.role)
+            .then((role) => {
+                if (cancelled || role === user.role) return;
+                setUser({ ...user, role });
+            })
+            .catch((error) => {
+                console.warn('[sidebar] failed to refresh user role for workflow review:', error);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [reviewStatus, setUser, supabaseWorkflowId, user]);
 
     const handleOpenVersion = async (version: WorkflowVersionSummary) => {
         setIsSyncing(true);
@@ -543,7 +585,7 @@ export function Sidebar() {
                                     className="sidebar-btn review"
                                     onClick={handleReviewWorkflow}
                                     disabled={!canReviewWorkflow || isSyncing}
-                                    title={reviewedByMe ? '你已審核過這個 workflow' : '審核這個 workflow'}
+                                    title={reviewDisabledReason}
                                 >
                                     <Icons.Check /> 審核
                                 </button>
