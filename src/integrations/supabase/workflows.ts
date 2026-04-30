@@ -173,6 +173,10 @@ type MyWorkflowInteractionRow = {
   forked: boolean | null;
 };
 
+type MyWorkflowReviewRow = {
+  review_requests?: { workflow_id?: string | null } | null;
+};
+
 const FALLBACK_AUTHOR = 'Methmatica Community';
 const slugify = (value: string) =>
   value
@@ -397,6 +401,7 @@ export async function listPublicWorkflows(options?: { includeInteractions?: bool
   const workflowIds = cards.map(card => card.id);
   let engagementByWorkflowId = new Map<string, WorkflowEngagementRow>();
   let myInteractionsByWorkflowId = new Map<string, MyWorkflowInteractionRow>();
+  let reviewedWorkflowIds = new Set<string>();
 
   try {
     const [engagementResult, sessionResult] = await Promise.all([
@@ -418,15 +423,32 @@ export async function listPublicWorkflows(options?: { includeInteractions?: bool
 
     const currentUserId = sessionResult.data.session?.user?.id;
     if (currentUserId) {
-      const myInteractionResult = await withSupabaseTimeout(
-        supabase.rpc('get_my_workflow_interactions', { p_workflow_ids: workflowIds }),
-        'Loading my workflow interactions',
-        WORKFLOW_INTERACTION_TIMEOUT_MS,
-      );
+      const [myInteractionResult, myReviewResult] = await Promise.all([
+        withSupabaseTimeout(
+          supabase.rpc('get_my_workflow_interactions', { p_workflow_ids: workflowIds }),
+          'Loading my workflow interactions',
+          WORKFLOW_INTERACTION_TIMEOUT_MS,
+        ),
+        withSupabaseTimeout(
+          supabase
+            .from('reviews')
+            .select('review_requests!inner(workflow_id)')
+            .eq('reviewer_id', currentUserId)
+            .in('review_requests.workflow_id', workflowIds),
+          'Loading my workflow reviews',
+          WORKFLOW_INTERACTION_TIMEOUT_MS,
+        ),
+      ]);
       if (myInteractionResult.error) throw myInteractionResult.error;
       const myRows = (myInteractionResult.data ?? []) as MyWorkflowInteractionRow[];
       myInteractionsByWorkflowId = new Map<string, MyWorkflowInteractionRow>(
         myRows.map(row => [row.workflow_id, row])
+      );
+      if (myReviewResult.error) throw myReviewResult.error;
+      reviewedWorkflowIds = new Set(
+        ((myReviewResult.data ?? []) as unknown as MyWorkflowReviewRow[])
+          .map(row => row.review_requests?.workflow_id)
+          .filter((workflowId): workflowId is string => Boolean(workflowId))
       );
     }
   } catch (interactionError) {
@@ -445,6 +467,7 @@ export async function listPublicWorkflows(options?: { includeInteractions?: bool
       liked: mine?.liked ?? false,
       bookmarked: mine?.bookmarked ?? false,
       forked: mine?.forked ?? false,
+      reviewedByMe: reviewedWorkflowIds.has(card.id) || card.reviewedByMe,
     };
   });
 }

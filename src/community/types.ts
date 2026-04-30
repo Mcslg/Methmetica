@@ -165,6 +165,7 @@ export type CommunityWorkflowCard = {
   expertReviewCount?: number;
   extraContributorReviews?: number;
   extraExpertReviews?: number;
+  reviewedByMe?: boolean;
   seoTitle: string;
   seoDescription: string;
 };

@@ -59,6 +59,7 @@ export function Sidebar() {
     const requiredContributorReviews = projectRoot?.data.requiredContributorReviews ?? 3;
     const requiredExpertReviews = projectRoot?.data.requiredExpertReviews ?? 0;
     const reviewedByMe = Boolean(projectRoot?.data.reviewedByMe);
+    const shouldShowReviewedState = Boolean(isContributor && (reviewedByMe || isCurrentUserOwner));
     const isForkablePublicWorkflow = Boolean(projectRoot?.data.readOnlyPreview && !isCurrentUserOwner);
     const publishTemplateLabel = isForkablePublicWorkflow
         ? 'Fork'
@@ -580,7 +581,15 @@ export function Sidebar() {
                             <div className="workflow-review-status">
                                 未審核 <span>{reviewRequirementLabel}</span>
                             </div>
-                            {isContributor && !isCurrentUserOwner && (
+                            {shouldShowReviewedState ? (
+                                <button
+                                    className="sidebar-btn review"
+                                    disabled
+                                    title={isCurrentUserOwner ? '自己的 workflow 不需要自審' : '你已審核過這個 workflow'}
+                                >
+                                    <Icons.Check /> 已審核
+                                </button>
+                            ) : isContributor && !isCurrentUserOwner && (
                                 <button
                                     className="sidebar-btn review"
                                     onClick={handleReviewWorkflow}

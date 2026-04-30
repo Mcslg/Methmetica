@@ -195,6 +195,31 @@ export const Icons = {
       <line x1="10" y1="14" x2="21" y2="3" />
     </svg>
   ),
+  Eye: (props?: IconProps) => (
+    <svg {...iconProps} {...withSize(props)}>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  ),
+  Heart: (props?: IconProps) => (
+    <svg {...iconProps} {...withSize(props)}>
+      <path d="M20.8 4.6a5.4 5.4 0 0 0-7.6 0L12 5.8l-1.2-1.2a5.4 5.4 0 1 0-7.6 7.6L12 21l8.8-8.8a5.4 5.4 0 0 0 0-7.6Z" />
+    </svg>
+  ),
+  Bookmark: (props?: IconProps) => (
+    <svg {...iconProps} {...withSize(props)}>
+      <path d="M19 21 12 17 5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16Z" />
+    </svg>
+  ),
+  Fork: (props?: IconProps) => (
+    <svg {...iconProps} {...withSize(props)}>
+      <circle cx="6" cy="5" r="3" />
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="12" cy="19" r="3" />
+      <path d="M6 8v3a4 4 0 0 0 4 4h2" />
+      <path d="M18 8v3a4 4 0 0 1-4 4h-2" />
+    </svg>
+  ),
   Comment: (props?: IconProps) => (
     <svg {...iconProps} {...withSize(props)}>
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />

@@ -12,7 +12,6 @@ import { signInWithGoogle, signOutSupabase } from '../integrations/supabase/auth
 import {
   getWorkflowBlueprintFromSupabase,
   listPublicWorkflows,
-  runSupabaseHealthCheck,
 } from '../integrations/supabase/workflows';
 import { recordWorkflowView, setWorkflowInteraction, type WorkflowInteractionKind } from '../integrations/supabase/workflowInteractions';
 import { listPublicNodeTemplates } from '../integrations/supabase/nodeTemplates';
@@ -24,7 +23,7 @@ import {
   type LocalDraftSummary,
 } from '../utils/localDraftService';
 
-type DashboardTab = 'community' | 'private';
+type DashboardTab = 'community' | 'private' | 'contributor';
 type CommunityListMode = 'all' | 'likes' | 'bookmarks';
 type CommunitySortMode = 'recent' | 'popular';
 
@@ -94,15 +93,7 @@ export function Dashboard() {
   const [isLoadingPublicWorkflows, setIsLoadingPublicWorkflows] = useState(false);
   const [publicWorkflowError, setPublicWorkflowError] = useState<string | null>(null);
   const [pendingInteractions, setPendingInteractions] = useState<Record<string, boolean>>({});
-  const [supabaseHealth, setSupabaseHealth] = useState<{
-    configured: boolean;
-    storedSession: boolean;
-    authApiReachable: boolean;
-    workflowsReachable: boolean;
-    message: string;
-    sessionUserId?: string | null;
-    storedSessionKey?: string | null;
-  } | null>(null);
+  const canUseContributorArea = Boolean(user && ['contributor', 'expert', 'trusted_editor', 'admin'].includes(user.role));
 
   useEffect(() => {
     if (!user) {
@@ -191,23 +182,6 @@ export function Dashboard() {
     };
   }, [setCommunityTemplates]);
 
-  useEffect(() => {
-    let isCancelled = false;
-
-    async function checkSupabase() {
-      const result = await runSupabaseHealthCheck();
-      if (!isCancelled) {
-        setSupabaseHealth(result);
-      }
-    }
-
-    checkSupabase();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [authStatus]);
-
   const handleDriveLogin = async (silent: boolean | React.MouseEvent = false) => {
     if (!user) return;
     const isSilent = typeof silent === 'boolean' ? silent : false;
@@ -239,7 +213,7 @@ export function Dashboard() {
     }
   };
 
-  const openBlueprint = async (workflowId: string) => {
+  const openBlueprint = async (workflowId: string, workflowCard?: CommunityWorkflowCard) => {
     void recordWorkflowView(workflowId, { surface: 'dashboard' }).catch((error) => {
       console.warn('[dashboard] failed to record workflow view:', error);
     });
@@ -247,7 +221,13 @@ export function Dashboard() {
       (isSupabaseConfigured ? await getWorkflowBlueprintFromSupabase(workflowId) : null) ??
       getCommunityWorkflowBlueprint(workflowId);
     if (!blueprint) return;
-    setGraph(annotatePublicWorkflowNodes(blueprint.nodes as AppNode[], blueprint.meta), blueprint.edges as Edge[]);
+    setGraph(
+      annotatePublicWorkflowNodes(blueprint.nodes as AppNode[], {
+        ...blueprint.meta,
+        reviewedByMe: workflowCard?.reviewedByMe ?? blueprint.meta?.reviewedByMe,
+      }),
+      blueprint.edges as Edge[],
+    );
     setActiveFileId(null);
     setCurrentView('editor');
     pushRoute({ view: 'editor', source: 'public', id: workflowId });
@@ -394,6 +374,44 @@ export function Dashboard() {
     }
   }, [communityListMode, user]);
 
+  useEffect(() => {
+    if (!canUseContributorArea && activeTab === 'contributor') {
+      setActiveTab('community');
+    }
+  }, [activeTab, canUseContributorArea]);
+
+  const contributorReviewSections = useMemo(() => {
+    const matchesKeyword = (workflow: CommunityWorkflowCard) =>
+      `${workflow.title} ${workflow.summary} ${workflow.tags.join(' ')}`.toLowerCase().includes(searchQuery.toLowerCase());
+    const pending = publicWorkflows
+      .filter(workflow => workflow.reviewStatus === 'unreviewed')
+      .filter(matchesKeyword);
+    const extraReview = pending.filter(workflow =>
+      (workflow.extraContributorReviews ?? 0) > 0 || (workflow.extraExpertReviews ?? 0) > 0
+    );
+
+    return [
+      {
+        id: 'new-review',
+        title: '新審核需求',
+        description: '一般公開 workflow，審核不是必需，但通過後會移除未驗證感。',
+        workflows: pending.filter(workflow => workflow.visibility !== 'core'),
+      },
+      {
+        id: 'core-review',
+        title: '新核心審核需求',
+        description: '核心 workflow 需要 contributor 與 expert 共同通過後才算穩定。',
+        workflows: pending.filter(workflow => workflow.visibility === 'core'),
+      },
+      {
+        id: 'extra-review',
+        title: '需額外審核',
+        description: '貢獻者已要求更多 contributor 或 expert 參與確認。',
+        workflows: extraReview,
+      },
+    ];
+  }, [publicWorkflows, searchQuery]);
+
   const filteredWorkflows = workflowList.filter(w =>
     w.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -459,78 +477,35 @@ export function Dashboard() {
       </header>
 
       <main className="dashboard-content">
-        <section className="hero-panel">
-          <div className="hero-copy">
-            <span className="eyebrow">Workspace</span>
-            <h2>先開始做你的工作流，再決定要不要公開分享。</h2>
-            <p>
-              私人草稿會保留在 Google Drive，公開工作流則放在社群區探索。
-              一條工作流可以直接成為可搜尋的節點。
-            </p>
-          </div>
-          <div className="hero-stats">
-            <div className="hero-stat">
-              <strong>{workflowList.length + localDrafts.length}</strong>
-              <span>Private drafts</span>
-            </div>
-            <div className="hero-stat">
-              <strong>{publicWorkflows.length}</strong>
-              <span>Public workflows</span>
-            </div>
-          </div>
-        </section>
-
-        {import.meta.env.DEV && (
-          <section className="supabase-health-panel">
-            <div className={`health-chip ${!supabaseHealth ? '' : supabaseHealth.configured ? 'ok' : 'warn'}`}>
-              <span>Supabase config</span>
-              <strong>{!supabaseHealth ? 'checking' : supabaseHealth.configured ? 'ready' : 'missing'}</strong>
-            </div>
-            <div className={`health-chip ${!supabaseHealth ? '' : supabaseHealth.storedSession ? 'ok' : 'warn'}`}>
-              <span>Stored session</span>
-              <strong>{!supabaseHealth ? 'checking' : supabaseHealth.storedSession ? 'present' : 'missing'}</strong>
-            </div>
-            <div className={`health-chip ${user ? 'ok' : 'warn'}`}>
-              <span>UI user</span>
-              <strong>{user ? 'present' : 'missing'}</strong>
-            </div>
-            <div className={`health-chip ${!supabaseHealth ? '' : supabaseHealth.authApiReachable ? 'ok' : 'warn'}`}>
-              <span>Auth API</span>
-              <strong>{!supabaseHealth ? 'checking' : supabaseHealth.authApiReachable ? 'reachable' : 'not ready'}</strong>
-            </div>
-            <div className={`health-chip ${!supabaseHealth ? '' : supabaseHealth.workflowsReachable ? 'ok' : 'warn'}`}>
-              <span>Workflows table</span>
-              <strong>{!supabaseHealth ? 'checking' : supabaseHealth.workflowsReachable ? 'reachable' : 'not ready'}</strong>
-            </div>
-            <div className="health-message">
-              {supabaseHealth?.message || 'Checking Supabase connection...'}
-            </div>
-          </section>
-        )}
-
         <div className="dashboard-actions">
-          <button className="new-workflow-btn primary" onClick={handleCreateNew}>
-            <span className="plus">+</span> New Workflow
-          </button>
-          {user && driveConnected ? (
-            <button className="sidebar-btn" onClick={() => refreshFiles()}>
-              <Icons.Load /> Refresh Drive
+          <nav className="dashboard-tabs">
+            <button className={activeTab === 'private' ? 'active' : ''} onClick={() => setActiveTab('private')}>
+              <Icons.Load /> Private
             </button>
-          ) : (
-            <button className="sidebar-btn" onClick={() => handleDriveLogin(false)} disabled={!user}>
-              <Icons.Load /> {user ? 'Connect Drive' : 'Sign in first'}
+            <button className={activeTab === 'community' ? 'active' : ''} onClick={() => setActiveTab('community')}>
+              <Icons.Languages /> Public
             </button>
-          )}
+            {canUseContributorArea && (
+              <button className={activeTab === 'contributor' ? 'active' : ''} onClick={() => setActiveTab('contributor')}>
+                <Icons.Check /> Review
+              </button>
+            )}
+          </nav>
+          <div className="dashboard-action-buttons">
+            <button className="new-workflow-btn primary" onClick={handleCreateNew}>
+              <span className="plus">+</span> New
+            </button>
+            {user && driveConnected ? (
+              <button className="sidebar-btn compact" onClick={() => refreshFiles()} title="Refresh Drive">
+                <Icons.Load /> Refresh
+              </button>
+            ) : (
+              <button className="sidebar-btn compact" onClick={() => handleDriveLogin(false)} disabled={!user} title={user ? 'Connect Drive' : 'Sign in first'}>
+                <Icons.Load /> Drive
+              </button>
+            )}
+          </div>
         </div>
-
-        <nav className="dashboard-tabs">
-          <button className={activeTab === 'private' ? 'active' : ''} onClick={() => setActiveTab('private')}>
-            <Icons.Load /> Private Drive
-          </button>
-          <button className={activeTab === 'community' ? 'active' : ''} onClick={() => setActiveTab('community')}>
-            <Icons.Languages /> Public Workflows
-          </button>
-        </nav>
 
         {activeTab === 'community' && (
           <section className="community-panel">
@@ -587,7 +562,7 @@ export function Dashboard() {
               </div>
             )}
             {filteredPublicWorkflows.map(workflow => (
-              <article key={workflow.id} className="workflow-card" onClick={() => openBlueprint(workflow.id)}>
+              <article key={workflow.id} className="workflow-card" onClick={() => openBlueprint(workflow.id, workflow)}>
                 <div className="card-top">
                   <div className="card-icon-box" style={{ background: 'rgba(74, 222, 128, 0.1)', color: 'var(--accent-bright)' }}>
                     <Icons.Languages size={20} />
@@ -598,11 +573,14 @@ export function Dashboard() {
                       : workflow.visibility}
                   </span>
                 </div>
+                {workflow.reviewedByMe && (
+                  <span className="reviewed-badge"><Icons.Check size={12} style={{ marginRight: 4 }} />已審核</span>
+                )}
                 <div className="card-metrics">
-                  <span>View {workflow.viewCount ?? 0}</span>
-                  <span>Like {workflow.likeCount ?? 0}</span>
-                  <span>Save {workflow.bookmarkCount ?? 0}</span>
-                  <span>Fork {workflow.forkCount ?? 0}</span>
+                  <span title="Views"><Icons.Eye size={12} style={{ marginRight: 4 }} />{workflow.viewCount ?? 0}</span>
+                  <span title="Likes"><Icons.Heart size={12} style={{ marginRight: 4 }} />{workflow.likeCount ?? 0}</span>
+                  <span title="Bookmarks"><Icons.Bookmark size={12} style={{ marginRight: 4 }} />{workflow.bookmarkCount ?? 0}</span>
+                  <span title="Forks"><Icons.Fork size={12} style={{ marginRight: 4 }} />{workflow.forkCount ?? 0}</span>
                 </div>
                 <div className="card-body">
                   <h3>{workflow.title}</h3>
@@ -621,7 +599,8 @@ export function Dashboard() {
                         disabled={pendingInteractions[`${workflow.id}:like`]}
                         title={workflow.liked ? '取消讚' : '按讚'}
                       >
-                        Like {workflow.likeCount ?? 0}
+                        <Icons.Heart size={14} style={{ marginRight: 0 }} />
+                        <span>{workflow.likeCount ?? 0}</span>
                       </button>
                       <button
                         className={`interaction-btn ${workflow.bookmarked ? 'active' : ''}`}
@@ -629,11 +608,12 @@ export function Dashboard() {
                         disabled={pendingInteractions[`${workflow.id}:bookmark`]}
                         title={workflow.bookmarked ? '取消收藏' : '收藏'}
                       >
-                        Save {workflow.bookmarkCount ?? 0}
+                        <Icons.Bookmark size={14} style={{ marginRight: 0 }} />
+                        <span>{workflow.bookmarkCount ?? 0}</span>
                       </button>
                     </div>
-                    <button className="card-open-btn" onClick={(e) => { e.stopPropagation(); openBlueprint(workflow.id); }}>
-                      Open
+                    <button className="card-open-btn icon-open" onClick={(e) => { e.stopPropagation(); openBlueprint(workflow.id, workflow); }} title="Open workflow">
+                      <Icons.ExternalLink size={14} style={{ marginRight: 0 }} />
                     </button>
                   </div>
                 </div>
@@ -643,35 +623,72 @@ export function Dashboard() {
           </section>
         )}
 
-        {activeTab === 'private' && (
-          <section className="private-panel">
-            <div className="private-copy">
-              <h3>Private Drive Workspace</h3>
-              <p>
-                這裡保留你現有的 Google Drive 流程。公開社群內容先在 Supabase 型的公共資料層中流通，
-                私人草稿仍然可以同步回你的帳號。
-              </p>
-              <div className="private-actions">
-                <button className="new-workflow-btn primary" onClick={handleCreateNew}>
-                  <span className="plus">+</span> New Workflow
-                </button>
-                {user && driveConnected ? (
-                  <button className="sidebar-btn" onClick={() => refreshFiles()}>
-                    <Icons.Load /> Refresh drive
-                  </button>
-                ) : (
-                  <button className="sidebar-btn" onClick={() => handleDriveLogin(false)} disabled={!user}>
-                    <Icons.Load /> {user ? 'Connect Drive' : 'Sign in first'}
-                  </button>
-                )}
+        {activeTab === 'contributor' && canUseContributorArea && (
+          <section className="contributor-panel">
+            <div className="contributor-summary">
+              <div>
+                <span className="eyebrow">Contributor</span>
+                <h2>審核工作台</h2>
+                <p>先集中處理未審核、核心與額外審核需求。點卡片會直接開啟 workflow 進行審核。</p>
+              </div>
+              <div className="review-summary-count">
+                <strong>{contributorReviewSections.reduce((sum, section) => sum + section.workflows.length, 0)}</strong>
+                <span>pending items</span>
               </div>
             </div>
 
-            <div className="private-copy">
-              <h3>Local Browser Drafts</h3>
-              <p>未登入也能存草稿在目前瀏覽器，會有專屬 URL。</p>
-            </div>
+            {contributorReviewSections.map(section => (
+              <section key={section.id} className="review-queue-section">
+                <div className="review-queue-header">
+                  <div>
+                    <h3>{section.title}</h3>
+                    <p>{section.description}</p>
+                  </div>
+                  <span>{section.workflows.length}</span>
+                </div>
+                {section.workflows.length > 0 ? (
+                  <div className="section-grid compact-review-grid">
+                    {section.workflows.map(workflow => (
+                      <article key={`${section.id}-${workflow.id}`} className="workflow-card review-card" onClick={() => openBlueprint(workflow.id, workflow)}>
+                        <div className="card-top">
+                          <div className="card-icon-box" style={{ background: 'rgba(251, 191, 36, 0.1)', color: '#fbbf24' }}>
+                            <Icons.Check size={20} />
+                          </div>
+                          <span className={`status-pill ${workflow.visibility === 'core' ? 'core' : 'review'}`}>
+                            {workflow.visibility === 'core' ? 'core' : 'review'}
+                          </span>
+                        </div>
+                        {workflow.reviewedByMe && (
+                          <span className="reviewed-badge"><Icons.Check size={12} style={{ marginRight: 4 }} />已審核</span>
+                        )}
+                        <div className="card-body">
+                          <h3>{workflow.title}</h3>
+                          <p>{workflow.summary}</p>
+                        </div>
+                        <div className="card-footer">
+                          <span>{workflow.author}</span>
+                          <span className="review-progress">
+                            {workflow.contributorReviewCount ?? workflow.reviewCount ?? 0}/{workflow.requiredContributorReviews ?? 0}
+                            {workflow.requiredExpertReviews ? ` · E ${workflow.expertReviewCount ?? 0}/${workflow.requiredExpertReviews}` : ''}
+                          </span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state small">
+                    <Icons.Check size={34} style={{ opacity: 0.16, marginBottom: 10 }} />
+                    <h3>目前沒有項目</h3>
+                    <p>這個隊列清空了，宇宙暫時安靜。</p>
+                  </div>
+                )}
+              </section>
+            ))}
+          </section>
+        )}
 
+        {activeTab === 'private' && (
+          <section className="private-panel">
             {filteredLocalDrafts.length > 0 ? (
               <div className="workflow-grid">
                 {filteredLocalDrafts.map(draft => (
@@ -1031,6 +1048,19 @@ export function Dashboard() {
           gap: 12px;
           flex-wrap: wrap;
           align-items: center;
+          padding: 10px;
+          border: 1px solid var(--border-node);
+          border-radius: 12px;
+          background: rgba(255,255,255,0.03);
+        }
+        [data-theme='light'] .dashboard-actions {
+          background: rgba(255,255,255,0.72);
+        }
+        .dashboard-action-buttons {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
         }
         .dashboard-tabs {
           display: flex;
@@ -1048,6 +1078,12 @@ export function Dashboard() {
           align-items: center;
           gap: 8px;
           font: inherit;
+        }
+        .sidebar-btn.compact,
+        .new-workflow-btn.primary {
+          width: auto;
+          min-height: 38px;
+          white-space: nowrap;
         }
         .dashboard-tabs button.active {
           background: var(--accent);
@@ -1113,7 +1149,7 @@ export function Dashboard() {
         .workflow-card {
           background: var(--bg-sidebar);
           border: 1px solid var(--border-node);
-          border-radius: 24px;
+          border-radius: 14px;
           padding: 18px;
           box-shadow: var(--node-shadow);
           cursor: pointer;
@@ -1161,7 +1197,8 @@ export function Dashboard() {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          min-width: 68px;
+          min-width: 44px;
+          gap: 5px;
         }
         [data-theme='light'] .interaction-btn {
           background: rgba(255,255,255,0.95);
@@ -1178,7 +1215,7 @@ export function Dashboard() {
         .card-icon-box {
           width: 42px;
           height: 42px;
-          border-radius: 14px;
+          border-radius: 10px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
@@ -1198,6 +1235,8 @@ export function Dashboard() {
           font-size: 0.68rem;
           color: var(--text-sub);
           background: rgba(255,255,255,0.02);
+          display: inline-flex;
+          align-items: center;
         }
         .card-body p,
         .card-meta {
@@ -1237,6 +1276,113 @@ export function Dashboard() {
         .status-pill.complete {
           color: #fbbf24;
         }
+        .reviewed-badge {
+          justify-self: start;
+          display: inline-flex;
+          align-items: center;
+          width: fit-content;
+          border: 1px solid rgba(74, 222, 128, 0.32);
+          border-radius: 8px;
+          padding: 3px 8px;
+          color: var(--accent-bright);
+          background: rgba(74, 222, 128, 0.08);
+          font-size: 0.68rem;
+          font-weight: 700;
+        }
+        .icon-open {
+          width: 34px;
+          min-width: 34px;
+          height: 34px;
+          padding: 0;
+          border-radius: 10px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .contributor-panel {
+          display: grid;
+          gap: 18px;
+        }
+        .contributor-summary,
+        .review-queue-section {
+          background: var(--bg-sidebar);
+          border: 1px solid var(--border-node);
+          border-radius: 14px;
+          box-shadow: var(--node-shadow);
+        }
+        [data-theme='light'] .contributor-summary,
+        [data-theme='light'] .review-queue-section {
+          background: rgba(255,255,255,0.88);
+        }
+        .contributor-summary {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 16px;
+          padding: 20px;
+        }
+        .contributor-summary h2,
+        .review-queue-header h3 {
+          margin: 0;
+        }
+        .contributor-summary p,
+        .review-queue-header p {
+          margin: 6px 0 0;
+          color: var(--text-sub);
+        }
+        .review-summary-count {
+          min-width: 118px;
+          border: 1px solid var(--border-node);
+          border-radius: 12px;
+          padding: 14px;
+          text-align: center;
+          background: rgba(251, 191, 36, 0.06);
+        }
+        .review-summary-count strong {
+          display: block;
+          font-size: 1.7rem;
+          line-height: 1;
+        }
+        .review-summary-count span,
+        .review-progress {
+          color: var(--text-sub);
+          font-size: 0.72rem;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+        }
+        .review-queue-section {
+          padding: 16px;
+          display: grid;
+          gap: 14px;
+        }
+        .review-queue-header {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          align-items: start;
+        }
+        .review-queue-header > span {
+          min-width: 34px;
+          height: 34px;
+          border-radius: 10px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(74, 222, 128, 0.1);
+          color: var(--accent-bright);
+          font-weight: 800;
+        }
+        .compact-review-grid {
+          grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        }
+        .review-card {
+          box-shadow: none;
+          border-radius: 12px;
+        }
+        .empty-state.small {
+          min-height: 150px;
+          border-radius: 12px;
+        }
         .private-panel {
           display: grid;
           gap: 18px;
@@ -1244,7 +1390,7 @@ export function Dashboard() {
         .private-copy {
           background: var(--bg-sidebar);
           border: 1px solid var(--border-node);
-          border-radius: 24px;
+          border-radius: 14px;
           padding: 20px;
           box-shadow: var(--node-shadow);
         }
@@ -1266,7 +1412,7 @@ export function Dashboard() {
           min-height: 240px;
           background: var(--bg-sidebar);
           border: 1px dashed var(--border-node);
-          border-radius: 24px;
+          border-radius: 14px;
           display: grid;
           place-items: center;
           text-align: center;
