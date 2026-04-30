@@ -183,8 +183,11 @@ const slugify = (value: string) =>
     .slice(0, 80) || `workflow-${Date.now()}`;
 
 const WORKFLOW_REVIEW_COLUMNS = 'review_status, review_count, review_required, review_warning, required_contributor_reviews, required_expert_reviews, contributor_review_count, expert_review_count, extra_contributor_reviews, extra_expert_reviews';
+const WORKFLOW_OPEN_COLUMNS = `id,owner_id,slug,title,description,tags,visibility,status,${WORKFLOW_REVIEW_COLUMNS.replaceAll(' ', '')},workflow_json,artifact_status,compiler_version,runtime_version,published_at,updated_at,created_at,current_version_id`;
 const SUPABASE_HEALTH_TIMEOUT_MS = 1500;
 const WORKFLOW_INTERACTION_TIMEOUT_MS = 2000;
+const OPEN_WORKFLOW_TIMEOUT_MS = 3500;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const getReviewMetadata = (row: {
   review_status?: WorkflowReviewStatus | null;
@@ -307,6 +310,34 @@ const rowToBlueprint = (row: WorkflowRow): WorkflowBlueprint => ({
   },
 });
 
+const fetchWorkflowBlueprintViaRest = async (column: 'id' | 'slug', value: string) => {
+  if (!supabaseConfig.url || !supabaseConfig.anonKey) return null;
+
+  const params = new URLSearchParams({
+    select: WORKFLOW_OPEN_COLUMNS,
+    limit: '1',
+  });
+  params.set(column, `eq.${value}`);
+
+  const response = await withSupabaseTimeout(
+    fetch(`${supabaseConfig.url}/rest/v1/workflows?${params.toString()}`, {
+      headers: {
+        apikey: supabaseConfig.anonKey,
+        Authorization: `Bearer ${supabaseConfig.anonKey}`,
+      },
+    }),
+    'Opening workflow',
+    OPEN_WORKFLOW_TIMEOUT_MS,
+  );
+
+  if (!response.ok) {
+    throw new Error(`Opening workflow failed with HTTP ${response.status}`);
+  }
+
+  const rows = (await response.json()) as WorkflowRow[];
+  return rows[0] ? rowToBlueprint(rows[0]) : null;
+};
+
 const versionRowToBlueprint = (version: WorkflowVersionRow, workflow: WorkflowRow): WorkflowBlueprint => ({
   card: {
     ...rowToCard({
@@ -421,36 +452,54 @@ export async function listPublicWorkflows(options?: { includeInteractions?: bool
 export async function getWorkflowBlueprintFromSupabase(workflowId: string) {
   if (!supabase) return null;
 
+  try {
+    const fastBlueprint = await fetchWorkflowBlueprintViaRest('id', workflowId);
+    if (fastBlueprint) return fastBlueprint;
+  } catch (restError) {
+    console.warn('[workflows] fast public workflow open failed, falling back to Supabase client:', restError);
+  }
+
   const { data, error } = await withSupabaseTimeout(
     supabase
       .from('workflows')
-      .select(`id, owner_id, slug, title, description, tags, visibility, status, ${WORKFLOW_REVIEW_COLUMNS}, workflow_json, compiled_artifact, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, published_at, updated_at, created_at, current_version_id`)
+      .select(WORKFLOW_OPEN_COLUMNS)
       .eq('id', workflowId)
       .maybeSingle(),
-    'Opening workflow'
+    'Opening workflow',
+    OPEN_WORKFLOW_TIMEOUT_MS,
   );
 
   if (error) throw error;
   if (!data) return null;
-  return rowToBlueprint(data as WorkflowRow);
+  return rowToBlueprint(data as unknown as WorkflowRow);
 }
 
 export async function getWorkflowBlueprintFromSupabaseByRef(workflowRef: string) {
   if (!supabase) return null;
 
+  try {
+    const fastBlueprint = await fetchWorkflowBlueprintViaRest(UUID_PATTERN.test(workflowRef) ? 'id' : 'slug', workflowRef);
+    if (fastBlueprint) return fastBlueprint;
+  } catch (restError) {
+    console.warn('[workflows] fast public workflow open by ref failed, falling back to Supabase client:', restError);
+  }
+
+  const column = UUID_PATTERN.test(workflowRef) ? 'id' : 'slug';
+
   const { data, error } = await withSupabaseTimeout(
     supabase
       .from('workflows')
-      .select(`id, owner_id, slug, title, description, tags, visibility, status, ${WORKFLOW_REVIEW_COLUMNS}, workflow_json, compiled_artifact, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, published_at, updated_at, created_at, current_version_id`)
-      .or(`id.eq.${workflowRef},slug.eq.${workflowRef}`)
+      .select(WORKFLOW_OPEN_COLUMNS)
+      .eq(column, workflowRef)
       .limit(1)
       .maybeSingle(),
-    'Opening workflow by ref'
+    'Opening workflow by ref',
+    OPEN_WORKFLOW_TIMEOUT_MS,
   );
 
   if (error) throw error;
   if (!data) return null;
-  return rowToBlueprint(data as WorkflowRow);
+  return rowToBlueprint(data as unknown as WorkflowRow);
 }
 
 export async function listWorkflowVersions(workflowId: string) {
