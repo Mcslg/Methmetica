@@ -1,31 +1,51 @@
-# Next Steps
+審核：
 
-## Highest Priority
-1. Add a "My Workflows" / "Published Workflows" management view.
-2. Improve public workflow open/edit/update flow after publish.
+| 審核需求 | 一般                              | 核心          |
+|----------|-----------------------------------|---------------|
+| 工作流   | 2貢獻者（非必需）                 | 1貢獻者 1專家 |
+| 節點     | 3貢獻者（非必需，但使用會有警告） | 2貢獻者 1專家 |
 
-## Product / UX
-1. Continue refining builder UX for input/output interface placement and internal/external flow semantics.
-2. Decide whether node interfaces should visually stay attached to nodes while remaining separately configurable.
-3. Add clearer saved / unsaved indicators in the editor UI.
 
-## Community / Roles
-1. Add admin or reviewer tools for managing `core` workflows.
-2. Add a simple way to inspect and edit user roles.
-3. Define how canonical/core workflows should be merged or versioned.
-4. Let the public node searchable in the node palette, and functionable.
 
-## Data / Platform
-1. Consider splitting workflow metadata from graph JSON later if querying needs grow.
-2. Add better workflow update metadata such as last published time and author display info.
-3. Decide long-term coexistence strategy for Supabase public data and Drive private data.
 
-## Nice to Have
-1. Add better share pages / SEO pages for public workflows.
-2. Add a public workflow detail page outside the editor.
-3. Add fork/remix support.
+貢獻者可提交額外審查，要求更多貢獻者或專家審核。
 
-## Debug Notes
-- If auth feels broken after refresh, first inspect `src/integrations/supabase/auth.ts`.
-- If publishing or public list loading breaks, inspect `src/integrations/supabase/workflows.ts`.
-- Dev-only Supabase diagnostics live in `Dashboard.tsx`.
+產生新核心頁面後需經一貢獻者審核
+
+
+更新節點時選項：
+
+編修—幾乎沒有影響功能，不推送更新
+新增—推送手動更新，1貢獻者審核
+除錯—推送手動更新，舊版本亮警告，1貢獻者審核
+修復—自動更新，舊版本亮警告，1貢獻者審核
+
+
+首頁：
+精選類：
+精選節點
+精選工作流
+*精選需要審核過
+近期熱門
+隨機優良
+*內容達一定量
+完全隨機
+新審核過
+新核心
+爭議性高
+高留言/高fork
+貢獻者專區：
+新審核需求
+新核心審核需求
+需額外審核
+更新審核需求
+
+核心：
+如維基百科式，所有人可以編輯同一頁面並更新，但需要再次審核。
+需要處理編輯衝突
+
+Cloudinary
+
+用戶role:
+
+

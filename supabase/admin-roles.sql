@@ -4,6 +4,9 @@
 -- - expert: can satisfy expert review requirements.
 -- - trusted_editor: can publish core workflows and counts as expert reviewer.
 -- - admin: can publish CodeNode workflows, manage roles, and one-click approve reviews.
+--
+-- Run this file from the Supabase SQL Editor or with a service-role connection.
+-- In-app profile updates still require the current user to already be admin.
 
 -- Change one user's role. Replace both values before running.
 update public.profiles
