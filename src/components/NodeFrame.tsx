@@ -4,6 +4,7 @@ import useStore, { type AppState } from '../store/useStore';
 import { DynamicHandles } from '../nodes/DynamicHandles';
 import { CommentArea } from './CommentArea';
 import { Icons } from './Icons';
+import { NodeComments } from './NodeComments';
 import { ResultArea } from './deprecated/ResultArea';
 import { CalculusStepsArea } from './deprecated/CalculusStepsArea';
 
@@ -173,11 +174,14 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
                             onKeyDown={(e) => e.stopPropagation()}
                         />
                     </div>
-                    {headerExtras && (
-                        <div style={{ display: 'flex', gap: '4px' }}>
+                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                        <NodeComments nodeId={id} data={data} />
+                        {headerExtras && (
+                            <>
                             {headerExtras}
-                        </div>
-                    )}
+                            </>
+                        )}
+                    </div>
                 </div>
 
                 {/* Absorbed Slots Rendering */}

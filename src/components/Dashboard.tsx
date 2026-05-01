@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { type Edge } from '@xyflow/react';
 import useStore, { type AppNode, type WorkflowListItem } from '../store/useStore';
 import { Icons } from './Icons';
+import { WorkflowSketch } from './WorkflowSketch';
 import { useLanguage } from '../contexts/LanguageContext';
 import * as driveService from '../utils/googleDriveService';
 import LogoIcon from '../assets/icon.svg';
@@ -15,6 +16,12 @@ import {
 } from '../integrations/supabase/workflows';
 import { recordWorkflowView, setWorkflowInteraction, type WorkflowInteractionKind } from '../integrations/supabase/workflowInteractions';
 import { listPublicNodeTemplates } from '../integrations/supabase/nodeTemplates';
+import {
+  listForumNodeComments,
+  markNodeCommentRead,
+  type NodeCommentKind,
+  type NodeCommentRecord,
+} from '../integrations/supabase/nodeComments';
 import { pushRoute } from '../utils/navigation';
 import {
   createLocalDraft,
@@ -23,9 +30,13 @@ import {
   type LocalDraftSummary,
 } from '../utils/localDraftService';
 
-type DashboardTab = 'community' | 'private' | 'contributor';
+type DashboardTab = 'community' | 'private' | 'contributor' | 'forum';
 type CommunityListMode = 'all' | 'likes' | 'bookmarks';
 type CommunitySortMode = 'recent' | 'popular';
+type ForumKindFilter = 'all' | Extract<NodeCommentKind, 'question' | 'request' | 'issue'>;
+type ForumStatusFilter = 'open' | 'resolved' | 'all';
+type WorkflowPreviewGraph = { nodes: AppNode[]; edges: Edge[] };
+type HoverPreviewState = { kind: 'public' | 'local'; id: string } | null;
 
 const annotatePublicWorkflowNodes = (
   nodes: AppNode[],
@@ -93,6 +104,17 @@ export function Dashboard() {
   const [isLoadingPublicWorkflows, setIsLoadingPublicWorkflows] = useState(false);
   const [publicWorkflowError, setPublicWorkflowError] = useState<string | null>(null);
   const [pendingInteractions, setPendingInteractions] = useState<Record<string, boolean>>({});
+  const [hoverPreview, setHoverPreview] = useState<HoverPreviewState>(null);
+  const [publicPreviewCache, setPublicPreviewCache] = useState<Record<string, WorkflowPreviewGraph>>({});
+  const [localPreviewCache, setLocalPreviewCache] = useState<Record<string, WorkflowPreviewGraph>>({});
+  const [previewLoadingKey, setPreviewLoadingKey] = useState<string | null>(null);
+  const [forumComments, setForumComments] = useState<NodeCommentRecord[]>([]);
+  const [isLoadingForumComments, setIsLoadingForumComments] = useState(false);
+  const [forumError, setForumError] = useState<string | null>(null);
+  const [forumKindFilter, setForumKindFilter] = useState<ForumKindFilter>('all');
+  const [forumStatusFilter, setForumStatusFilter] = useState<ForumStatusFilter>('open');
+  const [pendingForumReads, setPendingForumReads] = useState<Record<string, boolean>>({});
+  const hoverPreviewTimerRef = useRef<number | null>(null);
   const canUseContributorArea = Boolean(user && ['contributor', 'expert', 'trusted_editor', 'admin'].includes(user.role));
 
   useEffect(() => {
@@ -128,6 +150,12 @@ export function Dashboard() {
 
   useEffect(() => {
     setLocalDrafts(listLocalDrafts());
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (hoverPreviewTimerRef.current !== null) window.clearTimeout(hoverPreviewTimerRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -181,6 +209,34 @@ export function Dashboard() {
       isCancelled = true;
     };
   }, [setCommunityTemplates]);
+
+  useEffect(() => {
+    if (activeTab !== 'forum') return;
+    let isCancelled = false;
+
+    setIsLoadingForumComments(true);
+    setForumError(null);
+    listForumNodeComments({
+      kind: forumKindFilter,
+      status: forumStatusFilter,
+      limit: 100,
+    })
+      .then((comments) => {
+        if (!isCancelled) setForumComments(comments);
+      })
+      .catch((error) => {
+        if (!isCancelled) {
+          setForumError(error instanceof Error ? error.message : 'Forum comments could not load.');
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) setIsLoadingForumComments(false);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeTab, forumKindFilter, forumStatusFilter]);
 
   const handleDriveLogin = async (silent: boolean | React.MouseEvent = false) => {
     if (!user) return;
@@ -318,6 +374,95 @@ export function Dashboard() {
     pushRoute({ view: 'editor', source: 'draft', id: draftId });
   };
 
+  const readPublicPreview = useCallback(async (workflowId: string) => {
+    const fromSupabase = isSupabaseConfigured ? await getWorkflowBlueprintFromSupabase(workflowId) : null;
+    const blueprint = fromSupabase ?? getCommunityWorkflowBlueprint(workflowId);
+    if (!blueprint) return null;
+    return {
+      nodes: blueprint.nodes as AppNode[],
+      edges: blueprint.edges as Edge[],
+    } satisfies WorkflowPreviewGraph;
+  }, []);
+
+  const schedulePreviewOpen = useCallback((nextPreview: Exclude<HoverPreviewState, null>, loader: () => Promise<WorkflowPreviewGraph | null> | WorkflowPreviewGraph | null) => {
+    if (typeof window === 'undefined') return;
+    if (hoverPreviewTimerRef.current !== null) window.clearTimeout(hoverPreviewTimerRef.current);
+    hoverPreviewTimerRef.current = window.setTimeout(async () => {
+      setHoverPreview(nextPreview);
+      const cacheKey = `${nextPreview.kind}:${nextPreview.id}`;
+      setPreviewLoadingKey((current) => (current === cacheKey ? current : cacheKey));
+      try {
+        const result = await loader();
+        if (!result) return;
+        if (nextPreview.kind === 'public') {
+          setPublicPreviewCache((prev) => prev[nextPreview.id] ? prev : { ...prev, [nextPreview.id]: result });
+        } else {
+          setLocalPreviewCache((prev) => prev[nextPreview.id] ? prev : { ...prev, [nextPreview.id]: result });
+        }
+      } catch (error) {
+        console.warn('[dashboard] preview load failed:', error);
+      } finally {
+        setPreviewLoadingKey((current) => (current === cacheKey ? null : current));
+      }
+    }, 180);
+  }, []);
+
+  const clearScheduledPreview = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    if (hoverPreviewTimerRef.current !== null) {
+      window.clearTimeout(hoverPreviewTimerRef.current);
+      hoverPreviewTimerRef.current = null;
+    }
+    setPreviewLoadingKey(null);
+  }, []);
+
+  const handlePublicCardEnter = useCallback((workflowId: string) => {
+    if (publicPreviewCache[workflowId]) {
+      setHoverPreview({ kind: 'public', id: workflowId });
+      return;
+    }
+    schedulePreviewOpen({ kind: 'public', id: workflowId }, () => readPublicPreview(workflowId));
+  }, [publicPreviewCache, readPublicPreview, schedulePreviewOpen]);
+
+  const handleLocalCardEnter = useCallback((draftId: string) => {
+    if (localPreviewCache[draftId]) {
+      setHoverPreview({ kind: 'local', id: draftId });
+      return;
+    }
+    schedulePreviewOpen({ kind: 'local', id: draftId }, () => {
+      const draft = loadLocalDraft(draftId);
+      if (!draft) return null;
+      return { nodes: draft.nodes as AppNode[], edges: draft.edges as Edge[] };
+    });
+  }, [localPreviewCache, schedulePreviewOpen]);
+
+  const handleCardLeave = useCallback(() => {
+    clearScheduledPreview();
+    setHoverPreview(null);
+  }, [clearScheduledPreview]);
+
+  const renderWorkflowPreview = (preview: WorkflowPreviewGraph | undefined, isLoading: boolean) => (
+    <div className={`workflow-card-preview ${preview ? 'is-visible' : ''} ${isLoading ? 'is-loading' : ''}`}>
+      <div className="workflow-card-preview-header">
+        <span>Workflow sketch</span>
+        {preview ? <span>{preview.nodes.length} nodes</span> : <span>Preparing…</span>}
+      </div>
+      {preview ? (
+        <WorkflowSketch
+          nodes={preview.nodes}
+          edges={preview.edges}
+          framed={false}
+          className="workflow-card-preview-sketch"
+          width={320}
+          height={164}
+          padding={14}
+        />
+      ) : (
+        <div className="workflow-card-preview-skeleton" />
+      )}
+    </div>
+  );
+
   const handleDeleteWorkflow = async (e: React.MouseEvent, fileId: string, fileName: string) => {
     e.stopPropagation();
     if (window.confirm(`${t('common.delete_confirm') || 'Are you sure you want to delete'} "${fileName}"?`)) {
@@ -418,6 +563,48 @@ export function Dashboard() {
   const filteredLocalDrafts = localDrafts.filter(d =>
     d.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
+  const filteredForumComments = forumComments.filter((comment) => {
+    const keyword = searchQuery.toLowerCase();
+    if (!keyword) return true;
+    return [
+      comment.body,
+      comment.node_label,
+      comment.author_name,
+      comment.workflows?.title,
+      comment.workflows?.slug,
+    ].filter(Boolean).join(' ').toLowerCase().includes(keyword);
+  });
+
+  const forumKindLabel = (kind: NodeCommentRecord['kind']) => {
+    if (kind === 'question') return '提問';
+    if (kind === 'request') return '要求';
+    if (kind === 'issue') return '回報';
+    return '留言';
+  };
+
+  const handleMarkForumCommentRead = async (commentId: string) => {
+    if (!user) {
+      alert('請先登入才能標記已讀。');
+      return;
+    }
+    setPendingForumReads(prev => ({ ...prev, [commentId]: true }));
+    setForumComments(prev => prev.map(comment => (
+      comment.id === commentId
+        ? { ...comment, read_by_me: true, read_at: new Date().toISOString() }
+        : comment
+    )));
+    try {
+      await markNodeCommentRead(commentId);
+    } catch (error) {
+      console.error('[dashboard] failed to mark forum comment read:', error);
+      setForumComments(prev => prev.map(comment => (
+        comment.id === commentId ? { ...comment, read_by_me: false, read_at: null } : comment
+      )));
+      alert(error instanceof Error ? error.message : '標記已讀失敗。');
+    } finally {
+      setPendingForumReads(prev => ({ ...prev, [commentId]: false }));
+    }
+  };
 
   return (
     <div className="dashboard-root">
@@ -484,6 +671,9 @@ export function Dashboard() {
             </button>
             <button className={activeTab === 'community' ? 'active' : ''} onClick={() => setActiveTab('community')}>
               <Icons.Languages /> Public
+            </button>
+            <button className={activeTab === 'forum' ? 'active' : ''} onClick={() => setActiveTab('forum')}>
+              <Icons.Comment /> Forum
             </button>
             {canUseContributorArea && (
               <button className={activeTab === 'contributor' ? 'active' : ''} onClick={() => setActiveTab('contributor')}>
@@ -562,21 +752,27 @@ export function Dashboard() {
               </div>
             )}
             {filteredPublicWorkflows.map(workflow => (
-              <article key={workflow.id} className="workflow-card" onClick={() => openBlueprint(workflow.id, workflow)}>
+              <article
+                key={workflow.id}
+                className="workflow-card has-preview"
+                onClick={() => openBlueprint(workflow.id, workflow)}
+                onMouseEnter={() => handlePublicCardEnter(workflow.id)}
+                onMouseLeave={handleCardLeave}
+              >
                 <div className="card-top">
                   <div className="card-icon-box" style={{ background: 'rgba(74, 222, 128, 0.1)', color: 'var(--accent-bright)' }}>
                     <Icons.Languages size={20} />
                   </div>
-                  <span className={`status-pill ${workflow.reviewStatus === 'unreviewed' ? 'review' : workflow.visibility}`}>
+                  <span className={`status-pill card-hover-fade ${workflow.reviewStatus === 'unreviewed' ? 'review' : workflow.visibility}`}>
                     {workflow.reviewStatus === 'unreviewed'
                       ? `review ${workflow.contributorReviewCount ?? workflow.reviewCount ?? 0}/${workflow.requiredContributorReviews ?? 0}${workflow.requiredExpertReviews ? ` + expert ${workflow.expertReviewCount ?? 0}/${workflow.requiredExpertReviews}` : ''}`
                       : workflow.visibility}
                   </span>
                 </div>
                 {workflow.reviewedByMe && (
-                  <span className="reviewed-badge"><Icons.Check size={12} style={{ marginRight: 4 }} />已審核</span>
+                  <span className="reviewed-badge card-hover-fade"><Icons.Check size={12} style={{ marginRight: 4 }} />已審核</span>
                 )}
-                <div className="card-metrics">
+                <div className="card-metrics card-hover-fade">
                   <span title="Views"><Icons.Eye size={12} style={{ marginRight: 4 }} />{workflow.viewCount ?? 0}</span>
                   <span title="Likes"><Icons.Heart size={12} style={{ marginRight: 4 }} />{workflow.likeCount ?? 0}</span>
                   <span title="Bookmarks"><Icons.Bookmark size={12} style={{ marginRight: 4 }} />{workflow.bookmarkCount ?? 0}</span>
@@ -585,13 +781,16 @@ export function Dashboard() {
                 <div className="card-body">
                   <h3>{workflow.title}</h3>
                   <p>{workflow.summary}</p>
-                  <div className="card-tags">
+                  <div className="card-tags card-hover-fade">
                     {workflow.tags.map(tag => <span key={tag}>{tag}</span>)}
                   </div>
                 </div>
+                {hoverPreview?.kind === 'public' && hoverPreview.id === workflow.id
+                  ? renderWorkflowPreview(publicPreviewCache[workflow.id], previewLoadingKey === `public:${workflow.id}`)
+                  : null}
                 <div className="card-footer">
-                  <span>{workflow.author}</span>
-                  <div className="card-footer-actions">
+                  <span className="card-author">{workflow.author}</span>
+                  <div className="card-footer-actions card-hover-fade">
                     <div className="workflow-interactions">
                       <button
                         className={`interaction-btn ${workflow.liked ? 'active' : ''}`}
@@ -623,6 +822,94 @@ export function Dashboard() {
           </section>
         )}
 
+        {activeTab === 'forum' && (
+          <section className="forum-panel">
+            <div className="forum-toolbar">
+              <div>
+                <span className="eyebrow">Forum</span>
+                <h2>節點討論</h2>
+                <p>聚合公開 workflow 裡的提問、要求與問題回報。</p>
+              </div>
+              <div className="forum-filters">
+                <label>
+                  類型
+                  <select value={forumKindFilter} onChange={(event) => setForumKindFilter(event.target.value as ForumKindFilter)}>
+                    <option value="all">全部</option>
+                    <option value="question">提問</option>
+                    <option value="request">要求</option>
+                    <option value="issue">回報</option>
+                  </select>
+                </label>
+                <label>
+                  狀態
+                  <select value={forumStatusFilter} onChange={(event) => setForumStatusFilter(event.target.value as ForumStatusFilter)}>
+                    <option value="open">未解決</option>
+                    <option value="resolved">已解決</option>
+                    <option value="all">全部</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            {isLoadingForumComments ? (
+              <div className="loading-state">
+                <div className="spinner"></div>
+                <p>Loading forum...</p>
+              </div>
+            ) : forumError ? (
+              <div className="empty-state">
+                <Icons.Clear size={42} style={{ opacity: 0.18, marginBottom: 12 }} />
+                <h3>Forum could not load</h3>
+                <p>{forumError}</p>
+              </div>
+            ) : filteredForumComments.length === 0 ? (
+              <div className="empty-state">
+                <Icons.Comment size={42} style={{ opacity: 0.14, marginBottom: 12 }} />
+                <h3>還沒有討論</h3>
+                <p>公開 workflow 的提問、要求與回報會出現在這裡。</p>
+              </div>
+            ) : (
+              <div className="forum-list">
+                {filteredForumComments.map(comment => (
+                  <article key={comment.id} className={`forum-card ${comment.read_by_me ? 'read' : 'unread'}`}>
+                    <div className="forum-card-top">
+                      <span className={`node-comment-kind ${comment.kind}`}>{forumKindLabel(comment.kind)}</span>
+                      <span className={`forum-status ${comment.status}`}>{comment.status === 'resolved' ? 'resolved' : 'open'}</span>
+                      {comment.read_by_me ? (
+                        <span className="forum-read-state">已讀</span>
+                      ) : (
+                        <span className="forum-read-state unread">未讀</span>
+                      )}
+                    </div>
+                    <h3>{comment.workflows?.title || 'Untitled workflow'}</h3>
+                    <p>{comment.body}</p>
+                    <div className="forum-card-meta">
+                      <span>Node: {comment.node_label || comment.node_id}</span>
+                      <span>{comment.author_name}</span>
+                      <time>{new Date(comment.created_at).toLocaleString()}</time>
+                    </div>
+                    <div className="forum-card-actions">
+                      <button type="button" className="card-open-btn" onClick={() => openBlueprint(comment.workflow_id)}>
+                        <Icons.ExternalLink size={14} /> 打開 workflow
+                      </button>
+                      {!comment.read_by_me && (
+                        <button
+                          type="button"
+                          className="card-open-btn"
+                          disabled={pendingForumReads[comment.id]}
+                          onClick={() => handleMarkForumCommentRead(comment.id)}
+                        >
+                          <Icons.Check size={14} /> 標記已讀
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
         {activeTab === 'contributor' && canUseContributorArea && (
           <section className="contributor-panel">
             <div className="contributor-summary">
@@ -649,25 +936,34 @@ export function Dashboard() {
                 {section.workflows.length > 0 ? (
                   <div className="section-grid compact-review-grid">
                     {section.workflows.map(workflow => (
-                      <article key={`${section.id}-${workflow.id}`} className="workflow-card review-card" onClick={() => openBlueprint(workflow.id, workflow)}>
+                      <article
+                        key={`${section.id}-${workflow.id}`}
+                        className="workflow-card review-card has-preview"
+                        onClick={() => openBlueprint(workflow.id, workflow)}
+                        onMouseEnter={() => handlePublicCardEnter(workflow.id)}
+                        onMouseLeave={handleCardLeave}
+                      >
                         <div className="card-top">
                           <div className="card-icon-box" style={{ background: 'rgba(251, 191, 36, 0.1)', color: '#fbbf24' }}>
                             <Icons.Check size={20} />
                           </div>
-                          <span className={`status-pill ${workflow.visibility === 'core' ? 'core' : 'review'}`}>
+                          <span className={`status-pill card-hover-fade ${workflow.visibility === 'core' ? 'core' : 'review'}`}>
                             {workflow.visibility === 'core' ? 'core' : 'review'}
                           </span>
                         </div>
                         {workflow.reviewedByMe && (
-                          <span className="reviewed-badge"><Icons.Check size={12} style={{ marginRight: 4 }} />已審核</span>
+                          <span className="reviewed-badge card-hover-fade"><Icons.Check size={12} style={{ marginRight: 4 }} />已審核</span>
                         )}
                         <div className="card-body">
                           <h3>{workflow.title}</h3>
                           <p>{workflow.summary}</p>
                         </div>
+                        {hoverPreview?.kind === 'public' && hoverPreview.id === workflow.id
+                          ? renderWorkflowPreview(publicPreviewCache[workflow.id], previewLoadingKey === `public:${workflow.id}`)
+                          : null}
                         <div className="card-footer">
-                          <span>{workflow.author}</span>
-                          <span className="review-progress">
+                          <span className="card-author">{workflow.author}</span>
+                          <span className="review-progress card-hover-fade">
                             {workflow.contributorReviewCount ?? workflow.reviewCount ?? 0}/{workflow.requiredContributorReviews ?? 0}
                             {workflow.requiredExpertReviews ? ` · E ${workflow.expertReviewCount ?? 0}/${workflow.requiredExpertReviews}` : ''}
                           </span>
@@ -692,7 +988,13 @@ export function Dashboard() {
             {filteredLocalDrafts.length > 0 ? (
               <div className="workflow-grid">
                 {filteredLocalDrafts.map(draft => (
-                  <div key={draft.id} className="workflow-card" onClick={() => handleOpenLocalDraft(draft.id)}>
+                  <div
+                    key={draft.id}
+                    className="workflow-card has-preview"
+                    onClick={() => handleOpenLocalDraft(draft.id)}
+                    onMouseEnter={() => handleLocalCardEnter(draft.id)}
+                    onMouseLeave={handleCardLeave}
+                  >
                     <div className="card-top">
                       <div className="card-icon-box" style={{ background: 'rgba(96, 165, 250, 0.12)', color: '#60a5fa' }}>
                         <Icons.Text size={20} />
@@ -702,9 +1004,12 @@ export function Dashboard() {
                       <h3>{draft.title}</h3>
                       <p className="card-meta">Updated: {new Date(draft.updatedAt).toLocaleString()}</p>
                     </div>
+                    {hoverPreview?.kind === 'local' && hoverPreview.id === draft.id
+                      ? renderWorkflowPreview(localPreviewCache[draft.id], previewLoadingKey === `local:${draft.id}`)
+                      : null}
                     <div className="card-footer">
-                      <span className="status-pill">Local</span>
-                      <span className="node-count">Ref: {draft.id.slice(0, 12)}</span>
+                      <span className="card-author">Local draft</span>
+                      <span className="node-count card-hover-fade">Ref: {draft.id.slice(0, 12)}</span>
                     </div>
                   </div>
                 ))}
@@ -1147,6 +1452,8 @@ export function Dashboard() {
           font: inherit;
         }
         .workflow-card {
+          position: relative;
+          overflow: visible;
           background: var(--bg-sidebar);
           border: 1px solid var(--border-node);
           border-radius: 14px;
@@ -1155,7 +1462,12 @@ export function Dashboard() {
           cursor: pointer;
           display: grid;
           gap: 12px;
-          transition: transform 0.2s ease, box-shadow 0.2s ease;
+          align-content: start;
+          min-height: 232px;
+          height: 232px;
+          transform-origin: center center;
+          transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, background 0.22s ease, filter 0.22s ease;
+          isolation: isolate;
         }
         [data-theme='light'] .workflow-card,
         [data-theme='light'] .private-copy,
@@ -1164,8 +1476,138 @@ export function Dashboard() {
           background: rgba(255,255,255,0.88);
         }
         .workflow-card:hover {
-          transform: translateY(-2px);
-          box-shadow: var(--node-hover-shadow);
+          transform: translateY(-10px) scale(1.05);
+          box-shadow: 0 28px 64px rgba(2, 8, 23, 0.38);
+          border-color: rgba(96, 165, 250, 0.32);
+          z-index: 5;
+          filter: saturate(1.04);
+        }
+        .workflow-card.has-preview:hover {
+          background:
+            linear-gradient(180deg, rgba(96, 165, 250, 0.08), rgba(255,255,255,0.02)),
+            var(--bg-sidebar);
+        }
+        .workflow-card-preview {
+          position: absolute;
+          left: 18px;
+          right: 18px;
+          top: 108px;
+          min-height: 210px;
+          height: auto;
+          display: grid;
+          grid-template-rows: auto 1fr;
+          gap: 8px;
+          padding: 10px;
+          margin-top: 0;
+          border-radius: 12px;
+          border: 1px solid rgba(96, 165, 250, 0.22);
+          background: rgba(0, 0, 0, 0.12);
+          opacity: 0;
+          overflow: hidden;
+          transform: translateY(12px) scale(0.97);
+          transition: opacity 0.18s ease, transform 0.18s ease;
+          pointer-events: none;
+          z-index: 2;
+        }
+        .workflow-card:hover .workflow-card-preview,
+        .workflow-card-preview.is-visible,
+        .workflow-card-preview.is-loading {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+        .workflow-card-preview-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          font-size: 0.7rem;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: var(--text-sub);
+        }
+        .workflow-card-preview-sketch {
+          display: block;
+        }
+        .workflow-card-preview-sketch svg {
+          min-height: 156px;
+        }
+        .workflow-card-preview-sketch svg {
+          border-color: rgba(255,255,255,0.06) !important;
+          background: rgba(2, 6, 23, 0.28) !important;
+        }
+        .workflow-card-preview-skeleton {
+          height: 156px;
+          border-radius: 10px;
+          border: 1px solid rgba(255,255,255,0.08);
+          background:
+            linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.08), rgba(255,255,255,0.04));
+          background-size: 200% 100%;
+          animation: workflowPreviewPulse 1.1s linear infinite;
+        }
+        @keyframes workflowPreviewPulse {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+        .card-hover-fade {
+          transition: opacity 0.16s ease, transform 0.16s ease;
+        }
+        .workflow-card:hover .card-hover-fade {
+          opacity: 0;
+          transform: translateY(-4px);
+          max-height: 0;
+          overflow: hidden;
+          margin: 0;
+        }
+        .workflow-card .card-body {
+          display: grid;
+          gap: 8px;
+          align-content: start;
+          min-height: 0;
+          padding-right: 2px;
+        }
+        .workflow-card .card-body h3 {
+          margin: 0;
+          font-size: 1rem;
+          line-height: 1.28;
+        }
+        .workflow-card .card-body p {
+          margin: 0;
+          color: var(--text-sub);
+          line-height: 1.4;
+        }
+        .workflow-card:hover .card-body {
+          gap: 6px;
+        }
+        .workflow-card:hover .card-body p {
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+        .workflow-card .card-footer {
+          position: absolute;
+          left: 18px;
+          right: 18px;
+          bottom: 18px;
+          margin-top: 0;
+          z-index: 3;
+          backdrop-filter: blur(8px);
+        }
+        .card-author {
+          font-size: 0.8rem;
+          color: var(--text-sub);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .workflow-card:hover .card-author {
+          color: var(--text-main);
+          font-weight: 600;
+        }
+        .workflow-card .card-top,
+        .workflow-card .card-body {
+          position: relative;
+          z-index: 3;
         }
         .card-top,
         .card-footer {
@@ -1302,6 +1744,111 @@ export function Dashboard() {
         .contributor-panel {
           display: grid;
           gap: 18px;
+        }
+        .forum-panel {
+          display: grid;
+          gap: 14px;
+        }
+        .forum-toolbar {
+          display: flex;
+          justify-content: space-between;
+          align-items: end;
+          gap: 16px;
+          padding: 16px;
+          border: 1px solid var(--border-node);
+          border-radius: 14px;
+          background: var(--bg-sidebar);
+          box-shadow: var(--node-shadow);
+        }
+        [data-theme='light'] .forum-toolbar,
+        [data-theme='light'] .forum-card {
+          background: rgba(255,255,255,0.88);
+        }
+        .forum-toolbar h2 {
+          margin: 4px 0 6px;
+        }
+        .forum-toolbar p {
+          margin: 0;
+          color: var(--text-sub);
+        }
+        .forum-filters {
+          display: inline-flex;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+        .forum-filters label {
+          display: grid;
+          gap: 4px;
+          color: var(--text-sub);
+          font-size: 0.72rem;
+        }
+        .forum-filters select {
+          border: 1px solid var(--border-node);
+          border-radius: 8px;
+          background: var(--bg-input);
+          color: var(--text-main);
+          padding: 7px 9px;
+          font: inherit;
+        }
+        .forum-list {
+          display: grid;
+          gap: 12px;
+        }
+        .forum-card {
+          display: grid;
+          gap: 10px;
+          padding: 16px;
+          border: 1px solid var(--border-node);
+          border-radius: 14px;
+          background: var(--bg-sidebar);
+          box-shadow: var(--node-shadow);
+        }
+        .forum-card.unread {
+          border-color: rgba(96, 165, 250, 0.36);
+          box-shadow: 0 18px 38px rgba(96, 165, 250, 0.1);
+        }
+        .forum-card-top,
+        .forum-card-meta,
+        .forum-card-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .forum-card h3 {
+          margin: 0;
+        }
+        .forum-card p {
+          margin: 0;
+          color: var(--text-main);
+          line-height: 1.5;
+        }
+        .forum-card-meta {
+          color: var(--text-sub);
+          font-size: 0.74rem;
+        }
+        .forum-status,
+        .forum-read-state {
+          border: 1px solid rgba(148, 163, 184, 0.22);
+          border-radius: 6px;
+          padding: 2px 6px;
+          color: var(--text-sub);
+          background: rgba(148, 163, 184, 0.08);
+          font-size: 0.66rem;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+        }
+        .forum-status.open,
+        .forum-read-state.unread {
+          color: #60a5fa;
+          border-color: rgba(96, 165, 250, 0.35);
+          background: rgba(96, 165, 250, 0.08);
+        }
+        .forum-status.resolved {
+          color: var(--accent-bright);
+          border-color: rgba(74, 222, 128, 0.32);
+          background: rgba(74, 222, 128, 0.08);
         }
         .contributor-summary,
         .review-queue-section {

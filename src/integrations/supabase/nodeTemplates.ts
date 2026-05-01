@@ -56,6 +56,16 @@ const rowToTemplate = (row: NodeTemplateRow): CommunityNodeTemplate | null => {
     summary: row.summary || template.summary,
     version: row.version || template.version,
     visibility: row.visibility === 'core' ? 'core' : template.visibility,
+    reviewStatus: row.review_status ?? template.reviewStatus,
+    reviewCount: row.review_count ?? template.reviewCount,
+    reviewRequired: row.review_required ?? template.reviewRequired,
+    reviewWarning: row.review_warning ?? template.reviewWarning,
+    requiredContributorReviews: row.required_contributor_reviews ?? template.requiredContributorReviews,
+    requiredExpertReviews: row.required_expert_reviews ?? template.requiredExpertReviews,
+    contributorReviewCount: row.contributor_review_count ?? template.contributorReviewCount,
+    expertReviewCount: row.expert_review_count ?? template.expertReviewCount,
+    extraContributorReviews: row.extra_contributor_reviews ?? template.extraContributorReviews,
+    extraExpertReviews: row.extra_expert_reviews ?? template.extraExpertReviews,
     relatedWorkflowIds: Array.from(new Set([
       ...template.relatedWorkflowIds,
       ...('sourceWorkflowId' in payload ? [payload.sourceWorkflowId] : []),
@@ -124,7 +134,7 @@ export async function listPublicNodeTemplates() {
       .from('node_templates')
       .select('id, slug, title, summary, visibility, review_status, review_count, review_required, review_warning, required_contributor_reviews, required_expert_reviews, contributor_review_count, expert_review_count, extra_contributor_reviews, extra_expert_reviews, version, source_workflow_id, source_workflow_slug, payload, updated_at')
       .in('visibility', ['community', 'core'])
-      .or('review_required.eq.false,review_status.eq.approved')
+      .or('review_required.eq.false,review_status.eq.approved,review_warning.eq.true')
       .order('updated_at', { ascending: false }),
     'Loading public node templates'
   );

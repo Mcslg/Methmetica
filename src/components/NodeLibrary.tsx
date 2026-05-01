@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { nodeLibrary } from '../nodes/registry';
+import useStore from '../store/useStore';
+import { buildNodeCatalog } from '../nodes/registry';
 import { useLanguage } from '../contexts/LanguageContext';
 
 interface NodeLibraryProps {
@@ -9,10 +10,13 @@ interface NodeLibraryProps {
 
 export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 'sidebar' }) => {
     const { t } = useLanguage();
+    const communityTemplates = useStore(state => state.communityTemplates);
     const [isLibraryExpanded, setLibraryExpanded] = useState(false);
+    const catalog = buildNodeCatalog(communityTemplates);
     const basicNodeTypes = ['textNode', 'driveImageNode', 'calculateNode', 'graphNode', 'sliderNode'];
-    const basicNodes = nodeLibrary.filter(n => basicNodeTypes.includes(n.type));
-    const otherNodes = nodeLibrary.filter(n => !basicNodeTypes.includes(n.type));
+    const visibleCatalog = catalog.filter(n => !n.hidden);
+    const basicNodes = visibleCatalog.filter(n => basicNodeTypes.includes(n.type));
+    const otherNodes = visibleCatalog.filter(n => !basicNodeTypes.includes(n.type));
 
     return (
         <div className={`node-library-container ${layout}`}>
@@ -31,6 +35,9 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
                     >
                         {node.icon}
                         <span>{node.label}</span>
+                        {node.reviewStatus === 'unreviewed' && node.reviewWarning && (
+                            <span className="library-review-badge">未驗證</span>
+                        )}
                     </div>
                 ))}
             </div>
@@ -58,6 +65,9 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
                         >
                             {node.icon}
                             <span>{node.label}</span>
+                            {node.reviewStatus === 'unreviewed' && node.reviewWarning && (
+                                <span className="library-review-badge">未驗證</span>
+                            )}
                         </div>
                     ))}
                     <button 

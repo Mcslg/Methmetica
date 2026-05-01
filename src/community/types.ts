@@ -125,6 +125,16 @@ export type CommunityNodeTemplate = {
   elementBindings?: TemplateElementBinding[];
   runtimePlan?: BuiltWorkflowNode;
   compiledArtifact?: CompiledWorkflowArtifact;
+  reviewStatus?: ReviewStatus;
+  reviewCount?: number;
+  reviewRequired?: boolean;
+  reviewWarning?: boolean;
+  requiredContributorReviews?: number;
+  requiredExpertReviews?: number;
+  contributorReviewCount?: number;
+  expertReviewCount?: number;
+  extraContributorReviews?: number;
+  extraExpertReviews?: number;
   fields: TemplateFieldSpec[];
   inputs: TemplateHandleSpec[];
   outputs: TemplateHandleSpec[];

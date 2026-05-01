@@ -24,6 +24,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
 import { MathInput } from '../components/MathInput';
+import { NodeComments } from '../components/NodeComments';
 import { classifyMathPillValue } from '../utils/mathPillClassifier';
 import type { MathValue } from '../types/mathTypes';
 
@@ -1879,6 +1880,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                         overflowX: 'auto',
                         paddingLeft: '8px'
                     }}>
+                        <NodeComments nodeId={id} data={data} />
                         {pages.map((page) => (
                             <button
                                 key={page.id}

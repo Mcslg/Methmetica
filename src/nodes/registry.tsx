@@ -309,6 +309,8 @@ export type CatalogEntry = {
     icon: React.ReactNode;
     color: string;
     hidden?: boolean;
+    reviewStatus?: CommunityNodeTemplate['reviewStatus'];
+    reviewWarning?: boolean;
 };
 
 export const buildNodeCatalog = (customTemplates: CommunityNodeTemplate[]): CatalogEntry[] => {
@@ -321,6 +323,8 @@ export const buildNodeCatalog = (customTemplates: CommunityNodeTemplate[]): Cata
         icon: <Icons.Grid />,
         color: template.accent,
         hidden: template.discovery === 'library-and-search' ? false : true,
+        reviewStatus: template.reviewStatus,
+        reviewWarning: template.reviewWarning,
     }));
 
     return [

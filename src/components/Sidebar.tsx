@@ -889,6 +889,18 @@ export function Sidebar() {
                 .library-item:hover span {
                     color: var(--text-main);
                 }
+                .library-item .library-review-badge {
+                    color: #fbbf24;
+                    border: 1px solid rgba(251, 191, 36, 0.35);
+                    border-radius: 6px;
+                    padding: 2px 5px;
+                    background: rgba(251, 191, 36, 0.08);
+                    font-size: 0.58rem;
+                    line-height: 1;
+                }
+                .library-item:hover .library-review-badge {
+                    color: #fbbf24;
+                }
                 .sidebar-btn {
                     display: flex;
                     align-items: center;

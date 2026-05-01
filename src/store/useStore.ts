@@ -69,6 +69,18 @@ export type TextNodePage = {
     text: string;
 };
 
+export type NodeComment = {
+    id: string;
+    body: string;
+    kind?: 'comment' | 'question' | 'request' | 'issue';
+    status?: 'open' | 'resolved';
+    authorId?: string;
+    authorName: string;
+    createdAt: string;
+    resolvedAt?: string;
+    resolvedBy?: string;
+};
+
 export type NodeData = {
     value?: string;
     code?: string;
@@ -150,6 +162,7 @@ export type NodeData = {
     driveMimeType?: string;
     driveWebViewUrl?: string;
     driveThumbnailUrl?: string;
+    nodeComments?: NodeComment[];
 };
 
 export type AppNode = Node<NodeData>;
@@ -267,6 +280,33 @@ const hasCommunityRuntimePlan = (node: AppNode, state: AppState) => {
         (node.data.templateDraft as CommunityNodeTemplate | undefined) ??
         state.communityTemplates.find(item => item.id === node.data.templateId);
     return Boolean(template?.compiledArtifact || template?.runtimePlan);
+};
+
+const wouldCreateGraphCycle = (edges: Edge[], connection: Connection) => {
+    const { source, target } = connection;
+    if (!source || !target) return false;
+    if (source === target) return true;
+
+    const outgoing = new Map<string, string[]>();
+    edges.forEach(edge => {
+        if (!edge.source || !edge.target) return;
+        const targets = outgoing.get(edge.source) ?? [];
+        targets.push(edge.target);
+        outgoing.set(edge.source, targets);
+    });
+
+    const visited = new Set<string>();
+    const queue = [target];
+
+    while (queue.length > 0) {
+        const current = queue.shift()!;
+        if (current === source) return true;
+        if (visited.has(current)) continue;
+        visited.add(current);
+        queue.push(...(outgoing.get(current) ?? []));
+    }
+
+    return false;
 };
 
 const useStore = create<AppState>()(
@@ -750,6 +790,15 @@ const useStore = create<AppState>()(
     },
 
     onConnect: (connection: Connection) => {
+        if (wouldCreateGraphCycle(get().edges, connection)) {
+            const message = 'Workflow graph 目前不支援循環依賴。請用 CodeNode 或未來的迭代節點處理迴圈。';
+            console.warn(message, connection);
+            if (typeof window !== 'undefined') {
+                window.alert(message);
+            }
+            return;
+        }
+
         get().takeSnapshot(); // Snapshot BEFORE connecting
         const { nodes } = get();
         const sourceNode = nodes.find(n => n.id === connection.source);
