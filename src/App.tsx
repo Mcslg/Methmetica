@@ -18,7 +18,6 @@ import { LiveNodePreview } from './components/LiveNodePreview';
 import { WorkflowSketch } from './components/WorkflowSketch';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { AuthBootstrap } from './components/AuthBootstrap';
-import { getCommunityWorkflowBlueprint, getCommunityWorkflowBySlug } from './community/catalog';
 import { isSupabaseConfigured } from './integrations/supabase/client';
 import { getWorkflowBlueprintFromSupabaseByRef, getWorkflowVersionBlueprintFromSupabase } from './integrations/supabase/workflows';
 import * as driveService from './utils/googleDriveService';
@@ -1427,13 +1426,9 @@ function App() {
 
     try {
       if (route.source === 'public' && route.id) {
-        const blueprint =
-          (isSupabaseConfigured ? await getWorkflowBlueprintFromSupabaseByRef(route.id) : null) ??
-          getCommunityWorkflowBlueprint(route.id) ??
-          (() => {
-            const localBySlug = getCommunityWorkflowBySlug(route.id!);
-            return localBySlug ? getCommunityWorkflowBlueprint(localBySlug.id) : null;
-        })();
+        const blueprint = isSupabaseConfigured
+          ? await getWorkflowBlueprintFromSupabaseByRef(route.id)
+          : null;
         if (!blueprint) throw new Error(`Workflow ${route.id} not found`);
         if (token !== routeTokenRef.current) return;
         const publishedNodes = annotatePublicWorkflowNodes(blueprint.nodes as AppNode[], blueprint.meta);

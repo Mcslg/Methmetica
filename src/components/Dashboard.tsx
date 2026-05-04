@@ -6,7 +6,6 @@ import { WorkflowSketch } from './WorkflowSketch';
 import { useLanguage } from '../contexts/LanguageContext';
 import * as driveService from '../utils/googleDriveService';
 import LogoIcon from '../assets/icon.svg';
-import { getCommunityWorkflowBlueprint, publicCommunityWorkflows } from '../community/catalog';
 import type { CommunityWorkflowCard, ReviewMetadata } from '../community/types';
 import { isSupabaseConfigured } from '../integrations/supabase/client';
 import { signInWithGoogle, signOutSupabase } from '../integrations/supabase/auth';
@@ -99,7 +98,7 @@ export function Dashboard() {
   const [activeTab, setActiveTab] = useState<DashboardTab>('private');
   const [communityListMode, setCommunityListMode] = useState<CommunityListMode>('all');
   const [communitySortMode, setCommunitySortMode] = useState<CommunitySortMode>('recent');
-  const [publicWorkflows, setPublicWorkflows] = useState<CommunityWorkflowCard[]>(publicCommunityWorkflows);
+  const [publicWorkflows, setPublicWorkflows] = useState<CommunityWorkflowCard[]>([]);
   const [localDrafts, setLocalDrafts] = useState<LocalDraftSummary[]>([]);
   const [isLoadingPublicWorkflows, setIsLoadingPublicWorkflows] = useState(false);
   const [publicWorkflowError, setPublicWorkflowError] = useState<string | null>(null);
@@ -163,8 +162,8 @@ export function Dashboard() {
 
     async function loadPublicWorkflows() {
       if (!isSupabaseConfigured) {
-        setPublicWorkflows(publicCommunityWorkflows);
-        setPublicWorkflowError(null);
+        setPublicWorkflows([]);
+        setPublicWorkflowError('Supabase is not configured.');
         return;
       }
 
@@ -176,30 +175,43 @@ export function Dashboard() {
           setPublicWorkflows(workflows);
           setIsLoadingPublicWorkflows(false);
         }
-
-        const [workflowsWithInteractions, nodeTemplates] = await Promise.all([
-          listPublicWorkflows({ includeInteractions: true, limit: 48 }),
-          listPublicNodeTemplates(),
-        ]);
-
+      } catch (err) {
+        console.error('Failed to load public workflows', err);
         if (!isCancelled) {
-          setPublicWorkflows(workflowsWithInteractions);
+          setPublicWorkflows([]);
+          setPublicWorkflowError(err instanceof Error ? err.message : 'Failed to load public workflows');
+        }
+        return;
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingPublicWorkflows(false);
+        }
+      }
+
+      const [workflowsWithInteractionsResult, nodeTemplatesResult] = await Promise.allSettled([
+        listPublicWorkflows({ includeInteractions: true, limit: 48 }),
+        listPublicNodeTemplates(),
+      ]);
+
+      if (isCancelled) return;
+
+      if (workflowsWithInteractionsResult.status === 'fulfilled') {
+        setPublicWorkflows(workflowsWithInteractionsResult.value);
+      } else {
+        console.warn('[dashboard] public workflow interactions unavailable:', workflowsWithInteractionsResult.reason);
+      }
+
+      if (nodeTemplatesResult.status === 'fulfilled') {
+        const nodeTemplates = nodeTemplatesResult.value;
+        if (nodeTemplates.length > 0) {
           const currentTemplates = useStore.getState().communityTemplates;
           setCommunityTemplates([
             ...nodeTemplates,
             ...currentTemplates.filter(existing => !nodeTemplates.some(template => template.id === existing.id)),
           ]);
         }
-      } catch (err) {
-        console.error('Failed to load public workflows', err);
-        if (!isCancelled) {
-          setPublicWorkflows(publicCommunityWorkflows);
-          setPublicWorkflowError(err instanceof Error ? err.message : 'Failed to load public workflows');
-        }
-      } finally {
-        if (!isCancelled) {
-          setIsLoadingPublicWorkflows(false);
-        }
+      } else {
+        console.warn('[dashboard] public node templates unavailable:', nodeTemplatesResult.reason);
       }
     }
 
@@ -273,20 +285,25 @@ export function Dashboard() {
     void recordWorkflowView(workflowId, { surface: 'dashboard' }).catch((error) => {
       console.warn('[dashboard] failed to record workflow view:', error);
     });
-    const blueprint =
-      (isSupabaseConfigured ? await getWorkflowBlueprintFromSupabase(workflowId) : null) ??
-      getCommunityWorkflowBlueprint(workflowId);
-    if (!blueprint) return;
-    setGraph(
-      annotatePublicWorkflowNodes(blueprint.nodes as AppNode[], {
-        ...blueprint.meta,
-        reviewedByMe: workflowCard?.reviewedByMe ?? blueprint.meta?.reviewedByMe,
-      }),
-      blueprint.edges as Edge[],
-    );
-    setActiveFileId(null);
-    setCurrentView('editor');
-    pushRoute({ view: 'editor', source: 'public', id: workflowId });
+    try {
+      const blueprint = isSupabaseConfigured ? await getWorkflowBlueprintFromSupabase(workflowId) : null;
+      if (!blueprint) {
+        throw new Error('Public workflow could not be found.');
+      }
+      setGraph(
+        annotatePublicWorkflowNodes(blueprint.nodes as AppNode[], {
+          ...blueprint.meta,
+          reviewedByMe: workflowCard?.reviewedByMe ?? blueprint.meta?.reviewedByMe,
+        }),
+        blueprint.edges as Edge[],
+      );
+      setActiveFileId(null);
+      setCurrentView('editor');
+      pushRoute({ view: 'editor', source: 'public', id: workflowId });
+    } catch (error) {
+      console.error('[dashboard] failed to open public workflow:', error);
+      setPublicWorkflowError(error instanceof Error ? error.message : 'Public workflow could not open.');
+    }
   };
 
   const handleToggleInteraction = async (
@@ -375,8 +392,7 @@ export function Dashboard() {
   };
 
   const readPublicPreview = useCallback(async (workflowId: string) => {
-    const fromSupabase = isSupabaseConfigured ? await getWorkflowBlueprintFromSupabase(workflowId) : null;
-    const blueprint = fromSupabase ?? getCommunityWorkflowBlueprint(workflowId);
+    const blueprint = isSupabaseConfigured ? await getWorkflowBlueprintFromSupabase(workflowId) : null;
     if (!blueprint) return null;
     return {
       nodes: blueprint.nodes as AppNode[],
@@ -742,7 +758,6 @@ export function Dashboard() {
                 <Icons.Clear size={42} style={{ opacity: 0.18, marginBottom: 12 }} />
                 <h3>Public workflows could not load</h3>
                 <p>{publicWorkflowError}</p>
-                <p>現在先顯示本地示例資料，你仍然可以繼續操作。</p>
               </div>
             )}
             {!isLoadingPublicWorkflows && filteredPublicWorkflows.length === 0 && !publicWorkflowError && (
