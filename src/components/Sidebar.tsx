@@ -19,6 +19,7 @@ import {
     reviewWorkflowInSupabase,
     type WorkflowVersionSummary,
 } from '../integrations/supabase/workflows';
+import type { WorkflowChangeType } from '../community/types';
 
 const getDisplayErrorMessage = (error: unknown, fallback: string) => {
     if (error instanceof Error && error.message) return error.message;
@@ -28,6 +29,52 @@ const getDisplayErrorMessage = (error: unknown, fallback: string) => {
     }
     return fallback;
 };
+
+const VERSION_CHANGE_LABELS = {
+    edit: '編修',
+    feature: '新增',
+    fix: '修正',
+    hotfix: '緊急修復',
+} as const;
+
+const PUBLISH_CHANGE_OPTIONS: Array<{
+    value: WorkflowChangeType;
+    label: string;
+    description: string;
+    updatePolicy: 'none' | 'manual' | 'auto';
+    warningMessage?: string;
+}> = [
+    {
+        value: 'edit',
+        label: '編修',
+        description: '只改文字、說明、教學或排版，不推送功能更新。',
+        updatePolicy: 'none',
+    },
+    {
+        value: 'feature',
+        label: '新增',
+        description: '新增能力但不破壞舊用法；使用者之後可手動更新。',
+        updatePolicy: 'manual',
+    },
+    {
+        value: 'fix',
+        label: '修正',
+        description: '修一般 bug，舊版本會顯示有已知問題。',
+        updatePolicy: 'manual',
+        warningMessage: '這個版本已有修正版，建議手動更新。',
+    },
+    {
+        value: 'hotfix',
+        label: '緊急修復',
+        description: '安全、錯誤結果或嚴重問題；之後可支援自動更新。',
+        updatePolicy: 'auto',
+        warningMessage: '這個版本有重要修復，建議盡快更新。',
+    },
+];
+
+const getPublishChangeOption = (changeType: WorkflowChangeType) => (
+    PUBLISH_CHANGE_OPTIONS.find(option => option.value === changeType) ?? PUBLISH_CHANGE_OPTIONS[0]
+);
 
 export function Sidebar() {
     const { t, language, setLanguage } = useLanguage();
@@ -43,6 +90,9 @@ export function Sidebar() {
     const [workflowVersions, setWorkflowVersions] = React.useState<WorkflowVersionSummary[]>([]);
     const [isLoadingVersions, setIsLoadingVersions] = React.useState(false);
     const [versionError, setVersionError] = React.useState<string | null>(null);
+    const [publishDialogOpen, setPublishDialogOpen] = React.useState(false);
+    const [publishChangeType, setPublishChangeType] = React.useState<WorkflowChangeType>('feature');
+    const [publishUpdateSummary, setPublishUpdateSummary] = React.useState('');
     const holdTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const isDirty = createGraphSignature(nodes, edges) !== savedGraphSignature;
     const projectRoot = nodes.find(node => node.type === 'projectNode');
@@ -125,6 +175,7 @@ export function Sidebar() {
     const canDeleteWorkflow =
         (isEditorRoute && currentRoute.source === 'draft' && Boolean(currentRoute.id)) ||
         Boolean(activeFileId);
+    const selectedPublishChange = getPublishChangeOption(publishChangeType);
 
     const onDragStart = (event: React.DragEvent, nodeType: string, templateId?: string) => {
         const payload = templateId ? JSON.stringify({ type: nodeType, templateId }) : nodeType;
@@ -208,6 +259,22 @@ export function Sidebar() {
         }
     };
 
+    const dispatchPublishEvent = (detail?: {
+        changeType?: WorkflowChangeType;
+        updatePolicy?: 'none' | 'manual' | 'auto';
+        updateSummary?: string;
+        warningMessage?: string;
+    }) => {
+        if (!projectRoot) return;
+        const eventName = hasBuilderDraft ? 'publish-project-template' : 'publish-project-workflow';
+        window.dispatchEvent(new CustomEvent(eventName, {
+            detail: {
+                projectNodeId: projectRoot.id,
+                ...detail,
+            },
+        }));
+    };
+
     const handlePublishTemplate = () => {
         if (isForkablePublicWorkflow) {
             forkWorkflowToLocalDraft({ nodes, edges, user, setGraph, setActiveFileId });
@@ -219,10 +286,24 @@ export function Sidebar() {
             return;
         }
         if (!projectRoot) return;
-        const eventName = hasBuilderDraft ? 'publish-project-template' : 'publish-project-workflow';
-        window.dispatchEvent(new CustomEvent(eventName, {
-            detail: { projectNodeId: projectRoot.id },
-        }));
+        if (hasPublishedTemplate) {
+            setPublishChangeType((projectRoot.data.changeType as WorkflowChangeType | undefined) ?? 'feature');
+            setPublishUpdateSummary(typeof projectRoot.data.updateSummary === 'string' ? projectRoot.data.updateSummary : '');
+            setPublishDialogOpen(true);
+            return;
+        }
+        dispatchPublishEvent();
+    };
+
+    const handleConfirmPublishUpdate = () => {
+        const option = getPublishChangeOption(publishChangeType);
+        dispatchPublishEvent({
+            changeType: option.value,
+            updatePolicy: option.updatePolicy,
+            updateSummary: publishUpdateSummary.trim() || undefined,
+            warningMessage: option.warningMessage,
+        });
+        setPublishDialogOpen(false);
     };
 
     const handleReviewWorkflow = async () => {
@@ -576,6 +657,59 @@ export function Sidebar() {
                             {publishFailureReason}
                         </div>
                     )}
+                    {publishDialogOpen && (
+                        <div className="publish-update-dialog-backdrop" role="presentation">
+                            <div className="publish-update-dialog" role="dialog" aria-modal="true" aria-label="更新發布設定">
+                                <div className="publish-update-dialog-header">
+                                    <div>
+                                        <strong>{hasBuilderDraft ? '更新節點' : '更新工作流'}</strong>
+                                        <p>選擇這次更新的性質，並補一段給審核者與使用者看的說明。</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="publish-update-close"
+                                        onClick={() => setPublishDialogOpen(false)}
+                                        aria-label="關閉"
+                                    >
+                                        <Icons.Clear size={14} />
+                                    </button>
+                                </div>
+                                <div className="publish-change-options">
+                                    {PUBLISH_CHANGE_OPTIONS.map(option => (
+                                        <button
+                                            key={option.value}
+                                            type="button"
+                                            className={`publish-change-option ${publishChangeType === option.value ? 'active' : ''}`}
+                                            onClick={() => setPublishChangeType(option.value)}
+                                        >
+                                            <span>{option.label}</span>
+                                            <small>{option.description}</small>
+                                        </button>
+                                    ))}
+                                </div>
+                                <label className="publish-update-summary">
+                                    <span>更新說明</span>
+                                    <textarea
+                                        value={publishUpdateSummary}
+                                        onChange={(event) => setPublishUpdateSummary(event.target.value)}
+                                        placeholder="例如：修正輸出在空輸入時的錯誤，並保留原本的輸入/輸出介面。"
+                                    />
+                                </label>
+                                <div className="publish-update-policy-note">
+                                    更新政策：{selectedPublishChange.updatePolicy === 'none' ? '不推送更新' : selectedPublishChange.updatePolicy === 'auto' ? '可自動更新' : '手動更新'}
+                                    {selectedPublishChange.warningMessage ? ` · 舊版本會顯示警告` : ''}
+                                </div>
+                                <div className="publish-update-actions">
+                                    <button type="button" className="sidebar-btn" onClick={() => setPublishDialogOpen(false)}>
+                                        取消
+                                    </button>
+                                    <button type="button" className="sidebar-btn publish" onClick={handleConfirmPublishUpdate} disabled={isSyncing}>
+                                        <Icons.Package /> 確認更新
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     {supabaseWorkflowId && reviewStatus === 'unreviewed' && (
                         <div className="workflow-review-panel">
                             <div className="workflow-review-status">
@@ -636,16 +770,21 @@ export function Sidebar() {
                                     {workflowVersions.map(version => (
                                         <button
                                             key={version.id}
-                                            className={`workflow-version-item ${version.id === activeWorkflowVersionId ? 'active' : ''}`}
+                                            className={`workflow-version-item ${version.id === activeWorkflowVersionId ? 'active' : ''} ${version.warningMessage ? 'has-warning' : ''}`}
                                             onClick={() => handleOpenVersion(version)}
                                             disabled={isSyncing}
-                                            title={`Open v${version.version}`}
+                                            title={version.warningMessage || `Open v${version.version}`}
                                         >
                                             <span>
                                                 v{version.version}
                                                 {version.isCurrent && <em>current</em>}
+                                                {version.changeType && (
+                                                    <em>{VERSION_CHANGE_LABELS[version.changeType] ?? version.changeType}</em>
+                                                )}
                                             </span>
-                                            <small>{new Date(version.publishedAt).toLocaleString()}</small>
+                                            <small>
+                                                {version.warningMessage ? `警告：${version.warningMessage}` : new Date(version.publishedAt).toLocaleString()}
+                                            </small>
                                         </button>
                                     ))}
                                 </div>
@@ -989,6 +1128,111 @@ export function Sidebar() {
                     font-size: 0.7rem;
                     line-height: 1.35;
                 }
+                .publish-update-dialog-backdrop {
+                    position: fixed;
+                    inset: 0;
+                    z-index: 1000;
+                    display: grid;
+                    place-items: center;
+                    padding: 20px;
+                    background: rgba(2, 6, 23, 0.62);
+                    backdrop-filter: blur(8px);
+                }
+                .publish-update-dialog {
+                    width: min(460px, calc(100vw - 32px));
+                    display: grid;
+                    gap: 14px;
+                    padding: 18px;
+                    border: 1px solid rgba(255, 255, 255, 0.12);
+                    border-radius: 14px;
+                    background: var(--bg-sidebar);
+                    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+                }
+                .publish-update-dialog-header {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 14px;
+                }
+                .publish-update-dialog-header strong {
+                    color: var(--text-main);
+                    font-size: 0.98rem;
+                }
+                .publish-update-dialog-header p,
+                .publish-update-policy-note {
+                    margin: 4px 0 0;
+                    color: var(--text-sub);
+                    font-size: 0.74rem;
+                    line-height: 1.45;
+                }
+                .publish-update-close {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 28px;
+                    height: 28px;
+                    border: 1px solid var(--border-node);
+                    border-radius: 8px;
+                    background: rgba(255, 255, 255, 0.04);
+                    color: var(--text-sub);
+                    cursor: pointer;
+                }
+                .publish-change-options {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 8px;
+                }
+                .publish-change-option {
+                    display: grid;
+                    gap: 4px;
+                    padding: 10px;
+                    border: 1px solid var(--border-node);
+                    border-radius: 10px;
+                    background: rgba(255, 255, 255, 0.04);
+                    color: var(--text-main);
+                    text-align: left;
+                    cursor: pointer;
+                }
+                .publish-change-option.active {
+                    border-color: var(--accent);
+                    background: var(--accent-light);
+                }
+                .publish-change-option span {
+                    font-size: 0.78rem;
+                    font-weight: 800;
+                }
+                .publish-change-option small {
+                    color: var(--text-sub);
+                    font-size: 0.68rem;
+                    line-height: 1.35;
+                }
+                .publish-update-summary {
+                    display: grid;
+                    gap: 7px;
+                    color: var(--text-main);
+                    font-size: 0.74rem;
+                    font-weight: 700;
+                }
+                .publish-update-summary textarea {
+                    min-height: 92px;
+                    resize: vertical;
+                    border: 1px solid var(--border-node);
+                    border-radius: 10px;
+                    padding: 10px;
+                    background: rgba(0, 0, 0, 0.18);
+                    color: var(--text-main);
+                    font: inherit;
+                    font-weight: 500;
+                    outline: none;
+                }
+                .publish-update-summary textarea:focus {
+                    border-color: var(--accent);
+                }
+                .publish-update-actions {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 8px;
+                }
                 .workflow-review-panel {
                     display: grid;
                     gap: 8px;
@@ -1069,6 +1313,13 @@ export function Sidebar() {
                 .workflow-version-item.active {
                     border-color: var(--accent);
                     background: var(--accent-light);
+                }
+                .workflow-version-item.has-warning {
+                    border-color: rgba(245, 158, 11, 0.38);
+                    background: rgba(245, 158, 11, 0.08);
+                }
+                .workflow-version-item.has-warning small {
+                    color: #fbbf24;
                 }
                 .workflow-version-item span {
                     display: flex;

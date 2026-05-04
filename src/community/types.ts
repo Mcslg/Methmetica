@@ -8,6 +8,9 @@ export type WorkflowVisibility = 'public' | 'private' | 'core';
 
 export type WorkflowPublishKind = 'workflow' | 'node';
 
+export type WorkflowChangeType = 'edit' | 'feature' | 'fix' | 'hotfix';
+export type WorkflowUpdatePolicy = 'none' | 'manual' | 'auto';
+
 export type ReviewStatus = 'unreviewed' | 'approved';
 
 export type ReviewMetadata = {
@@ -127,6 +130,11 @@ export type CommunityNodeTemplate = {
   elementBindings?: TemplateElementBinding[];
   runtimePlan?: BuiltWorkflowNode;
   compiledArtifact?: CompiledWorkflowArtifact;
+  changeType?: WorkflowChangeType;
+  updatePolicy?: WorkflowUpdatePolicy;
+  updateSummary?: string;
+  warningMessage?: string;
+  supersedesVersionId?: string;
   sourceWorkflowId?: string;
   sourceWorkflowVersionId?: string;
   sourceWorkflowSlug?: string;
@@ -216,6 +224,11 @@ export type WorkflowBlueprint = {
     workflowVersionId?: string;
     workflowVersion?: number;
     publishKind?: WorkflowPublishKind;
+    changeType?: WorkflowChangeType;
+    updatePolicy?: WorkflowUpdatePolicy;
+    updateSummary?: string;
+    warningMessage?: string;
+    supersedesVersionId?: string;
     ownerId?: string;
     authorName?: string;
     reviewStatus?: ReviewStatus;

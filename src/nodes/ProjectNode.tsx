@@ -6,7 +6,7 @@ import { LiveNodePreview } from '../components/LiveNodePreview';
 import useStore, { type AppNode, type CustomHandle, type NodeData } from '../store/useStore';
 import { useLanguage } from '../contexts/LanguageContext';
 import { CommunityNodeMaker, buildTemplateFromBlocks, validateDraft } from '../components/CommunityNodeMaker';
-import type { CommunityNodeTemplate, TemplateInterfaceSchema, TemplatePortSpec, WorkflowVisibility } from '../community/types';
+import type { CommunityNodeTemplate, TemplateInterfaceSchema, TemplatePortSpec, WorkflowChangeType, WorkflowVisibility } from '../community/types';
 import { getTemplateInternalHandles, getTemplateInterfaceSchema } from '../community/types';
 import { makeInitialDraft, syncDraftWithWorkflowMetadata } from '../community/templateDraft';
 import { resolveTemplateViewOverrides } from '../community/templateView';
@@ -34,6 +34,49 @@ const parseTags = (value: string) => value
 
 const DRAFT_SYNC_DELAY_MS = 180;
 const INVISIBLE_HANDLE_STYLE = { opacity: 0 };
+const CHANGE_TYPE_OPTIONS: Array<{
+  value: WorkflowChangeType;
+  label: string;
+  description: string;
+  updatePolicy: 'none' | 'manual' | 'auto';
+  warningMessage?: string;
+}> = [
+  {
+    value: 'edit',
+    label: '編修',
+    description: '只改文字、說明、教學或排版，不推送功能更新。',
+    updatePolicy: 'none',
+  },
+  {
+    value: 'feature',
+    label: '新增',
+    description: '新增能力但不破壞舊用法；使用者之後可手動更新。',
+    updatePolicy: 'manual',
+  },
+  {
+    value: 'fix',
+    label: '修正',
+    description: '修一般 bug，舊版本會顯示有已知問題。',
+    updatePolicy: 'manual',
+    warningMessage: '這個版本已有修正版，建議手動更新。',
+  },
+  {
+    value: 'hotfix',
+    label: '緊急修復',
+    description: '安全、錯誤結果或嚴重問題；之後可支援自動更新。',
+    updatePolicy: 'auto',
+    warningMessage: '這個版本有重要修復，建議盡快更新。',
+  },
+];
+const getChangeTypeOption = (changeType?: WorkflowChangeType) => (
+  CHANGE_TYPE_OPTIONS.find(option => option.value === changeType) ?? CHANGE_TYPE_OPTIONS[0]
+);
+type PublishUpdateMetadata = {
+  changeType?: WorkflowChangeType;
+  updatePolicy?: 'none' | 'manual' | 'auto';
+  updateSummary?: string;
+  warningMessage?: string;
+};
 const serializeDraft = (draft?: CommunityNodeTemplate) => (draft ? JSON.stringify(draft) : '');
 const stripLegacyInterfaceBlocks = (draft?: CommunityNodeTemplate): CommunityNodeTemplate | undefined => (
   draft ? {
@@ -255,6 +298,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
   const [localDesc, setLocalDesc] = React.useState(data.description || '');
   const [localTags, setLocalTags] = React.useState(Array.isArray(data.tags) ? data.tags.join(', ') : '');
   const [localVisibility, setLocalVisibility] = React.useState<WorkflowVisibility>(data.visibility || 'private');
+  const [localChangeType, setLocalChangeType] = React.useState<WorkflowChangeType>(data.changeType || 'edit');
   const [localBuilderDraft, setLocalBuilderDraft] = React.useState<CommunityNodeTemplate | undefined>(
     stripLegacyInterfaceBlocks(data.builderDraft as CommunityNodeTemplate | undefined)
   );
@@ -279,6 +323,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     null
   ), [id, linkedTemplateNodeId, nodes]);
   const publishStatus = data.publishStatus || '發布此工作流，就等於發布這個節點。';
+  const hasPublishedRemoteVersion = Boolean(data.supabaseWorkflowId);
   const lastSyncedDraftSignatureRef = React.useRef(serializeDraft(data.builderDraft as CommunityNodeTemplate | undefined));
   const localizedTemplateTitle = React.useCallback((template: CommunityNodeTemplate) => (
     getLocalizedText(template.titleI18n, language, template.title)
@@ -374,6 +419,11 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     extraContributorReviews: number;
     extraExpertReviews: number;
     reviewedByMe: boolean;
+    changeType: WorkflowChangeType;
+    updatePolicy: 'none' | 'manual' | 'auto';
+    updateSummary: string;
+    warningMessage: string;
+    supersedesVersionId: string;
   }>) => {
     updateNodeData(id, patch, { skipGraphEval: true });
   }, [id, updateNodeData]);
@@ -585,7 +635,18 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     setTestTrace(result.trace);
   }, [activeInterfaceSchema, edges, id, linkedTemplateNodeId, nodes, testInputs]);
 
-  const handlePublish = async (draft: CommunityNodeTemplate) => {
+  const getPublishUpdateMetadata = React.useCallback((override?: PublishUpdateMetadata) => {
+    const selectedType = override?.changeType ?? (hasPublishedRemoteVersion ? localChangeType : 'feature');
+    const option = getChangeTypeOption(selectedType);
+    return {
+      changeType: hasPublishedRemoteVersion ? option.value : 'feature',
+      updatePolicy: hasPublishedRemoteVersion ? override?.updatePolicy ?? option.updatePolicy : 'manual',
+      updateSummary: hasPublishedRemoteVersion ? override?.updateSummary?.trim() || undefined : undefined,
+      warningMessage: hasPublishedRemoteVersion ? override?.warningMessage ?? option.warningMessage : undefined,
+    };
+  }, [hasPublishedRemoteVersion, localChangeType]);
+
+  const handlePublish = async (draft: CommunityNodeTemplate, publishOptions?: PublishUpdateMetadata) => {
     setIsPublishing(true);
     const syncedDraft = syncDraftWithWorkflowMetadata(draft, {
       title: (localName || data.label || draft.title).trim() || draft.title,
@@ -607,6 +668,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     }
 
     try {
+      const updateMetadata = getPublishUpdateMetadata(publishOptions);
       const packagedBase = buildTemplateFromBlocks({
         ...syncedDraft,
         version: syncedDraft.version || '1.0.0',
@@ -724,6 +786,10 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                 extraContributorReviews: 0,
                 extraExpertReviews: 0,
                 reviewedByMe: false,
+                changeType: updateMetadata.changeType,
+                updatePolicy: updateMetadata.updatePolicy,
+                updateSummary: updateMetadata.updateSummary,
+                warningMessage: updateMetadata.warningMessage,
               },
             }
           : node.type === 'communityTemplateNode' && node.data?.builderSourceId === id && node.data?.autoManagedTemplateNode && node.data?.templateDraft
@@ -748,6 +814,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         author: effectiveUser,
         compiledArtifact: packaged.compiledArtifact,
         publishKind: 'node',
+        ...updateMetadata,
       });
 
       const publishedTemplate = {
@@ -756,6 +823,10 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         sourceWorkflowVersionId: blueprint.meta?.workflowVersionId,
         sourceWorkflowSlug: blueprint.card.slug,
         publishKind: 'node' as const,
+        changeType: updateMetadata.changeType,
+        updatePolicy: updateMetadata.updatePolicy,
+        updateSummary: updateMetadata.updateSummary,
+        warningMessage: updateMetadata.warningMessage,
         relatedWorkflowIds: Array.from(new Set([...(packaged.relatedWorkflowIds || []), blueprint.card.id])),
       };
 
@@ -788,6 +859,10 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         extraContributorReviews: blueprint.meta?.extraContributorReviews ?? 0,
         extraExpertReviews: blueprint.meta?.extraExpertReviews ?? 0,
         reviewedByMe: false,
+        changeType: blueprint.meta?.changeType ?? updateMetadata.changeType,
+        updatePolicy: blueprint.meta?.updatePolicy ?? updateMetadata.updatePolicy,
+        warningMessage: blueprint.meta?.warningMessage ?? updateMetadata.warningMessage,
+        supersedesVersionId: blueprint.meta?.supersedesVersionId,
         publishStatus: localVisibility === 'core'
           ? `已送出核心節點 "${publishedTemplate.title}"，需要 2 位貢獻者與 1 位專家審核後才會開放。`
           : `已發布節點 "${publishedTemplate.title}"，目前未驗證；3 位貢獻者審核後會標記 verified。`,
@@ -806,9 +881,10 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     }
   };
 
-  const handlePublishWorkflowOnly = React.useCallback(async () => {
+  const handlePublishWorkflowOnly = React.useCallback(async (publishOptions?: PublishUpdateMetadata) => {
     setIsPublishing(true);
     try {
+      const updateMetadata = getPublishUpdateMetadata(publishOptions);
       if (!user) {
         updateProjectData({
           publishStatus: '先登入，才能發布 workflow。',
@@ -864,6 +940,10 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                 extraContributorReviews: 0,
                 extraExpertReviews: 0,
                 reviewedByMe: false,
+        changeType: updateMetadata.changeType,
+        updatePolicy: updateMetadata.updatePolicy,
+        updateSummary: updateMetadata.updateSummary,
+        warningMessage: updateMetadata.warningMessage,
               },
             }
           : node
@@ -879,6 +959,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         edges: state.edges,
         author: effectiveUser,
         publishKind: 'workflow',
+        ...updateMetadata,
       });
 
       updateProjectData({
@@ -898,6 +979,11 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         extraContributorReviews: blueprint.meta?.extraContributorReviews ?? 0,
         extraExpertReviews: blueprint.meta?.extraExpertReviews ?? 0,
         reviewedByMe: false,
+        changeType: blueprint.meta?.changeType ?? updateMetadata.changeType,
+        updatePolicy: blueprint.meta?.updatePolicy ?? updateMetadata.updatePolicy,
+        updateSummary: blueprint.meta?.updateSummary ?? updateMetadata.updateSummary,
+        warningMessage: blueprint.meta?.warningMessage ?? updateMetadata.warningMessage,
+        supersedesVersionId: blueprint.meta?.supersedesVersionId,
         publishStatus: localVisibility === 'core'
           ? `已送出 workflow "${title}"，核心 workflow 需要 1 位貢獻者與 1 位專家審核後才會開放。`
           : `已發布 workflow "${title}"，目前未驗證；2 位貢獻者審核後會標記 verified。`,
@@ -923,6 +1009,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     localTags,
     localVisibility,
     markCurrentGraphSaved,
+    getPublishUpdateMetadata,
     setUser,
     updateProjectData,
     user,
@@ -930,12 +1017,12 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
 
   React.useEffect(() => {
     const handleSidebarPublish = (event: Event) => {
-      const detail = (event as CustomEvent<{ projectNodeId?: string }>).detail;
+      const detail = (event as CustomEvent<PublishUpdateMetadata & { projectNodeId?: string }>).detail;
       if (detail?.projectNodeId && detail.projectNodeId !== id) return;
 
       const draft = localBuilderDraft || stripLegacyInterfaceBlocks(data.builderDraft as CommunityNodeTemplate | undefined);
       if (!draft || isPublishing) return;
-      handlePublish(draft);
+      handlePublish(draft, detail);
     };
 
     window.addEventListener('publish-project-template', handleSidebarPublish);
@@ -944,10 +1031,10 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
 
   React.useEffect(() => {
     const handleSidebarPublishWorkflow = (event: Event) => {
-      const detail = (event as CustomEvent<{ projectNodeId?: string }>).detail;
+      const detail = (event as CustomEvent<PublishUpdateMetadata & { projectNodeId?: string }>).detail;
       if (detail?.projectNodeId && detail.projectNodeId !== id) return;
       if (isPublishing) return;
-      void handlePublishWorkflowOnly();
+      void handlePublishWorkflowOnly(detail);
     };
 
     window.addEventListener('publish-project-workflow', handleSidebarPublishWorkflow);
@@ -1053,7 +1140,10 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     if (data.visibility && data.visibility !== localVisibility) {
       setLocalVisibility(data.visibility);
     }
-  }, [data.label, data.description, data.tags, data.visibility, localDesc, localName, localTags, localVisibility]);
+    if (data.changeType && data.changeType !== localChangeType) {
+      setLocalChangeType(data.changeType);
+    }
+  }, [data.label, data.description, data.tags, data.visibility, data.changeType, localChangeType, localDesc, localName, localTags, localVisibility]);
 
   return (
     <NodeFrame

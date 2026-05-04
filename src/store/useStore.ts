@@ -145,6 +145,11 @@ export type NodeData = {
     workflowVersionId?: string;
     workflowVersion?: number;
     reviewStatus?: 'unreviewed' | 'approved';
+    changeType?: 'edit' | 'feature' | 'fix' | 'hotfix';
+    updatePolicy?: 'none' | 'manual' | 'auto';
+    updateSummary?: string;
+    warningMessage?: string;
+    supersedesVersionId?: string;
     reviewCount?: number;
     reviewRequired?: boolean;
     reviewWarning?: boolean;
