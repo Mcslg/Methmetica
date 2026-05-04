@@ -311,6 +311,9 @@ export type CatalogEntry = {
     hidden?: boolean;
     reviewStatus?: CommunityNodeTemplate['reviewStatus'];
     reviewWarning?: boolean;
+    updateAvailable?: boolean;
+    updateSeverity?: CommunityNodeTemplate['updateSeverity'];
+    updateMessage?: string;
 };
 
 export const buildNodeCatalog = (customTemplates: CommunityNodeTemplate[]): CatalogEntry[] => {
@@ -325,6 +328,9 @@ export const buildNodeCatalog = (customTemplates: CommunityNodeTemplate[]): Cata
         hidden: template.discovery === 'library-and-search' ? false : true,
         reviewStatus: template.reviewStatus,
         reviewWarning: template.reviewWarning,
+        updateAvailable: template.updateAvailable,
+        updateSeverity: template.updateSeverity,
+        updateMessage: template.updateMessage,
     }));
 
     return [

@@ -1,7 +1,8 @@
-import type { CommunityNodeTemplate, WorkflowPublishKind, WorkflowVisibility } from '../../community/types';
+import type { CommunityNodeTemplate, WorkflowChangeType, WorkflowPublishKind, WorkflowVisibility } from '../../community/types';
 import type { SupabaseNodeTemplateRow } from '../../community/schema';
 import { supabase } from './client';
 import { withSupabaseTimeout } from './utils';
+import { getSupersededVersionMessage } from './workflows';
 
 type NodeTemplateVisibility = 'community' | 'core';
 
@@ -32,6 +33,16 @@ type NodeTemplateRow = Omit<SupabaseNodeTemplateRow, 'payload' | 'visibility'> &
   source_workflow_slug?: string | null;
   publish_kind?: WorkflowPublishKind | null;
   payload: NodeTemplatePayload | CommunityNodeTemplate | null;
+};
+
+type WorkflowVersionUpdateRow = {
+  id: string;
+  workflow_id: string;
+  version: number;
+  change_type: WorkflowChangeType | null;
+  update_summary: string | null;
+  warning_message: string | null;
+  supersedes_version_id: string | null;
 };
 
 type PublishNodeTemplatePayload = {
@@ -140,6 +151,59 @@ export async function publishNodeTemplateToSupabase({
   return rowToTemplate(data as NodeTemplateRow);
 }
 
+const enrichTemplatesWithUpdateStatus = async (templates: CommunityNodeTemplate[]): Promise<CommunityNodeTemplate[]> => {
+  if (!supabase || templates.length === 0) return templates;
+
+  const sourceVersionIds = templates
+    .map(template => template.sourceWorkflowVersionId)
+    .filter((versionId): versionId is string => Boolean(versionId));
+  if (sourceVersionIds.length === 0) return templates;
+
+  const { data, error } = await withSupabaseTimeout(
+    supabase
+      .from('workflow_versions')
+      .select('id, workflow_id, version, change_type, update_summary, warning_message, supersedes_version_id')
+      .in('supersedes_version_id', sourceVersionIds),
+    'Loading node template updates',
+    2000,
+  );
+
+  if (error) {
+    console.warn('[node-templates] update status unavailable:', error);
+    return templates;
+  }
+
+  const updateBySupersededId = new Map<string, WorkflowVersionUpdateRow>();
+  ((data ?? []) as WorkflowVersionUpdateRow[]).forEach((row) => {
+    if (!row.supersedes_version_id || !['feature', 'fix', 'hotfix'].includes(row.change_type ?? '')) return;
+    const existing = updateBySupersededId.get(row.supersedes_version_id);
+    if (!existing || row.version > existing.version) {
+      updateBySupersededId.set(row.supersedes_version_id, row);
+    }
+  });
+
+  return templates.map((template) => {
+    const update = template.sourceWorkflowVersionId
+      ? updateBySupersededId.get(template.sourceWorkflowVersionId)
+      : undefined;
+    if (!update) return template;
+
+    const updateMessage = getSupersededVersionMessage({
+      changeType: update.change_type,
+      warningMessage: update.warning_message,
+    }) ?? '這個節點已有新版。';
+
+    return {
+      ...template,
+      updateAvailable: true,
+      updateSeverity: update.change_type === 'hotfix' || update.change_type === 'fix' ? update.change_type : 'feature' as const,
+      updateMessage,
+      latestWorkflowVersionId: update.id,
+      latestWorkflowVersion: update.version,
+    };
+  });
+};
+
 export async function listPublicNodeTemplates() {
   if (!supabase) return [];
 
@@ -154,7 +218,8 @@ export async function listPublicNodeTemplates() {
   );
 
   if (error) throw error;
-  return ((data ?? []) as NodeTemplateRow[])
+  const templates = ((data ?? []) as NodeTemplateRow[])
     .map(rowToTemplate)
     .filter((template): template is CommunityNodeTemplate => Boolean(template));
+  return enrichTemplatesWithUpdateStatus(templates);
 }

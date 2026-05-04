@@ -1607,6 +1607,19 @@ math-field::part(virtual-keyboard-toggle) {
 .library-item:hover .library-review-badge {
     color: #fbbf24;
 }
+.library-item .library-review-badge.update.feature {
+    color: #93c5fd;
+    border-color: rgba(96, 165, 250, 0.35);
+    background: rgba(96, 165, 250, 0.08);
+}
+.library-item .library-review-badge.update.fix {
+    color: #fbbf24;
+}
+.library-item .library-review-badge.update.hotfix {
+    color: #fecaca;
+    border-color: rgba(248, 113, 113, 0.4);
+    background: rgba(248, 113, 113, 0.1);
+}
 
 .node-comments {
     position: relative;

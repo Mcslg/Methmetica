@@ -492,6 +492,14 @@ function Flow() {
           templateBestAlgorithm: template.bestAlgorithm,
           templateAlternatives: template.alternativeAlgorithms,
           templateRelatedWorkflowIds: template.relatedWorkflowIds,
+          sourceWorkflowId: template.sourceWorkflowId,
+          sourceWorkflowVersionId: template.sourceWorkflowVersionId,
+          sourceWorkflowSlug: template.sourceWorkflowSlug,
+          updateAvailable: template.updateAvailable,
+          updateSeverity: template.updateSeverity,
+          updateMessage: template.updateMessage,
+          latestWorkflowVersionId: template.latestWorkflowVersionId,
+          latestWorkflowVersion: template.latestWorkflowVersion,
         } : {}),
       }
     } as AppNode);

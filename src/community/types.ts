@@ -10,6 +10,7 @@ export type WorkflowPublishKind = 'workflow' | 'node';
 
 export type WorkflowChangeType = 'edit' | 'feature' | 'fix' | 'hotfix';
 export type WorkflowUpdatePolicy = 'none' | 'manual' | 'auto';
+export type WorkflowUpdateSeverity = 'feature' | 'fix' | 'hotfix';
 
 export type ReviewStatus = 'unreviewed' | 'approved';
 
@@ -135,6 +136,11 @@ export type CommunityNodeTemplate = {
   updateSummary?: string;
   warningMessage?: string;
   supersedesVersionId?: string;
+  updateAvailable?: boolean;
+  updateSeverity?: WorkflowUpdateSeverity;
+  updateMessage?: string;
+  latestWorkflowVersionId?: string;
+  latestWorkflowVersion?: number;
   sourceWorkflowId?: string;
   sourceWorkflowVersionId?: string;
   sourceWorkflowSlug?: string;
@@ -229,6 +235,11 @@ export type WorkflowBlueprint = {
     updateSummary?: string;
     warningMessage?: string;
     supersedesVersionId?: string;
+    updateAvailable?: boolean;
+    updateSeverity?: WorkflowUpdateSeverity;
+    updateMessage?: string;
+    latestWorkflowVersionId?: string;
+    latestWorkflowVersion?: number;
     ownerId?: string;
     authorName?: string;
     reviewStatus?: ReviewStatus;

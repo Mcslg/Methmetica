@@ -83,7 +83,9 @@ export function Dashboard() {
     theme,
     setGraph,
     user,
+    setUser,
     authStatus,
+    setAuthStatus,
     driveConnected,
     setDriveConnected,
     workflowList,
@@ -157,70 +159,78 @@ export function Dashboard() {
     };
   }, []);
 
-  useEffect(() => {
-    let isCancelled = false;
+  const refreshPublicWorkflows = useCallback(async (isCancelled: () => boolean = () => false) => {
+    if (!isSupabaseConfigured) {
+      setPublicWorkflows([]);
+      setPublicWorkflowError('Supabase is not configured.');
+      return;
+    }
 
-    async function loadPublicWorkflows() {
-      if (!isSupabaseConfigured) {
+    setIsLoadingPublicWorkflows(true);
+    setPublicWorkflowError(null);
+    try {
+      const workflows = await listPublicWorkflows({ includeInteractions: false, limit: 48 });
+      if (!isCancelled()) {
+        setPublicWorkflows(workflows);
+        setIsLoadingPublicWorkflows(false);
+      }
+    } catch (err) {
+      console.error('Failed to load public workflows', err);
+      if (!isCancelled()) {
         setPublicWorkflows([]);
-        setPublicWorkflowError('Supabase is not configured.');
-        return;
+        setPublicWorkflowError(err instanceof Error ? err.message : 'Failed to load public workflows');
       }
-
-      setIsLoadingPublicWorkflows(true);
-      setPublicWorkflowError(null);
-      try {
-        const workflows = await listPublicWorkflows({ includeInteractions: false, limit: 48 });
-        if (!isCancelled) {
-          setPublicWorkflows(workflows);
-          setIsLoadingPublicWorkflows(false);
-        }
-      } catch (err) {
-        console.error('Failed to load public workflows', err);
-        if (!isCancelled) {
-          setPublicWorkflows([]);
-          setPublicWorkflowError(err instanceof Error ? err.message : 'Failed to load public workflows');
-        }
-        return;
-      } finally {
-        if (!isCancelled) {
-          setIsLoadingPublicWorkflows(false);
-        }
-      }
-
-      const [workflowsWithInteractionsResult, nodeTemplatesResult] = await Promise.allSettled([
-        listPublicWorkflows({ includeInteractions: true, limit: 48 }),
-        listPublicNodeTemplates(),
-      ]);
-
-      if (isCancelled) return;
-
-      if (workflowsWithInteractionsResult.status === 'fulfilled') {
-        setPublicWorkflows(workflowsWithInteractionsResult.value);
-      } else {
-        console.warn('[dashboard] public workflow interactions unavailable:', workflowsWithInteractionsResult.reason);
-      }
-
-      if (nodeTemplatesResult.status === 'fulfilled') {
-        const nodeTemplates = nodeTemplatesResult.value;
-        if (nodeTemplates.length > 0) {
-          const currentTemplates = useStore.getState().communityTemplates;
-          setCommunityTemplates([
-            ...nodeTemplates,
-            ...currentTemplates.filter(existing => !nodeTemplates.some(template => template.id === existing.id)),
-          ]);
-        }
-      } else {
-        console.warn('[dashboard] public node templates unavailable:', nodeTemplatesResult.reason);
+      return;
+    } finally {
+      if (!isCancelled()) {
+        setIsLoadingPublicWorkflows(false);
       }
     }
 
-    loadPublicWorkflows();
+    const [workflowsWithInteractionsResult, nodeTemplatesResult] = await Promise.allSettled([
+      listPublicWorkflows({ includeInteractions: true, limit: 48 }),
+      listPublicNodeTemplates(),
+    ]);
+
+    if (isCancelled()) return;
+
+    if (workflowsWithInteractionsResult.status === 'fulfilled') {
+      setPublicWorkflows(workflowsWithInteractionsResult.value);
+    } else {
+      console.warn('[dashboard] public workflow interactions unavailable:', workflowsWithInteractionsResult.reason);
+    }
+
+    if (nodeTemplatesResult.status === 'fulfilled') {
+      const nodeTemplates = nodeTemplatesResult.value;
+      if (nodeTemplates.length > 0) {
+        const currentTemplates = useStore.getState().communityTemplates;
+        setCommunityTemplates([
+          ...nodeTemplates,
+          ...currentTemplates.filter(existing => !nodeTemplates.some(template => template.id === existing.id)),
+        ]);
+      }
+    } else {
+      console.warn('[dashboard] public node templates unavailable:', nodeTemplatesResult.reason);
+    }
+  }, [setCommunityTemplates]);
+
+  useEffect(() => {
+    let isCancelled = false;
+    void refreshPublicWorkflows(() => isCancelled);
 
     return () => {
       isCancelled = true;
     };
-  }, [setCommunityTemplates]);
+  }, [refreshPublicWorkflows]);
+
+  useEffect(() => {
+    const handlePublicWorkflowChange = () => {
+      void refreshPublicWorkflows();
+    };
+
+    window.addEventListener('methmetica:public-workflows-changed', handlePublicWorkflowChange);
+    return () => window.removeEventListener('methmetica:public-workflows-changed', handlePublicWorkflowChange);
+  }, [refreshPublicWorkflows]);
 
   useEffect(() => {
     if (activeTab !== 'forum') return;
@@ -275,6 +285,8 @@ export function Dashboard() {
   const handleSupabaseLogout = async () => {
     try {
       await signOutSupabase();
+      setUser(null);
+      setAuthStatus('anonymous');
       setDriveConnected(false);
     } catch (err) {
       console.error('Supabase logout failed', err);
@@ -788,6 +800,14 @@ export function Dashboard() {
                 {workflow.reviewedByMe && (
                   <span className="reviewed-badge card-hover-fade"><Icons.Check size={12} style={{ marginRight: 4 }} />已審核</span>
                 )}
+                <button
+                  className={`card-quick-bookmark ${workflow.bookmarked ? 'active' : ''}`}
+                  onClick={(e) => handleToggleInteraction(e, workflow.id, 'bookmark', workflow.bookmarked)}
+                  disabled={pendingInteractions[`${workflow.id}:bookmark`]}
+                  title={workflow.bookmarked ? '取消收藏' : '收藏'}
+                >
+                  <Icons.Bookmark size={15} style={{ marginRight: 0 }} />
+                </button>
                 <div className="card-metrics card-hover-fade">
                   <span title="Views"><Icons.Eye size={12} style={{ marginRight: 4 }} />{workflow.viewCount ?? 0}</span>
                   <span title="Likes"><Icons.Heart size={12} style={{ marginRight: 4 }} />{workflow.likeCount ?? 0}</span>
@@ -1476,9 +1496,9 @@ export function Dashboard() {
           padding: 18px;
           box-shadow: var(--node-shadow);
           cursor: pointer;
-          display: grid;
+          display: flex;
+          flex-direction: column;
           gap: 12px;
-          align-content: start;
           min-height: 232px;
           height: 232px;
           transform-origin: center center;
@@ -1499,39 +1519,39 @@ export function Dashboard() {
           filter: saturate(1.04);
         }
         .workflow-card.has-preview:hover {
-          min-height: 408px;
-          height: 408px;
+          min-height: 430px;
+          height: 430px;
           background:
             linear-gradient(180deg, rgba(96, 165, 250, 0.08), rgba(255,255,255,0.02)),
             var(--bg-sidebar);
         }
         .workflow-card-preview {
-          position: absolute;
-          left: 18px;
-          right: 18px;
-          top: 112px;
-          min-height: 182px;
-          height: auto;
+          position: relative;
+          min-height: 0;
+          height: 0;
           display: grid;
           grid-template-rows: auto 1fr;
           gap: 8px;
-          padding: 10px;
+          padding: 0 10px;
           margin-top: 0;
           border-radius: 12px;
           border: 1px solid rgba(96, 165, 250, 0.22);
           background: rgba(0, 0, 0, 0.12);
           opacity: 0;
           overflow: hidden;
-          transform: translateY(12px) scale(0.97);
-          transition: opacity 0.18s ease, transform 0.18s ease;
+          transform: translateY(8px) scale(0.985);
+          transition: opacity 0.18s ease, transform 0.18s ease, height 0.18s ease, padding 0.18s ease;
           pointer-events: none;
-          z-index: 2;
+          z-index: 1;
+          flex: 0 0 auto;
         }
         .workflow-card:hover .workflow-card-preview,
         .workflow-card-preview.is-visible,
         .workflow-card-preview.is-loading {
           opacity: 1;
           transform: translateY(0) scale(1);
+          height: 184px;
+          padding: 10px;
         }
         .workflow-card-preview-header {
           display: flex;
@@ -1570,11 +1590,7 @@ export function Dashboard() {
           transition: opacity 0.16s ease, transform 0.16s ease;
         }
         .workflow-card:hover .card-hover-fade {
-          opacity: 0;
-          transform: translateY(-4px);
-          max-height: 0;
-          overflow: hidden;
-          margin: 0;
+          opacity: 0.34;
         }
         .workflow-card .card-body {
           display: grid;
@@ -1603,13 +1619,11 @@ export function Dashboard() {
           overflow: hidden;
         }
         .workflow-card .card-footer {
-          position: absolute;
-          left: 18px;
-          right: 18px;
-          bottom: 18px;
+          position: relative;
           margin-top: 0;
           z-index: 3;
           backdrop-filter: blur(8px);
+          margin-top: auto;
         }
         .card-author {
           font-size: 0.8rem;
@@ -1626,6 +1640,39 @@ export function Dashboard() {
         .workflow-card .card-body {
           position: relative;
           z-index: 3;
+        }
+        .card-quick-bookmark {
+          position: absolute;
+          right: 18px;
+          top: 18px;
+          z-index: 4;
+          width: 34px;
+          height: 34px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid var(--border-node);
+          border-radius: 10px;
+          background: rgba(255,255,255,0.08);
+          color: var(--text-sub);
+          opacity: 0;
+          transform: translateY(-4px);
+          cursor: pointer;
+          transition: opacity 0.16s ease, transform 0.16s ease, background 0.16s ease, color 0.16s ease;
+        }
+        .workflow-card:hover .card-quick-bookmark,
+        .card-quick-bookmark.active {
+          opacity: 1;
+          transform: translateY(0);
+        }
+        .card-quick-bookmark.active {
+          color: var(--accent-bright);
+          border-color: rgba(74, 222, 128, 0.45);
+          background: rgba(74, 222, 128, 0.12);
+        }
+        .card-quick-bookmark:disabled {
+          cursor: wait;
+          opacity: 0.55;
         }
         .card-top,
         .card-footer {

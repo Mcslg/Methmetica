@@ -150,6 +150,13 @@ export type NodeData = {
     updateSummary?: string;
     warningMessage?: string;
     supersedesVersionId?: string;
+    updateAvailable?: boolean;
+    updateSeverity?: 'feature' | 'fix' | 'hotfix';
+    updateMessage?: string;
+    sourceWorkflowId?: string;
+    sourceWorkflowVersionId?: string;
+    latestWorkflowVersionId?: string;
+    latestWorkflowVersion?: number;
     reviewCount?: number;
     reviewRequired?: boolean;
     reviewWarning?: boolean;
@@ -287,10 +294,22 @@ const hasCommunityRuntimePlan = (node: AppNode, state: AppState) => {
     return Boolean(template?.compiledArtifact || template?.runtimePlan);
 };
 
-const wouldCreateGraphCycle = (edges: Edge[], connection: Connection) => {
+const isBuilderBridgeNode = (node?: AppNode) => (
+    node?.type === 'communityTemplateNode' &&
+    Boolean(node.data?.builderSourceId) &&
+    Boolean(node.data?.autoManagedTemplateNode)
+);
+
+const wouldCreateGraphCycle = (nodes: AppNode[], edges: Edge[], connection: Connection) => {
     const { source, target } = connection;
     if (!source || !target) return false;
     if (source === target) return true;
+
+    const sourceNode = nodes.find(node => node.id === source);
+    const targetNode = nodes.find(node => node.id === target);
+    if (isBuilderBridgeNode(sourceNode) || isBuilderBridgeNode(targetNode)) {
+        return false;
+    }
 
     const outgoing = new Map<string, string[]>();
     edges.forEach(edge => {
@@ -795,7 +814,9 @@ const useStore = create<AppState>()(
     },
 
     onConnect: (connection: Connection) => {
-        if (wouldCreateGraphCycle(get().edges, connection)) {
+        const { nodes, edges } = get();
+
+        if (wouldCreateGraphCycle(nodes, edges, connection)) {
             const message = 'Workflow graph 目前不支援循環依賴。請用 CodeNode 或未來的迭代節點處理迴圈。';
             console.warn(message, connection);
             if (typeof window !== 'undefined') {
@@ -805,7 +826,6 @@ const useStore = create<AppState>()(
         }
 
         get().takeSnapshot(); // Snapshot BEFORE connecting
-        const { nodes } = get();
         const sourceNode = nodes.find(n => n.id === connection.source);
         const targetNode = nodes.find(n => n.id === connection.target);
         const sourceHandle = sourceNode?.data.handles?.find(h => h.id === connection.sourceHandle);

@@ -40,6 +40,20 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
     );
   }
 
+  const referencedVersionId = typeof data.sourceWorkflowVersionId === 'string'
+    ? data.sourceWorkflowVersionId
+    : template.sourceWorkflowVersionId;
+  const latestVersionId = template.sourceWorkflowVersionId;
+  const hasVersionUpdate = Boolean(referencedVersionId && latestVersionId && referencedVersionId !== latestVersionId);
+  const updateSeverity = hasVersionUpdate ? template.changeType : data.updateSeverity ?? template.updateSeverity;
+  const updateMessage = hasVersionUpdate
+    ? updateSeverity === 'hotfix'
+      ? '這個節點有重要修復，建議盡快更新。'
+      : updateSeverity === 'fix'
+        ? '這個節點已有修正版，建議手動更新。'
+        : '這個節點已有新版，可手動更新。'
+    : data.updateMessage ?? template.updateMessage;
+
   return (
     <NodeFrame
       id={id}
@@ -68,6 +82,14 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
       }}
     >
       <div className="community-template-body">
+        {(hasVersionUpdate || updateMessage) && (
+          <div className={`community-template-update-banner ${updateSeverity === 'hotfix' ? 'hotfix' : updateSeverity === 'fix' ? 'fix' : 'feature'}`}>
+            <strong>
+              {updateSeverity === 'hotfix' ? '重要修復' : updateSeverity === 'fix' ? '有修正版' : '有新版'}
+            </strong>
+            <span>{updateMessage}</span>
+          </div>
+        )}
         {template.builderBlocks.length > 0 && (
           <div className="community-template-fields">
             {template.builderBlocks.map((sourceBlock: TemplateBuilderBlock) => {
@@ -120,6 +142,30 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
         .community-template-fields {
           display: grid;
           gap: 10px;
+        }
+        .community-template-update-banner {
+          display: grid;
+          gap: 4px;
+          padding: 9px 10px;
+          border: 1px solid rgba(96, 165, 250, 0.38);
+          border-radius: 10px;
+          background: rgba(96, 165, 250, 0.09);
+          color: #bfdbfe;
+          font-size: 0.74rem;
+          line-height: 1.4;
+        }
+        .community-template-update-banner.fix {
+          border-color: rgba(245, 158, 11, 0.42);
+          background: rgba(245, 158, 11, 0.1);
+          color: #fcd34d;
+        }
+        .community-template-update-banner.hotfix {
+          border-color: rgba(248, 113, 113, 0.48);
+          background: rgba(248, 113, 113, 0.12);
+          color: #fecaca;
+        }
+        .community-template-update-banner strong {
+          color: inherit;
         }
         .community-template-text-block {
           margin: 0;

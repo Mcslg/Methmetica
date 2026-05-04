@@ -7,6 +7,7 @@ import type {
   WorkflowGraphEdge,
   WorkflowGraphNode,
   WorkflowPublishKind,
+  WorkflowUpdateSeverity,
   WorkflowUpdatePolicy,
   WorkflowVisibility,
 } from '../../community/types';
@@ -140,6 +141,11 @@ export type WorkflowVersionSummary = {
   updateSummary?: string | null;
   warningMessage?: string | null;
   supersedesVersionId?: string | null;
+  updateAvailable?: boolean;
+  updateSeverity?: WorkflowUpdateSeverity;
+  updateMessage?: string;
+  latestWorkflowVersionId?: string;
+  latestWorkflowVersion?: number;
   reviewStatus?: WorkflowReviewStatus | null;
   reviewCount?: number;
   reviewRequired?: boolean;
@@ -250,6 +256,22 @@ const getReviewMetadata = (row: {
   extraExpertReviews: row.extra_expert_reviews ?? 0,
   reviewedByMe: row.reviewed_by_me ?? undefined,
 });
+
+export const getSupersededVersionMessage = (version: {
+  changeType?: WorkflowChangeType | null;
+  warningMessage?: string | null;
+}) => {
+  if (version.changeType === 'hotfix') {
+    return version.warningMessage || '這個版本有重要修復，建議盡快更新。';
+  }
+  if (version.changeType === 'fix') {
+    return version.warningMessage || '這個版本已有修正版，建議手動更新。';
+  }
+  if (version.changeType === 'feature') {
+    return '這個版本已有新版，可手動更新。';
+  }
+  return null;
+};
 
 const fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs: number) => {
   const controller = new AbortController();
@@ -595,30 +617,55 @@ export async function listWorkflowVersions(workflowId: string) {
   if (error) throw error;
 
   const currentVersionId = (workflowData as { current_version_id?: string | null } | null)?.current_version_id ?? null;
-  return ((data ?? []) as WorkflowVersionRow[]).map((row): WorkflowVersionSummary => ({
-    id: row.id,
-    workflowId: row.workflow_id,
-    version: row.version,
-    title: row.title,
-    description: row.description,
-    tags: row.tags ?? [],
-    visibility: row.visibility,
-    publishedAt: row.published_at,
-    createdAt: row.created_at,
-    isCurrent: row.id === currentVersionId,
-    artifactStatus: row.artifact_status,
-    compilerVersion: row.compiler_version,
-    runtimeVersion: row.runtime_version,
-    dependencyCount: row.dependency_manifest?.entries.length ?? 0,
-    containsAdminCode: Boolean(row.contains_admin_code),
-    publishKind: row.publish_kind,
-    changeType: row.change_type,
-    updatePolicy: row.update_policy,
-    updateSummary: row.update_summary,
-    warningMessage: row.warning_message,
-    supersedesVersionId: row.supersedes_version_id,
-    ...getReviewMetadata(row),
-  }));
+  const rows = (data ?? []) as WorkflowVersionRow[];
+  const supersedingByOldVersionId = new Map<string, WorkflowVersionRow>();
+  rows.forEach((row) => {
+    if (!row.supersedes_version_id || !['feature', 'fix', 'hotfix'].includes(row.change_type ?? '')) return;
+    const existing = supersedingByOldVersionId.get(row.supersedes_version_id);
+    if (!existing || row.version > existing.version) {
+      supersedingByOldVersionId.set(row.supersedes_version_id, row);
+    }
+  });
+
+  return rows.map((row): WorkflowVersionSummary => {
+    const supersedingVersion = supersedingByOldVersionId.get(row.id);
+    const updateMessage = supersedingVersion ? getSupersededVersionMessage({
+      changeType: supersedingVersion.change_type,
+      warningMessage: supersedingVersion.warning_message,
+    }) : null;
+
+    return {
+      id: row.id,
+      workflowId: row.workflow_id,
+      version: row.version,
+      title: row.title,
+      description: row.description,
+      tags: row.tags ?? [],
+      visibility: row.visibility,
+      publishedAt: row.published_at,
+      createdAt: row.created_at,
+      isCurrent: row.id === currentVersionId,
+      artifactStatus: row.artifact_status,
+      compilerVersion: row.compiler_version,
+      runtimeVersion: row.runtime_version,
+      dependencyCount: row.dependency_manifest?.entries.length ?? 0,
+      containsAdminCode: Boolean(row.contains_admin_code),
+      publishKind: row.publish_kind,
+      changeType: row.change_type,
+      updatePolicy: row.update_policy,
+      updateSummary: row.update_summary,
+      warningMessage: updateMessage,
+      supersedesVersionId: row.supersedes_version_id,
+      updateAvailable: Boolean(supersedingVersion),
+      updateSeverity: supersedingVersion?.change_type === 'hotfix' || supersedingVersion?.change_type === 'fix'
+        ? supersedingVersion.change_type
+        : supersedingVersion ? 'feature' : undefined,
+      updateMessage: updateMessage ?? undefined,
+      latestWorkflowVersionId: supersedingVersion?.id,
+      latestWorkflowVersion: supersedingVersion?.version,
+      ...getReviewMetadata(row),
+    };
+  });
 }
 
 export async function getWorkflowVersionBlueprintFromSupabase(workflowVersionId: string) {
@@ -698,6 +745,17 @@ export async function publishWorkflowToSupabase(payload: WorkflowPayload) {
 
   if (error) throw error;
   return rowToBlueprint(data as WorkflowRow);
+}
+
+export async function adminDeletePublicWorkflowInSupabase(workflowId: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { error } = await withSupabaseTimeout(
+    supabase.rpc('admin_delete_public_workflow', { p_workflow_id: workflowId }),
+    'Deleting public workflow',
+  );
+
+  if (error) throw error;
 }
 
 type ReviewWorkflowRow = {

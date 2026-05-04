@@ -9,10 +9,15 @@ import * as driveService from '../utils/googleDriveService';
 import { parseRouteFromLocation, pushRoute } from '../utils/navigation';
 import { forkWorkflowToLocalDraft } from '../utils/workflowFork';
 import { deleteLocalDraft } from '../utils/localDraftService';
-import { setWorkflowInteraction } from '../integrations/supabase/workflowInteractions';
+import {
+    getMyWorkflowInteractions,
+    getWorkflowEngagement,
+    setWorkflowInteraction,
+} from '../integrations/supabase/workflowInteractions';
 import { getUserRole } from '../integrations/supabase/auth';
 import {
     adminApproveWorkflowInSupabase,
+    adminDeletePublicWorkflowInSupabase,
     getWorkflowVersionBlueprintFromSupabase,
     listWorkflowVersions,
     requestExtraWorkflowReviewInSupabase,
@@ -83,7 +88,6 @@ export function Sidebar() {
         isDeletingHover, isPaletteFloating, setPaletteFloating, setCurrentView,
         user, setUser, driveConnected, activeFileId, setActiveFileId, savedGraphSignature, markCurrentGraphSaved, updateNodeData
     } = useStore();
-    const fileInputRef = useRef<HTMLInputElement>(null);
     const [holdProgress, setHoldProgress] = React.useState(0);
     const [isSyncing, setIsSyncing] = React.useState(false);
     const [syncStatus, setSyncStatus] = React.useState<'idle' | 'success' | 'error'>('idle');
@@ -93,6 +97,7 @@ export function Sidebar() {
     const [publishDialogOpen, setPublishDialogOpen] = React.useState(false);
     const [publishChangeType, setPublishChangeType] = React.useState<WorkflowChangeType>('feature');
     const [publishUpdateSummary, setPublishUpdateSummary] = React.useState('');
+    const [publicWorkflowLike, setPublicWorkflowLike] = React.useState({ liked: false, likeCount: 0, isPending: false });
     const holdTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const isDirty = createGraphSignature(nodes, edges) !== savedGraphSignature;
     const projectRoot = nodes.find(node => node.type === 'projectNode');
@@ -171,8 +176,21 @@ export function Sidebar() {
     const activeWorkflowVersionId = typeof projectRoot?.data.workflowVersionId === 'string'
         ? projectRoot.data.workflowVersionId
         : null;
+    const canLikePublicWorkflow = Boolean(supabaseWorkflowId && projectRoot?.data.readOnlyPreview);
     const isEditorRoute = currentRoute.view === 'editor';
+    const isSupabasePublicWorkflow = Boolean(
+        supabaseWorkflowId &&
+        (
+            projectRoot?.data.readOnlyPreview ||
+            projectRoot?.data.workflowSource === 'public' ||
+            projectRoot?.data.visibility === 'public' ||
+            projectRoot?.data.visibility === 'core' ||
+            (isEditorRoute && (currentRoute.source === 'public' || currentRoute.source === 'version'))
+        )
+    );
+    const canAdminDeleteSupabaseWorkflow = Boolean(isAdmin && isSupabasePublicWorkflow && supabaseWorkflowId);
     const canDeleteWorkflow =
+        canAdminDeleteSupabaseWorkflow ||
         (isEditorRoute && currentRoute.source === 'draft' && Boolean(currentRoute.id)) ||
         Boolean(activeFileId);
     const selectedPublishChange = getPublishChangeOption(publishChangeType);
@@ -181,43 +199,6 @@ export function Sidebar() {
         const payload = templateId ? JSON.stringify({ type: nodeType, templateId }) : nodeType;
         event.dataTransfer.setData('application/reactflow', payload);
         event.dataTransfer.effectAllowed = 'move';
-    };
-
-    const handleSave = () => {
-        const data = { nodes, edges };
-        const json = JSON.stringify(data, null, 2);
-        const blob = new Blob([json], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `methmatica_project_${new Date().toISOString().slice(0, 10)}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-        markCurrentGraphSaved();
-    };
-
-    const handleLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            try {
-                const json = event.target?.result as string;
-                const data = JSON.parse(json);
-                if (data && Array.isArray(data.nodes) && Array.isArray(data.edges)) {
-                    setGraph(data.nodes, data.edges);
-                    setActiveFileId(null);
-                    pushRoute({ view: 'editor', source: 'new' });
-                } else {
-                    alert(t('common.invalid_file') || 'Invalid project file format.');
-                }
-            } catch {
-                alert(t('common.parse_error') || 'Failed to parse project file.');
-            }
-        };
-        reader.readAsText(file);
-        e.target.value = '';
     };
 
     const startHold = () => {
@@ -304,6 +285,118 @@ export function Sidebar() {
             warningMessage: option.warningMessage,
         });
         setPublishDialogOpen(false);
+    };
+
+    const publishUpdateDialog = publishDialogOpen ? (
+        <div className="publish-update-dialog-popover" role="presentation">
+            <div className="publish-update-dialog" role="dialog" aria-modal="false" aria-label="更新發布設定">
+                <div className="publish-update-dialog-header">
+                    <div>
+                        <strong>{hasBuilderDraft ? '更新節點' : '更新工作流'}</strong>
+                        <p>選擇這次更新的性質，並補一段給審核者與使用者看的說明。</p>
+                    </div>
+                    <button
+                        type="button"
+                        className="publish-update-close"
+                        onClick={() => setPublishDialogOpen(false)}
+                        aria-label="關閉"
+                    >
+                        <Icons.Clear size={14} />
+                    </button>
+                </div>
+                <div className="publish-change-options">
+                    {PUBLISH_CHANGE_OPTIONS.map(option => (
+                        <button
+                            key={option.value}
+                            type="button"
+                            className={`publish-change-option ${publishChangeType === option.value ? 'active' : ''}`}
+                            onClick={() => setPublishChangeType(option.value)}
+                        >
+                            <span>{option.label}</span>
+                            <small>{option.description}</small>
+                        </button>
+                    ))}
+                </div>
+                <label className="publish-update-summary">
+                    <span>更新說明</span>
+                    <textarea
+                        value={publishUpdateSummary}
+                        onChange={(event) => setPublishUpdateSummary(event.target.value)}
+                        placeholder="例如：修正輸出在空輸入時的錯誤，並保留原本的輸入/輸出介面。"
+                    />
+                </label>
+                <div className="publish-update-policy-note">
+                    更新政策：{selectedPublishChange.updatePolicy === 'none' ? '不推送更新' : selectedPublishChange.updatePolicy === 'auto' ? '可自動更新' : '手動更新'}
+                    {selectedPublishChange.warningMessage ? ` · 舊版本會顯示警告` : ''}
+                </div>
+                <div className="publish-update-actions">
+                    <button type="button" className="sidebar-btn" onClick={() => setPublishDialogOpen(false)}>
+                        取消
+                    </button>
+                    <button type="button" className="sidebar-btn publish" onClick={handleConfirmPublishUpdate} disabled={isSyncing}>
+                        <Icons.Package /> 確認更新
+                    </button>
+                </div>
+            </div>
+        </div>
+    ) : null;
+
+    React.useEffect(() => {
+        if (!supabaseWorkflowId || !projectRoot?.data.readOnlyPreview) {
+            setPublicWorkflowLike({ liked: false, likeCount: 0, isPending: false });
+            return;
+        }
+
+        let cancelled = false;
+        Promise.all([
+            getWorkflowEngagement([supabaseWorkflowId]),
+            user ? getMyWorkflowInteractions([supabaseWorkflowId]) : Promise.resolve(new Map()),
+        ])
+            .then(([engagement, mine]) => {
+                if (cancelled) return;
+                setPublicWorkflowLike({
+                    liked: mine.get(supabaseWorkflowId)?.liked ?? false,
+                    likeCount: engagement.get(supabaseWorkflowId)?.likeCount ?? 0,
+                    isPending: false,
+                });
+            })
+            .catch((error) => {
+                if (!cancelled) console.warn('[sidebar] failed to load public workflow like state:', error);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [projectRoot?.data.readOnlyPreview, supabaseWorkflowId, user]);
+
+    const handleTogglePublicWorkflowLike = async () => {
+        if (!supabaseWorkflowId || publicWorkflowLike.isPending) return;
+        if (!user) {
+            alert('先登入才能按讚。');
+            return;
+        }
+
+        const nextLiked = !publicWorkflowLike.liked;
+        setPublicWorkflowLike(current => ({
+            liked: nextLiked,
+            likeCount: nextLiked ? current.likeCount + 1 : Math.max(0, current.likeCount - 1),
+            isPending: true,
+        }));
+
+        try {
+            await setWorkflowInteraction(supabaseWorkflowId, 'like', nextLiked);
+        } catch (error) {
+            console.error('[sidebar] failed to toggle workflow like:', error);
+            setPublicWorkflowLike(current => ({
+                liked: !nextLiked,
+                likeCount: nextLiked ? Math.max(0, current.likeCount - 1) : current.likeCount + 1,
+                isPending: false,
+            }));
+            alert('更新 Like 失敗。');
+            return;
+        }
+
+        setPublicWorkflowLike(current => ({ ...current, isPending: false }));
     };
 
     const handleReviewWorkflow = async () => {
@@ -468,7 +561,7 @@ export function Sidebar() {
     }, [supabaseWorkflowId, projectRoot?.data.publishStatus]);
 
     React.useEffect(() => {
-        if (!user || !supabaseWorkflowId || reviewStatus !== 'unreviewed') return;
+        if (!user || !supabaseWorkflowId) return;
 
         let cancelled = false;
         getUserRole(user.id, user.role)
@@ -477,13 +570,13 @@ export function Sidebar() {
                 setUser({ ...user, role });
             })
             .catch((error) => {
-                console.warn('[sidebar] failed to refresh user role for workflow review:', error);
+                console.warn('[sidebar] failed to refresh user role for public workflow actions:', error);
             });
 
         return () => {
             cancelled = true;
         };
-    }, [reviewStatus, setUser, supabaseWorkflowId, user]);
+    }, [setUser, supabaseWorkflowId, user]);
 
     const handleOpenVersion = async (version: WorkflowVersionSummary) => {
         setIsSyncing(true);
@@ -533,16 +626,24 @@ export function Sidebar() {
     };
 
     const handleDeleteCurrentWorkflow = async () => {
-        if (isForkablePublicWorkflow || !isEditorRoute) {
-            alert('公開工作流不能直接刪除，請先 Fork 成自己的副本。');
+        if (isSupabasePublicWorkflow && !canAdminDeleteSupabaseWorkflow) {
+            alert('公開 workflow 只有 admin 可以直接刪除。');
             return;
         }
 
         const workflowName = String(projectRoot?.data.label || 'Untitled Workflow');
-        if (!window.confirm(`確定要刪除 workflow「${workflowName}」嗎？這個動作不能復原。`)) return;
+        const confirmMessage = canAdminDeleteSupabaseWorkflow
+            ? `Admin 確定要刪除公開 workflow「${workflowName}」嗎？這會從社群列表移除，且不能復原。`
+            : `確定要刪除 workflow「${workflowName}」嗎？這個動作不能復原。`;
+        if (!window.confirm(confirmMessage)) return;
 
         try {
-            if (currentRoute.source === 'draft' && currentRoute.id) {
+            if (canAdminDeleteSupabaseWorkflow && supabaseWorkflowId) {
+                await adminDeletePublicWorkflowInSupabase(supabaseWorkflowId);
+                window.dispatchEvent(new CustomEvent('methmetica:public-workflows-changed', {
+                    detail: { workflowId: supabaseWorkflowId, action: 'deleted' },
+                }));
+            } else if (isEditorRoute && currentRoute.source === 'draft' && currentRoute.id) {
                 deleteLocalDraft(currentRoute.id);
             } else if (activeFileId) {
                 await driveService.deleteWorkflow(activeFileId);
@@ -552,11 +653,16 @@ export function Sidebar() {
                 return;
             }
 
+            setGraph([], []);
+            setActiveFileId(null);
             setCurrentView('home');
             pushRoute({ view: 'home' });
+            if (canAdminDeleteSupabaseWorkflow) {
+                alert(`已刪除公開 workflow「${workflowName}」。`);
+            }
         } catch (err) {
             console.error('Failed to delete workflow', err);
-            alert('刪除 workflow 失敗。');
+            alert(getDisplayErrorMessage(err, '刪除 workflow 失敗。'));
         }
     };
 
@@ -657,58 +763,15 @@ export function Sidebar() {
                             {publishFailureReason}
                         </div>
                     )}
-                    {publishDialogOpen && (
-                        <div className="publish-update-dialog-backdrop" role="presentation">
-                            <div className="publish-update-dialog" role="dialog" aria-modal="true" aria-label="更新發布設定">
-                                <div className="publish-update-dialog-header">
-                                    <div>
-                                        <strong>{hasBuilderDraft ? '更新節點' : '更新工作流'}</strong>
-                                        <p>選擇這次更新的性質，並補一段給審核者與使用者看的說明。</p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        className="publish-update-close"
-                                        onClick={() => setPublishDialogOpen(false)}
-                                        aria-label="關閉"
-                                    >
-                                        <Icons.Clear size={14} />
-                                    </button>
-                                </div>
-                                <div className="publish-change-options">
-                                    {PUBLISH_CHANGE_OPTIONS.map(option => (
-                                        <button
-                                            key={option.value}
-                                            type="button"
-                                            className={`publish-change-option ${publishChangeType === option.value ? 'active' : ''}`}
-                                            onClick={() => setPublishChangeType(option.value)}
-                                        >
-                                            <span>{option.label}</span>
-                                            <small>{option.description}</small>
-                                        </button>
-                                    ))}
-                                </div>
-                                <label className="publish-update-summary">
-                                    <span>更新說明</span>
-                                    <textarea
-                                        value={publishUpdateSummary}
-                                        onChange={(event) => setPublishUpdateSummary(event.target.value)}
-                                        placeholder="例如：修正輸出在空輸入時的錯誤，並保留原本的輸入/輸出介面。"
-                                    />
-                                </label>
-                                <div className="publish-update-policy-note">
-                                    更新政策：{selectedPublishChange.updatePolicy === 'none' ? '不推送更新' : selectedPublishChange.updatePolicy === 'auto' ? '可自動更新' : '手動更新'}
-                                    {selectedPublishChange.warningMessage ? ` · 舊版本會顯示警告` : ''}
-                                </div>
-                                <div className="publish-update-actions">
-                                    <button type="button" className="sidebar-btn" onClick={() => setPublishDialogOpen(false)}>
-                                        取消
-                                    </button>
-                                    <button type="button" className="sidebar-btn publish" onClick={handleConfirmPublishUpdate} disabled={isSyncing}>
-                                        <Icons.Package /> 確認更新
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
+                    {canLikePublicWorkflow && (
+                        <button
+                            className={`sidebar-btn like ${publicWorkflowLike.liked ? 'active' : ''}`}
+                            onClick={handleTogglePublicWorkflowLike}
+                            disabled={publicWorkflowLike.isPending}
+                            title={publicWorkflowLike.liked ? '取消讚' : 'Like 這個公開 workflow'}
+                        >
+                            <Icons.Heart /> {publicWorkflowLike.liked ? 'Liked' : 'Like'} · {publicWorkflowLike.likeCount}
+                        </button>
                     )}
                     {supabaseWorkflowId && reviewStatus === 'unreviewed' && (
                         <div className="workflow-review-panel">
@@ -791,19 +854,15 @@ export function Sidebar() {
                             )}
                         </div>
                     )}
-                    <button className="sidebar-btn" onClick={handleSave}>
-                        <Icons.Save /> {t('sidebar.save_export')}
-                    </button>
-                    <button className="sidebar-btn" onClick={() => fileInputRef.current?.click()}>
-                        <Icons.Load /> {t('sidebar.load_import')}
-                    </button>
                     <button
                         className="sidebar-btn danger"
                         onClick={handleDeleteCurrentWorkflow}
-                        disabled={!canDeleteWorkflow || isForkablePublicWorkflow}
+                        disabled={!canDeleteWorkflow}
                         title={
-                            isForkablePublicWorkflow
-                                ? '公開工作流不能直接刪除，請先 Fork 成自己的副本'
+                            canAdminDeleteSupabaseWorkflow
+                                ? 'Admin 刪除這個公開 workflow'
+                                : isSupabasePublicWorkflow
+                                    ? '公開 workflow 只有 admin 可以直接刪除'
                                 : canDeleteWorkflow ? '刪除目前 workflow' : '目前 workflow 還沒有儲存來源'
                         }
                     >
@@ -822,17 +881,6 @@ export function Sidebar() {
                         <span>{holdProgress > 0 ? (t('sidebar.hold_to_clear') || 'Hold to Clear') : (t('sidebar.clear_all') || 'Clear All')}</span>
                     </button>
                 </div>
-
-
-
-                <input
-                    type="file"
-                    ref={fileInputRef}
-                    style={{ display: 'none' }}
-                    accept=".json"
-                    onChange={handleLoad}
-                />
-
                 <div className="sidebar-footer" style={{ marginTop: 'auto', display: 'flex', gap: '8px' }}>
                     <button 
                         className="sidebar-btn icon-only" 
@@ -857,6 +905,8 @@ export function Sidebar() {
                     </div>
                 )}
             </div>
+
+            {publishUpdateDialog}
 
             <button className="sidebar-toggle-btn" onClick={() => setSidebarOpen(!isSidebarOpen)}>
                 {isSidebarOpen ? '‹' : '›'}
@@ -1040,6 +1090,19 @@ export function Sidebar() {
                 .library-item:hover .library-review-badge {
                     color: #fbbf24;
                 }
+                .library-item .library-review-badge.update.feature {
+                    color: #93c5fd;
+                    border-color: rgba(96, 165, 250, 0.35);
+                    background: rgba(96, 165, 250, 0.08);
+                }
+                .library-item .library-review-badge.update.fix {
+                    color: #fbbf24;
+                }
+                .library-item .library-review-badge.update.hotfix {
+                    color: #fecaca;
+                    border-color: rgba(248, 113, 113, 0.4);
+                    background: rgba(248, 113, 113, 0.1);
+                }
                 .sidebar-btn {
                     display: flex;
                     align-items: center;
@@ -1121,6 +1184,22 @@ export function Sidebar() {
                     border-color: #f87171;
                     color: #fecaca;
                 }
+                .sidebar-btn.like {
+                    justify-content: center;
+                    border-color: rgba(248, 113, 113, 0.28);
+                    background: rgba(248, 113, 113, 0.08);
+                    color: #fca5a5;
+                }
+                .sidebar-btn.like.active {
+                    border-color: rgba(248, 113, 113, 0.55);
+                    background: rgba(248, 113, 113, 0.16);
+                    color: #fecaca;
+                }
+                .sidebar-btn.like:hover:not(:disabled) {
+                    border-color: #f87171;
+                    background: rgba(248, 113, 113, 0.18);
+                    color: #fff;
+                }
                 .publish-failure-inline {
                     margin-top: -2px;
                     padding: 0 2px;
@@ -1128,18 +1207,16 @@ export function Sidebar() {
                     font-size: 0.7rem;
                     line-height: 1.35;
                 }
-                .publish-update-dialog-backdrop {
+                .publish-update-dialog-popover {
                     position: fixed;
-                    inset: 0;
-                    z-index: 1000;
-                    display: grid;
-                    place-items: center;
-                    padding: 20px;
-                    background: rgba(2, 6, 23, 0.62);
-                    backdrop-filter: blur(8px);
+                    left: 210px;
+                    top: 96px;
+                    z-index: 10001;
+                    width: min(460px, calc(100vw - 230px));
+                    pointer-events: none;
                 }
                 .publish-update-dialog {
-                    width: min(460px, calc(100vw - 32px));
+                    width: 100%;
                     display: grid;
                     gap: 14px;
                     padding: 18px;
@@ -1147,6 +1224,7 @@ export function Sidebar() {
                     border-radius: 14px;
                     background: var(--bg-sidebar);
                     box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+                    pointer-events: auto;
                 }
                 .publish-update-dialog-header {
                     display: flex;
@@ -1232,6 +1310,14 @@ export function Sidebar() {
                     display: grid;
                     grid-template-columns: 1fr 1fr;
                     gap: 8px;
+                }
+                @media (max-width: 760px) {
+                    .publish-update-dialog-popover {
+                        left: 16px;
+                        right: 16px;
+                        top: 76px;
+                        width: auto;
+                    }
                 }
                 .workflow-review-panel {
                     display: grid;

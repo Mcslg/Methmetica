@@ -38,6 +38,11 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
                         {node.reviewStatus === 'unreviewed' && node.reviewWarning && (
                             <span className="library-review-badge">未驗證</span>
                         )}
+                        {node.updateAvailable && (
+                            <span className={`library-review-badge update ${node.updateSeverity ?? 'feature'}`}>
+                                {node.updateSeverity === 'hotfix' ? '重要修復' : node.updateSeverity === 'fix' ? '有修正版' : '有新版'}
+                            </span>
+                        )}
                     </div>
                 ))}
             </div>
@@ -67,6 +72,11 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
                             <span>{node.label}</span>
                             {node.reviewStatus === 'unreviewed' && node.reviewWarning && (
                                 <span className="library-review-badge">未驗證</span>
+                            )}
+                            {node.updateAvailable && (
+                                <span className={`library-review-badge update ${node.updateSeverity ?? 'feature'}`}>
+                                    {node.updateSeverity === 'hotfix' ? '重要修復' : node.updateSeverity === 'fix' ? '有修正版' : '有新版'}
+                                </span>
                             )}
                         </div>
                     ))}
