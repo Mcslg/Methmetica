@@ -5,6 +5,7 @@ import type {
   WorkflowBlueprint,
   WorkflowGraphEdge,
   WorkflowGraphNode,
+  WorkflowPublishKind,
   WorkflowVisibility,
 } from '../../community/types';
 import type { AppNode } from '../../store/useStore';
@@ -27,6 +28,7 @@ export type WorkflowPayload = {
   edges: Edge[];
   author: AppUser;
   compiledArtifact?: CompiledWorkflowArtifact;
+  publishKind?: WorkflowPublishKind;
 };
 
 type WorkflowRow = {
@@ -59,6 +61,7 @@ type WorkflowRow = {
       description?: string;
       title?: string;
       tags?: string[];
+      publishKind?: WorkflowPublishKind;
     };
   } | null;
   compiled_artifact?: CompiledWorkflowArtifact | null;
@@ -73,6 +76,7 @@ type WorkflowRow = {
   current_version_id?: string | null;
   current_version?: number | null;
   workflow_version_id?: string | null;
+  publish_kind?: WorkflowPublishKind | null;
 };
 
 type PublicWorkflowCardRow = {
@@ -115,6 +119,7 @@ export type WorkflowVersionSummary = {
   runtimeVersion?: string | null;
   dependencyCount?: number;
   containsAdminCode?: boolean;
+  publishKind?: WorkflowPublishKind | null;
   reviewStatus?: WorkflowReviewStatus | null;
   reviewCount?: number;
   reviewRequired?: boolean;
@@ -153,6 +158,7 @@ type WorkflowVersionRow = {
   runtime_version?: string | null;
   dependency_manifest?: CompiledWorkflowArtifact['dependencyManifest'] | null;
   contains_admin_code?: boolean | null;
+  publish_kind?: WorkflowPublishKind | null;
   created_by: string;
   published_at: string;
   created_at: string;
@@ -187,7 +193,7 @@ const slugify = (value: string) =>
     .slice(0, 80) || `workflow-${Date.now()}`;
 
 const WORKFLOW_REVIEW_COLUMNS = 'review_status, review_count, review_required, review_warning, required_contributor_reviews, required_expert_reviews, contributor_review_count, expert_review_count, extra_contributor_reviews, extra_expert_reviews';
-const WORKFLOW_OPEN_COLUMNS = `id,owner_id,slug,title,description,tags,visibility,status,${WORKFLOW_REVIEW_COLUMNS.replaceAll(' ', '')},workflow_json,artifact_status,compiler_version,runtime_version,published_at,updated_at,created_at,current_version_id`;
+const WORKFLOW_OPEN_COLUMNS = `id,owner_id,slug,title,description,tags,visibility,status,${WORKFLOW_REVIEW_COLUMNS.replaceAll(' ', '')},workflow_json,artifact_status,compiler_version,runtime_version,publish_kind,published_at,updated_at,created_at,current_version_id`;
 const SUPABASE_HEALTH_TIMEOUT_MS = 1500;
 const WORKFLOW_INTERACTION_TIMEOUT_MS = 2000;
 const OPEN_WORKFLOW_TIMEOUT_MS = 3500;
@@ -305,6 +311,7 @@ const rowToBlueprint = (row: WorkflowRow): WorkflowBlueprint => ({
     workflowId: row.id,
     workflowVersionId: row.workflow_version_id ?? row.current_version_id ?? undefined,
     workflowVersion: row.current_version ?? undefined,
+    publishKind: row.publish_kind ?? row.workflow_json?.meta?.publishKind ?? 'workflow',
     ownerId: row.owner_id,
     authorName: row.workflow_json?.meta?.authorName || FALLBACK_AUTHOR,
     ...getReviewMetadata(row),
@@ -362,6 +369,7 @@ const versionRowToBlueprint = (version: WorkflowVersionRow, workflow: WorkflowRo
     workflowId: version.workflow_id,
     workflowVersionId: version.id,
     workflowVersion: version.version,
+    publishKind: version.publish_kind ?? version.workflow_json?.meta?.publishKind ?? 'workflow',
     ownerId: workflow.owner_id,
     authorName: version.workflow_json?.meta?.authorName || FALLBACK_AUTHOR,
     ...getReviewMetadata(version),
@@ -542,7 +550,7 @@ export async function listWorkflowVersions(workflowId: string) {
   const { data, error } = await withSupabaseTimeout(
     supabase
       .from('workflow_versions')
-      .select(`id, workflow_id, version, title, description, tags, visibility, ${WORKFLOW_REVIEW_COLUMNS}, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, published_at, created_at`)
+      .select(`id, workflow_id, version, title, description, tags, visibility, ${WORKFLOW_REVIEW_COLUMNS}, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, publish_kind, published_at, created_at`)
       .eq('workflow_id', workflowId)
       .order('version', { ascending: false }),
     'Loading workflow versions'
@@ -567,6 +575,7 @@ export async function listWorkflowVersions(workflowId: string) {
     runtimeVersion: row.runtime_version,
     dependencyCount: row.dependency_manifest?.entries.length ?? 0,
     containsAdminCode: Boolean(row.contains_admin_code),
+    publishKind: row.publish_kind,
     ...getReviewMetadata(row),
   }));
 }
@@ -577,7 +586,7 @@ export async function getWorkflowVersionBlueprintFromSupabase(workflowVersionId:
   const { data: versionData, error: versionError } = await withSupabaseTimeout(
     supabase
       .from('workflow_versions')
-      .select(`id, workflow_id, version, title, description, tags, visibility, workflow_json, ${WORKFLOW_REVIEW_COLUMNS}, compiled_artifact, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, created_by, published_at, created_at`)
+      .select(`id, workflow_id, version, title, description, tags, visibility, workflow_json, ${WORKFLOW_REVIEW_COLUMNS}, compiled_artifact, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, publish_kind, created_by, published_at, created_at`)
       .eq('id', workflowVersionId)
       .maybeSingle(),
     'Opening workflow version'
@@ -590,7 +599,7 @@ export async function getWorkflowVersionBlueprintFromSupabase(workflowVersionId:
   const { data: workflowData, error: workflowError } = await withSupabaseTimeout(
     supabase
       .from('workflows')
-      .select(`id, owner_id, slug, title, description, tags, visibility, status, ${WORKFLOW_REVIEW_COLUMNS}, workflow_json, compiled_artifact, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, published_at, updated_at, created_at, current_version_id`)
+      .select(`id, owner_id, slug, title, description, tags, visibility, status, ${WORKFLOW_REVIEW_COLUMNS}, workflow_json, compiled_artifact, artifact_status, compiler_version, runtime_version, dependency_manifest, contains_admin_code, publish_kind, published_at, updated_at, created_at, current_version_id`)
       .eq('id', version.workflow_id)
       .maybeSingle(),
     'Opening version workflow'
@@ -622,6 +631,7 @@ export async function publishWorkflowToSupabase(payload: WorkflowPayload) {
       artifactStatus: payload.compiledArtifact ? 'ready' : 'legacy',
       compilerVersion: payload.compiledArtifact?.compilerVersion,
       runtimeVersion: payload.compiledArtifact?.runtimeVersion,
+      publishKind: payload.publishKind ?? 'workflow',
     },
   };
 

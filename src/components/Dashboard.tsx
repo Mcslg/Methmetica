@@ -452,10 +452,11 @@ export function Dashboard() {
           nodes={preview.nodes}
           edges={preview.edges}
           framed={false}
+          simplified
           className="workflow-card-preview-sketch"
           width={320}
-          height={164}
-          padding={14}
+          height={148}
+          padding={18}
         />
       ) : (
         <div className="workflow-card-preview-skeleton" />
@@ -1483,6 +1484,8 @@ export function Dashboard() {
           filter: saturate(1.04);
         }
         .workflow-card.has-preview:hover {
+          min-height: 408px;
+          height: 408px;
           background:
             linear-gradient(180deg, rgba(96, 165, 250, 0.08), rgba(255,255,255,0.02)),
             var(--bg-sidebar);
@@ -1491,8 +1494,8 @@ export function Dashboard() {
           position: absolute;
           left: 18px;
           right: 18px;
-          top: 108px;
-          min-height: 210px;
+          top: 112px;
+          min-height: 182px;
           height: auto;
           display: grid;
           grid-template-rows: auto 1fr;
@@ -1529,14 +1532,14 @@ export function Dashboard() {
           display: block;
         }
         .workflow-card-preview-sketch svg {
-          min-height: 156px;
+          min-height: 140px;
         }
         .workflow-card-preview-sketch svg {
           border-color: rgba(255,255,255,0.06) !important;
           background: rgba(2, 6, 23, 0.28) !important;
         }
         .workflow-card-preview-skeleton {
-          height: 156px;
+          height: 140px;
           border-radius: 10px;
           border: 1px solid rgba(255,255,255,0.08);
           background:

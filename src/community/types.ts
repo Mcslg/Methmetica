@@ -6,6 +6,8 @@ import type { CompiledWorkflowArtifact } from '../utils/workflowCompiler';
 
 export type WorkflowVisibility = 'public' | 'private' | 'core';
 
+export type WorkflowPublishKind = 'workflow' | 'node';
+
 export type ReviewStatus = 'unreviewed' | 'approved';
 
 export type ReviewMetadata = {
@@ -125,6 +127,10 @@ export type CommunityNodeTemplate = {
   elementBindings?: TemplateElementBinding[];
   runtimePlan?: BuiltWorkflowNode;
   compiledArtifact?: CompiledWorkflowArtifact;
+  sourceWorkflowId?: string;
+  sourceWorkflowVersionId?: string;
+  sourceWorkflowSlug?: string;
+  publishKind?: WorkflowPublishKind;
   reviewStatus?: ReviewStatus;
   reviewCount?: number;
   reviewRequired?: boolean;
@@ -209,6 +215,7 @@ export type WorkflowBlueprint = {
     workflowId?: string;
     workflowVersionId?: string;
     workflowVersion?: number;
+    publishKind?: WorkflowPublishKind;
     ownerId?: string;
     authorName?: string;
     reviewStatus?: ReviewStatus;

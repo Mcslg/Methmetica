@@ -46,6 +46,5 @@
 
 Cloudinary
 
-用戶role:
-
+留言、評論功能
 

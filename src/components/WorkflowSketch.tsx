@@ -14,6 +14,7 @@ type WorkflowSketchProps = {
   countLabel?: string;
   className?: string;
   framed?: boolean;
+  simplified?: boolean;
 };
 
 export function WorkflowSketch({
@@ -27,6 +28,7 @@ export function WorkflowSketch({
   countLabel,
   className,
   framed = true,
+  simplified = false,
 }: WorkflowSketchProps) {
   const bounds = useMemo(() => {
     if (nodes.length === 0) {
@@ -56,8 +58,12 @@ export function WorkflowSketch({
     const scale = Math.min(innerWidth / bounds.graphWidth, innerHeight / bounds.graphHeight);
     const nodeMap = new Map(nodes.map((node) => [node.id, node]));
     const toRect = (node: AppNode) => {
-      const nodeWidth = Math.max((node.measured?.width ?? node.width ?? 180) * scale, 16);
-      const nodeHeight = Math.max((node.measured?.height ?? node.height ?? 110) * scale, 10);
+      const minWidth = simplified ? 12 : 16;
+      const minHeight = simplified ? 8 : 10;
+      const widthScale = simplified ? 0.72 : 1;
+      const heightScale = simplified ? 0.72 : 1;
+      const nodeWidth = Math.max((node.measured?.width ?? node.width ?? 180) * scale * widthScale, minWidth);
+      const nodeHeight = Math.max((node.measured?.height ?? node.height ?? 110) * scale * heightScale, minHeight);
       const x = padding + (node.position.x - bounds.minX) * scale;
       const y = padding + (node.position.y - bounds.minY) * scale;
       return { x, y, width: nodeWidth, height: nodeHeight };
@@ -105,9 +111,21 @@ export function WorkflowSketch({
           display: 'block',
           borderRadius: 10,
           border: '1px solid rgba(255,255,255,0.08)',
-          background: 'rgba(0,0,0,0.18)',
+          background: simplified ? 'rgba(2,6,23,0.22)' : 'rgba(0,0,0,0.18)',
         }}
       >
+        {simplified && (
+          <rect
+            x={padding}
+            y={padding}
+            width={width - padding * 2}
+            height={height - padding * 2}
+            rx={10}
+            fill="none"
+            stroke="rgba(255,255,255,0.05)"
+            strokeDasharray="4 6"
+          />
+        )}
         {graph.edgeLines.map((edge) => (
           <line
             key={edge.id}
@@ -116,9 +134,9 @@ export function WorkflowSketch({
             x2={edge.x2}
             y2={edge.y2}
             stroke={edge.wireless ? '#9ca3af' : edge.scope ? '#8a8a8a' : '#4facfe'}
-            strokeWidth={edge.wireless ? 1.5 : 2}
-            strokeDasharray={edge.wireless ? '5 4' : undefined}
-            opacity={0.82}
+            strokeWidth={simplified ? (edge.wireless ? 1 : 1.35) : edge.wireless ? 1.5 : 2}
+            strokeDasharray={edge.wireless ? '5 4' : simplified ? '2 0' : undefined}
+            opacity={simplified ? 0.52 : 0.82}
           />
         ))}
         {graph.nodeRects.map(({ node, rect }) => {
@@ -131,10 +149,10 @@ export function WorkflowSketch({
                 y={rect.y}
                 width={rect.width}
                 height={rect.height}
-                rx={Math.min(6, rect.height / 3)}
-                fill={isActive ? 'rgba(79, 172, 254, 0.24)' : 'rgba(255,255,255,0.08)'}
-                stroke={isActive ? '#7dd3fc' : nodeColor}
-                strokeWidth={isActive ? 2 : 1}
+                rx={Math.min(simplified ? 4 : 6, rect.height / 3)}
+                fill={isActive ? 'rgba(79, 172, 254, 0.24)' : simplified ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.08)'}
+                stroke={isActive ? '#7dd3fc' : simplified ? `${nodeColor}cc` : nodeColor}
+                strokeWidth={isActive ? 2 : simplified ? 0.9 : 1}
               />
             </g>
           );

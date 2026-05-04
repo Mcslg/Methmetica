@@ -1,4 +1,4 @@
-import type { CommunityNodeTemplate, WorkflowVisibility } from '../../community/types';
+import type { CommunityNodeTemplate, WorkflowPublishKind, WorkflowVisibility } from '../../community/types';
 import type { SupabaseNodeTemplateRow } from '../../community/schema';
 import { supabase } from './client';
 import { withSupabaseTimeout } from './utils';
@@ -8,8 +8,10 @@ type NodeTemplateVisibility = 'community' | 'core';
 type NodeTemplatePayload = {
   template: CommunityNodeTemplate;
   sourceWorkflowId: string;
+  sourceWorkflowVersionId?: string;
   sourceWorkflowSlug?: string;
   workflowVisibility: WorkflowVisibility;
+  publishKind: WorkflowPublishKind;
   publishedAt: string;
 };
 
@@ -26,13 +28,16 @@ type NodeTemplateRow = Omit<SupabaseNodeTemplateRow, 'payload' | 'visibility'> &
   extra_contributor_reviews?: number | null;
   extra_expert_reviews?: number | null;
   source_workflow_id?: string | null;
+  source_workflow_version_id?: string | null;
   source_workflow_slug?: string | null;
+  publish_kind?: WorkflowPublishKind | null;
   payload: NodeTemplatePayload | CommunityNodeTemplate | null;
 };
 
 type PublishNodeTemplatePayload = {
   template: CommunityNodeTemplate;
   sourceWorkflowId: string;
+  sourceWorkflowVersionId?: string;
   sourceWorkflowSlug?: string;
   workflowVisibility: WorkflowVisibility;
 };
@@ -69,13 +74,18 @@ const rowToTemplate = (row: NodeTemplateRow): CommunityNodeTemplate | null => {
     relatedWorkflowIds: Array.from(new Set([
       ...template.relatedWorkflowIds,
       ...('sourceWorkflowId' in payload ? [payload.sourceWorkflowId] : []),
-    ].filter(Boolean))),
+    ].filter((workflowId): workflowId is string => Boolean(workflowId)))),
+    sourceWorkflowId: row.source_workflow_id ?? template.sourceWorkflowId,
+    sourceWorkflowVersionId: row.source_workflow_version_id ?? template.sourceWorkflowVersionId,
+    sourceWorkflowSlug: row.source_workflow_slug ?? template.sourceWorkflowSlug,
+    publishKind: row.publish_kind ?? template.publishKind ?? 'node',
   };
 };
 
 export async function publishNodeTemplateToSupabase({
   template,
   sourceWorkflowId,
+  sourceWorkflowVersionId,
   sourceWorkflowSlug,
   workflowVisibility,
 }: PublishNodeTemplatePayload) {
@@ -85,8 +95,10 @@ export async function publishNodeTemplateToSupabase({
   const payload: NodeTemplatePayload = {
     template,
     sourceWorkflowId,
+    sourceWorkflowVersionId,
     sourceWorkflowSlug,
     workflowVisibility,
+    publishKind: 'node',
     publishedAt,
   };
   const isCore = workflowVisibility === 'core';
@@ -109,7 +121,9 @@ export async function publishNodeTemplateToSupabase({
     extra_expert_reviews: 0,
     version: template.version,
     source_workflow_id: sourceWorkflowId,
+    source_workflow_version_id: sourceWorkflowVersionId ?? null,
     source_workflow_slug: sourceWorkflowSlug,
+    publish_kind: 'node',
     payload,
   };
 
@@ -117,7 +131,7 @@ export async function publishNodeTemplateToSupabase({
     supabase
       .from('node_templates')
       .upsert(record, { onConflict: 'id' })
-      .select('id, slug, title, summary, visibility, review_status, review_count, review_required, review_warning, required_contributor_reviews, required_expert_reviews, contributor_review_count, expert_review_count, extra_contributor_reviews, extra_expert_reviews, version, source_workflow_id, source_workflow_slug, payload, updated_at')
+      .select('id, slug, title, summary, visibility, review_status, review_count, review_required, review_warning, required_contributor_reviews, required_expert_reviews, contributor_review_count, expert_review_count, extra_contributor_reviews, extra_expert_reviews, version, source_workflow_id, source_workflow_version_id, source_workflow_slug, publish_kind, payload, updated_at')
       .single(),
     'Publishing node template'
   );
@@ -132,7 +146,7 @@ export async function listPublicNodeTemplates() {
   const { data, error } = await withSupabaseTimeout(
     supabase
       .from('node_templates')
-      .select('id, slug, title, summary, visibility, review_status, review_count, review_required, review_warning, required_contributor_reviews, required_expert_reviews, contributor_review_count, expert_review_count, extra_contributor_reviews, extra_expert_reviews, version, source_workflow_id, source_workflow_slug, payload, updated_at')
+      .select('id, slug, title, summary, visibility, review_status, review_count, review_required, review_warning, required_contributor_reviews, required_expert_reviews, extra_contributor_reviews, extra_expert_reviews, contributor_review_count, expert_review_count, version, source_workflow_id, source_workflow_version_id, source_workflow_slug, publish_kind, payload, updated_at')
       .in('visibility', ['community', 'core'])
       .or('review_required.eq.false,review_status.eq.approved,review_warning.eq.true')
       .order('updated_at', { ascending: false }),

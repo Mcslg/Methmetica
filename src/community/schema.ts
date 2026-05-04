@@ -42,6 +42,10 @@ export type SupabaseNodeTemplateRow = {
   expert_review_count?: number;
   extra_contributor_reviews?: number;
   extra_expert_reviews?: number;
+  source_workflow_id?: string | null;
+  source_workflow_version_id?: string | null;
+  source_workflow_slug?: string | null;
+  publish_kind?: 'workflow' | 'node';
   version: string;
   payload: Record<string, unknown>;
   updated_at: string;

@@ -717,7 +717,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                 reviewCount: 0,
                 reviewRequired: localVisibility === 'core',
                 reviewWarning: localVisibility !== 'core',
-                requiredContributorReviews: localVisibility === 'core' ? 1 : 2,
+                requiredContributorReviews: localVisibility === 'core' ? 2 : 3,
                 requiredExpertReviews: localVisibility === 'core' ? 1 : 0,
                 contributorReviewCount: 0,
                 expertReviewCount: 0,
@@ -747,16 +747,22 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         edges,
         author: effectiveUser,
         compiledArtifact: packaged.compiledArtifact,
+        publishKind: 'node',
       });
 
       const publishedTemplate = {
         ...packaged,
+        sourceWorkflowId: blueprint.card.id,
+        sourceWorkflowVersionId: blueprint.meta?.workflowVersionId,
+        sourceWorkflowSlug: blueprint.card.slug,
+        publishKind: 'node' as const,
         relatedWorkflowIds: Array.from(new Set([...(packaged.relatedWorkflowIds || []), blueprint.card.id])),
       };
 
       await publishNodeTemplateToSupabase({
         template: publishedTemplate,
         sourceWorkflowId: blueprint.card.id,
+        sourceWorkflowVersionId: blueprint.meta?.workflowVersionId,
         sourceWorkflowSlug: blueprint.card.slug,
         workflowVisibility: localVisibility,
       });
@@ -775,7 +781,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         reviewCount: blueprint.meta?.reviewCount ?? 0,
         reviewRequired: blueprint.meta?.reviewRequired ?? (localVisibility === 'core'),
         reviewWarning: blueprint.meta?.reviewWarning ?? (localVisibility !== 'core'),
-        requiredContributorReviews: blueprint.meta?.requiredContributorReviews ?? (localVisibility === 'core' ? 1 : 2),
+        requiredContributorReviews: blueprint.meta?.requiredContributorReviews ?? (localVisibility === 'core' ? 2 : 3),
         requiredExpertReviews: blueprint.meta?.requiredExpertReviews ?? (localVisibility === 'core' ? 1 : 0),
         contributorReviewCount: blueprint.meta?.contributorReviewCount ?? 0,
         expertReviewCount: blueprint.meta?.expertReviewCount ?? 0,
@@ -783,8 +789,8 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         extraExpertReviews: blueprint.meta?.extraExpertReviews ?? 0,
         reviewedByMe: false,
         publishStatus: localVisibility === 'core'
-          ? `已送出 "${publishedTemplate.title}"，核心 workflow 需要 1 位貢獻者與 1 位專家審核後才會開放。`
-          : `已發布 "${publishedTemplate.title}"，目前未驗證；2 位貢獻者審核後會標記 verified。`,
+          ? `已送出核心節點 "${publishedTemplate.title}"，需要 2 位貢獻者與 1 位專家審核後才會開放。`
+          : `已發布節點 "${publishedTemplate.title}"，目前未驗證；3 位貢獻者審核後會標記 verified。`,
       });
       clearPublicWorkflowEdit(blueprint.card.id, effectiveUser.id);
       syncLinkedTemplateNode(publishedTemplate, localVisibility);
@@ -872,6 +878,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         nodes: publishedNodes,
         edges: state.edges,
         author: effectiveUser,
+        publishKind: 'workflow',
       });
 
       updateProjectData({
