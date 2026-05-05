@@ -375,7 +375,7 @@ export function CommunityNodeMaker({
   const toggleContentControl = (block: TemplateBuilderBlock) => {
     const portId = makeControlPortId(block.id, 'content');
     const hasBinding = (draft.elementBindings || []).some(binding =>
-      binding.source === 'project-input' &&
+      (binding.source === 'runtime-output' || binding.source === 'project-input') &&
       binding.blockId === block.id &&
       binding.prop === 'content' &&
       binding.portId === portId
@@ -407,7 +407,7 @@ export function CommunityNodeMaker({
           id: `${portId}-binding`,
           blockId: block.id,
           prop: 'content',
-          source: 'project-input',
+          source: 'runtime-output',
           portId,
         },
       ],
@@ -762,7 +762,6 @@ export function CommunityNodeMaker({
                   {!hasLanguageText(draft.titleI18n, editingLanguage, draft.title) && <MissingLanguageBadge language={editingLanguage} />}
                 </span>
                 <input
-                  id={`community-maker-title-${draft.id}`}
                   name={`community-maker-title-${draft.id}`}
                   value={getLanguageText(draft.titleI18n, editingLanguage, draft.title)}
                   onChange={(e) => updateLocalizedDraftText('title', e.target.value)}
@@ -770,15 +769,15 @@ export function CommunityNodeMaker({
               </label>
               <label>
                 <span>Slug</span>
-                <input id={`community-maker-slug-${draft.id}`} name={`community-maker-slug-${draft.id}`} value={draft.slug} onChange={(e) => updateDraft({ slug: e.target.value })} />
+                <input name={`community-maker-slug-${draft.id}`} value={draft.slug} onChange={(e) => updateDraft({ slug: e.target.value })} />
               </label>
               <label>
                 <span>Category</span>
-                <input id={`community-maker-category-${draft.id}`} name={`community-maker-category-${draft.id}`} value={draft.category} onChange={(e) => updateDraft({ category: e.target.value })} />
+                <input name={`community-maker-category-${draft.id}`} value={draft.category} onChange={(e) => updateDraft({ category: e.target.value })} />
               </label>
               <label>
                 <span>Accent</span>
-                <input id={`community-maker-accent-${draft.id}`} name={`community-maker-accent-${draft.id}`} value={draft.accent} onChange={(e) => updateDraft({ accent: e.target.value })} />
+                <input name={`community-maker-accent-${draft.id}`} value={draft.accent} onChange={(e) => updateDraft({ accent: e.target.value })} />
               </label>
             </div>
 
@@ -788,7 +787,6 @@ export function CommunityNodeMaker({
                 {!hasLanguageText(draft.summaryI18n, editingLanguage, draft.summary) && <MissingLanguageBadge language={editingLanguage} />}
               </span>
               <textarea
-                id={`community-maker-summary-${draft.id}`}
                 name={`community-maker-summary-${draft.id}`}
                 value={getLanguageText(draft.summaryI18n, editingLanguage, draft.summary)}
                 onChange={(e) => updateLocalizedDraftText('summary', e.target.value)}
@@ -901,7 +899,6 @@ export function CommunityNodeMaker({
                             {!hasLanguageText(block.labelI18n, editingLanguage, block.label) && <MissingLanguageBadge language={editingLanguage} />}
                           </span>
                           <input
-                            id={`community-maker-block-label-${draft.id}-${block.id}`}
                             name={`community-maker-block-label-${draft.id}-${block.id}`}
                             className="nodrag"
                             value={blockEditText(block, 'label', editingLanguage)}
@@ -929,15 +926,15 @@ export function CommunityNodeMaker({
                                   onClick={() => toggleContentControl(block)}
                                   onPointerDown={stopNodeDragPropagation}
                                   onMouseDown={stopNodeDragPropagation}
-                                  title={isContentControlled ? 'Remove ProjectNode content input' : 'Expose content as ProjectNode input'}
+                                  title={isContentControlled ? 'Remove internal content port' : 'Create internal content port'}
                                   type="button"
                                 >
                                   <Icons.Trigger size={12} />
+                                  <span>Content Port</span>
                                 </button>
                               );
                             })()}
                             <textarea
-                              id={`community-maker-block-content-${draft.id}-${block.id}`}
                               name={`community-maker-block-content-${draft.id}-${block.id}`}
                               className="nodrag"
                               value={blockEditText(block, 'content', editingLanguage)}
@@ -963,7 +960,6 @@ export function CommunityNodeMaker({
                           <label className="stack compact nodrag">
                             <span>Description</span>
                             <input
-                              id={`community-maker-block-placeholder-${draft.id}-${block.id}`}
                               name={`community-maker-block-placeholder-${draft.id}-${block.id}`}
                               className="nodrag"
                               value={blockEditText(block, 'placeholder', editingLanguage)}
@@ -1309,7 +1305,7 @@ export function CommunityNodeMaker({
           position: relative;
         }
         .control-field-wrap textarea {
-          padding-left: 34px;
+          padding-top: 34px;
           min-height: 76px;
         }
         .control-field-btn {
@@ -1320,16 +1316,21 @@ export function CommunityNodeMaker({
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          width: 22px;
+          gap: 5px;
+          min-width: 22px;
           height: 22px;
-          padding: 0;
+          padding: 0 7px;
           border: 1px solid color-mix(in srgb, var(--block-accent) 32%, var(--border-node));
           border-radius: 8px;
           background: rgba(255,255,255,0.05);
           cursor: pointer;
+          font-size: 0.62rem;
+          font-weight: 700;
+          white-space: nowrap;
         }
         .control-field-btn svg {
           margin-right: 0;
+          flex: 0 0 auto;
         }
         .control-field-btn {
           color: var(--text-sub);

@@ -3,9 +3,13 @@ import type { AppNode, AppState, NodeData } from '../store/useStore';
 import type { AppRole, AppUser } from '../integrations/supabase/types';
 import type {
   CommunityNodeTemplate,
+  TemplateControlPort,
+  TemplateElementBinding,
   TemplateInterfaceSchema,
+  TemplateViewOverrides,
 } from '../community/types';
 import { getTemplateInterfaceSchema } from '../community/types';
+import { resolveTemplateViewOverridesFromBindings } from '../community/templateView';
 import { executeCodeNode } from '../nodes/CodeNode';
 
 export const WORKFLOW_ARTIFACT_VERSION = 'beta-ir-1';
@@ -68,6 +72,8 @@ export type CompiledWorkflowArtifact = {
   runtimeVersion: string;
   entryBridgeId: string;
   interfaceSchema: TemplateInterfaceSchema;
+  controlPorts?: TemplateControlPort[];
+  elementBindings?: TemplateElementBinding[];
   nodes: CompiledNodeSpec[];
   edges: Edge[];
   executionPlan: CompiledExecutionStep[];
@@ -88,6 +94,7 @@ export type CompileResult = {
 
 export type RuntimeExecutionResult = {
   outputs: Record<string, string>;
+  templateViewOverrides?: TemplateViewOverrides;
   error?: string;
   trace: string[];
   diagnostics?: CompileDiagnostic[];
@@ -239,6 +246,8 @@ export const compileWorkflowToArtifact = (
     edges: Edge[];
     bridgeNodeId: string;
     interfaceSchema: TemplateInterfaceSchema;
+    controlPorts?: TemplateControlPort[];
+    elementBindings?: TemplateElementBinding[];
   },
   options: CompileOptions = {},
 ): CompileResult => {
@@ -435,6 +444,8 @@ export const compileWorkflowToArtifact = (
     runtimeVersion: WORKFLOW_RUNTIME_VERSION,
     entryBridgeId: sourceGraph.bridgeNodeId,
     interfaceSchema: cloneJson(sourceGraph.interfaceSchema),
+    controlPorts: cloneJson(sourceGraph.controlPorts || []),
+    elementBindings: cloneJson(sourceGraph.elementBindings || []),
     nodes: compiledNodes,
     edges: sourceGraph.edges.map(edge => ({ ...edge })),
     executionPlan,
@@ -611,8 +622,12 @@ export const runCompiledArtifact = async (
   const outputs = Object.fromEntries(
     artifact.interfaceSchema.outputs.map(port => [port.id, finalInputs[port.id] || ''])
   );
+  const controlValues = Object.fromEntries(
+    (artifact.controlPorts || []).map(port => [port.id, finalInputs[port.id] || ''])
+  );
+  const templateViewOverrides = resolveTemplateViewOverridesFromBindings(artifact.elementBindings, controlValues);
 
-  return { outputs, trace };
+  return { outputs, templateViewOverrides, trace };
 };
 
 export const formatCompileDiagnostics = (diagnostics: CompileDiagnostic[]) => (

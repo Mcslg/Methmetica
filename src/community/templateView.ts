@@ -1,19 +1,19 @@
 import type {
   CommunityNodeTemplate,
+  TemplateElementBinding,
   TemplateBuilderBlock,
   TemplateElementProp,
   TemplateViewOverrides,
 } from './types';
 
-export const resolveTemplateViewOverrides = (
-  template: CommunityNodeTemplate,
-  projectInputs?: Record<string, string>,
+export const resolveTemplateViewOverridesFromBindings = (
+  elementBindings: TemplateElementBinding[] | undefined,
+  valuesByPort?: Record<string, string>,
 ): TemplateViewOverrides => {
   const overrides: TemplateViewOverrides = {};
 
-  (template.elementBindings || []).forEach((binding) => {
-    if (binding.source !== 'project-input') return;
-    const value = projectInputs?.[binding.portId];
+  (elementBindings || []).forEach((binding) => {
+    const value = valuesByPort?.[binding.portId];
     if (value === undefined) return;
 
     overrides[binding.blockId] = {
@@ -24,6 +24,11 @@ export const resolveTemplateViewOverrides = (
 
   return overrides;
 };
+
+export const resolveTemplateViewOverrides = (
+  template: CommunityNodeTemplate,
+  projectInputs?: Record<string, string>,
+): TemplateViewOverrides => resolveTemplateViewOverridesFromBindings(template.elementBindings, projectInputs);
 
 export const applyBlockViewOverrides = (
   block: TemplateBuilderBlock,

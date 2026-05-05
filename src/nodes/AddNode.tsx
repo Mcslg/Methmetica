@@ -21,7 +21,6 @@ export const AddNode = memo(function AddNode({ id, data }: NodeProps<Node<NodeDa
             </div>
             <div className="node-content math-input-container">
                 <MathInput
-                    id={`add-node-value-${id}`}
                     name={`add-node-value-${id}`}
                     value={data.value || '?'}
                     readOnly={true}

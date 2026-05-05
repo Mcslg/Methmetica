@@ -136,6 +136,9 @@ export type NodeData = {
     targetWorkflowTitle?: string;
     callout?: string;
     builderDraft?: CommunityNodeTemplate;
+    builderNode?: boolean;
+    builderNodeId?: string;
+    projectNodeId?: string;
     hasPublishedTemplate?: boolean;
     publishStatus?: string;
     linkedTemplateNodeId?: string;
@@ -211,7 +214,7 @@ const hydrateTemplateNodeHandles = (nodes: AppNode[]): AppNode[] => nodes.map((n
 
 const normalizeBuilderBridgeGraph = (nodes: AppNode[], edges: Edge[]) => {
     const hydratedNodes = hydrateTemplateNodeHandles(nodes).map((node) => (
-        node.type === 'projectNode' && (node.data.handles?.length ?? 0) > 0
+        (node.type === 'projectNode' || node.type === 'nodeBuilderNode') && (node.data.handles?.length ?? 0) > 0
             ? { ...node, data: { ...node.data, handles: [] } }
             : node
     ));
@@ -228,7 +231,7 @@ const normalizeBuilderBridgeGraph = (nodes: AppNode[], edges: Edge[]) => {
         const targetNode = nodeById.get(edge.target);
         const nextEdge = { ...edge };
 
-        if (sourceNode?.type === 'projectNode' && sourceNode.data.builderDraft) {
+        if ((sourceNode?.type === 'projectNode' || sourceNode?.type === 'nodeBuilderNode') && sourceNode.data.builderDraft) {
             const bridgeId = sourceNode.data.linkedTemplateNodeId || bridgeByProjectId.get(sourceNode.id);
             const schema = getTemplateInterfaceSchema(sourceNode.data.builderDraft);
             const inputHandleIds = new Set(schema.inputs.map(port => port.id));
@@ -237,7 +240,7 @@ const normalizeBuilderBridgeGraph = (nodes: AppNode[], edges: Edge[]) => {
             }
         }
 
-        if (targetNode?.type === 'projectNode' && targetNode.data.builderDraft) {
+        if ((targetNode?.type === 'projectNode' || targetNode?.type === 'nodeBuilderNode') && targetNode.data.builderDraft) {
             const bridgeId = targetNode.data.linkedTemplateNodeId || bridgeByProjectId.get(targetNode.id);
             const schema = getTemplateInterfaceSchema(targetNode.data.builderDraft);
             const outputHandleIds = new Set(schema.outputs.map(port => port.id));
@@ -337,6 +340,9 @@ export type AppState = {
     redo: () => void;
     currentView: 'home' | 'editor';
     setCurrentView: (view: 'home' | 'editor') => void;
+    templateTesterProjectNodeId: string | null;
+    openTemplateTester: (projectNodeId: string) => void;
+    closeTemplateTester: () => void;
 
     // [CLOUD] Google Drive Integration
     user: AppUser | null;
@@ -425,6 +431,9 @@ const useStore = create<AppState>()(
             setTheme: (theme) => set({ theme }),
             currentView: 'editor', // Default to editor for now to not break existing flow
             setCurrentView: (currentView) => set({ currentView }),
+            templateTesterProjectNodeId: null,
+            openTemplateTester: (templateTesterProjectNodeId) => set({ templateTesterProjectNodeId }),
+            closeTemplateTester: () => set({ templateTesterProjectNodeId: null }),
             isSidebarOpen: true,
 
             // [CLOUD]

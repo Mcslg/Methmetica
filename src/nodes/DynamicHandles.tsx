@@ -661,7 +661,6 @@ export const DynamicHandles: React.FC<DynamicHandlesProps> = ({
                             {manualInputEditor.isConnected && <small>Connected value is active</small>}
                         </div>
                         <MathInput
-                            id={`manual-input-${nodeId}-${manualInputEditor.handleId}`}
                             name={`manual-input-${nodeId}-${manualInputEditor.handleId}`}
                             ref={manualInputMathRef}
                             value={manualInputEditor.value}

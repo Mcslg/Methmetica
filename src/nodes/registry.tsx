@@ -9,6 +9,7 @@ import { RangeNode, executeRangeNode } from './deprecated/RangeNode';
 import { ForEachNode, executeForEachNode } from './deprecated/ForEachNode';
 import { SliderNode } from './deprecated/SliderNode';
 import { ProjectNode } from './ProjectNode';
+import { NodeBuilderNode } from './NodeBuilderNode';
 import { CommunityTemplateNode } from './CommunityTemplateNode';
 import { WorkflowLinkNode } from './deprecated/WorkflowLinkNode';
 import { CodeNode, executeCodeNode } from './CodeNode';
@@ -118,6 +119,7 @@ const executeCommunityTemplateNode = async (node: AppNode, state: AppState) => {
     state.updateNodeData(node.id, {
         error: result.error,
         outputs: result.outputs,
+        templateViewOverrides: result.templateViewOverrides,
         value: primaryOutput ? result.outputs[primaryOutput] ?? '' : JSON.stringify(result.outputs),
         status: result.error ? 'Runtime failed' : `Runtime ok${result.trace.length > 0 ? `: ${result.trace.join(' -> ')}` : ''}`,
     }, { skipGraphEval: true });
@@ -260,6 +262,13 @@ export const nodeRegistry: NodeDefinition[] = [
         component: ProjectNode,
         metadata: { label: 'Project Metadata', desc: 'Root node for project Info', category: 'System', icon: <Icons.Calculate />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 300, height: 80 },
+        defaultHandles: []
+    },
+    {
+        type: 'nodeBuilderNode',
+        component: NodeBuilderNode,
+        metadata: { label: 'Node Builder', desc: 'Build a reusable community node', category: 'Community', icon: <Icons.Package />, color: '#38bdf8', hidden: true },
+        defaultSize: { width: 900, height: 720 },
         defaultHandles: []
     },
     {

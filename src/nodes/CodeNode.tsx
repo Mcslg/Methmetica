@@ -536,7 +536,6 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
         >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
                 <textarea
-                    id={`code-editor-${id}`}
                     name={`code-editor-${id}`}
                     ref={textareaRef}
                     className="nodrag"

@@ -5,7 +5,7 @@ import { NodeFrame } from '../components/NodeFrame';
 import { Icons } from '../components/Icons';
 import { getCommunityTemplateById } from '../community/catalog';
 import { getTemplateHandles, type CommunityNodeTemplate, type TemplateBuilderBlock } from '../community/types';
-import { applyBlockViewOverrides } from '../community/templateView';
+import { applyBlockViewOverrides, resolveTemplateViewOverrides } from '../community/templateView';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getLocalizedText } from '../community/localizedText';
 import { getUpdateLabel, getUpdateMessage, toUpdateSeverity } from '../community/updateLabels';
@@ -135,6 +135,23 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
     catalogTemplate?.sourceWorkflowId ??
     template.sourceWorkflowId ??
     template.relatedWorkflowIds[0];
+  const effectiveTemplateViewOverrides = React.useMemo(() => {
+    const dynamicOverrides = resolveTemplateViewOverrides(template, data.inputs);
+    const blockIds = new Set([
+      ...Object.keys(data.templateViewOverrides || {}),
+      ...Object.keys(dynamicOverrides),
+    ]);
+
+    return Object.fromEntries(
+      Array.from(blockIds).map(blockId => [
+        blockId,
+        {
+          ...(data.templateViewOverrides?.[blockId] || {}),
+          ...(dynamicOverrides[blockId] || {}),
+        },
+      ])
+    );
+  }, [data.inputs, data.templateViewOverrides, template]);
 
   const patchNodeToTemplate = (nextTemplate: CommunityNodeTemplate, nextSourceVersionId?: string) => {
     const existingFields = data.templateFields ?? {};
@@ -408,7 +425,7 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
           {template.builderBlocks.length > 0 && (
             <div className="community-template-fields">
               {template.builderBlocks.map((sourceBlock: TemplateBuilderBlock) => {
-                const block = applyBlockViewOverrides(sourceBlock, data.templateViewOverrides);
+                const block = applyBlockViewOverrides(sourceBlock, effectiveTemplateViewOverrides);
                 if (block.kind === 'input' || block.kind === 'output') {
                   return null;
                 }

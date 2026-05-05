@@ -142,7 +142,6 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
                     <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1, gap: '4px' }}>
                         {icon}
                         <input
-                            id={`node-title-${id}`}
                             name={`node-title-${id}`}
                             title="Rename node"
                             className="nodrag"
@@ -249,7 +248,6 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
                                     >
                                         <span style={{ fontSize: '0.6rem', fontWeight: 'bold', color: 'var(--text-main)', opacity: 0.8, userSelect: 'none' }}>{slotKey}</span>
                                         <input
-                                            id={`slot-slider-${id}-${slotKey}`}
                                             name={`slot-slider-${id}-${slotKey}`}
                                             type="range"
                                             className="nodrag"

@@ -650,7 +650,6 @@ export function Dashboard() {
         <div className="dashboard-search">
           <Icons.Search size={18} />
           <input
-            id="dashboard-workflow-search"
             name="dashboardWorkflowSearch"
             type="text"
             placeholder={t('common.search_placeholder') || 'Search workflows...'}
@@ -755,7 +754,7 @@ export function Dashboard() {
               </div>
               <label className="community-sort">
                 排序
-                <select id="community-sort-mode" name="communitySortMode" value={communitySortMode} onChange={(e) => setCommunitySortMode(e.target.value as CommunitySortMode)}>
+                <select name="communitySortMode" value={communitySortMode} onChange={(e) => setCommunitySortMode(e.target.value as CommunitySortMode)}>
                   <option value="recent">最新</option>
                   <option value="popular">最熱門</option>
                 </select>
@@ -872,7 +871,7 @@ export function Dashboard() {
               <div className="forum-filters">
                 <label>
                   類型
-                  <select id="forum-kind-filter" name="forumKindFilter" value={forumKindFilter} onChange={(event) => setForumKindFilter(event.target.value as ForumKindFilter)}>
+                  <select name="forumKindFilter" value={forumKindFilter} onChange={(event) => setForumKindFilter(event.target.value as ForumKindFilter)}>
                     <option value="all">全部</option>
                     <option value="question">提問</option>
                     <option value="request">要求</option>
@@ -881,7 +880,7 @@ export function Dashboard() {
                 </label>
                 <label>
                   狀態
-                  <select id="forum-status-filter" name="forumStatusFilter" value={forumStatusFilter} onChange={(event) => setForumStatusFilter(event.target.value as ForumStatusFilter)}>
+                  <select name="forumStatusFilter" value={forumStatusFilter} onChange={(event) => setForumStatusFilter(event.target.value as ForumStatusFilter)}>
                     <option value="open">未解決</option>
                     <option value="resolved">已解決</option>
                     <option value="all">全部</option>

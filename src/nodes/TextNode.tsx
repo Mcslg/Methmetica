@@ -203,7 +203,6 @@ const SliderPill = TiptapNode.create({
                 >
                     <span style={{ fontSize: '0.65rem', color: 'var(--accent-bright)', fontWeight: 800 }}>{name}</span>
                     <input
-                        id={`slider-pill-${name}`}
                         name={`slider-pill-${name}`}
                         type="range"
                         min={finalMin}
@@ -1844,7 +1843,6 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                     <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1, gap: '4px', minWidth: 0 }}>
                         <Icons.Text />
                         <input
-                            id={`text-node-title-${id}`}
                             name={`text-node-title-${id}`}
                             title="Rename node"
                             className="nodrag"
@@ -1961,7 +1959,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <div style={{ fontSize: '0.6rem', color: '#4facfe', textTransform: 'uppercase', fontWeight: 700 }}>Formula</div>
                             <MathInput
-                                id="math-popup-field"
+                                name={`math-popup-field-${id}`}
                                 ref={mathFieldRef}
                                 value={mathFieldRef.current?.value || ''}
                                 onChange={() => {
@@ -1990,7 +1988,6 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                             <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span style={{ fontSize: '0.65rem', color: '#888', fontWeight: 700 }}>NAME</span>
                                 <input
-                                    id={`text-node-math-name-${id}`}
                                     name={`text-node-math-name-${id}`}
                                     ref={mathNameInputRef}
                                     type="text"
@@ -2183,7 +2180,6 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                             
                             <label className="tiptap-menu-btn" title="Text Color" style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '4px' }}>
                                 <input
-                                    id={`text-node-color-${id}`}
                                     name={`text-node-color-${id}`}
                                     type="color"
                                     onInput={(event) => editor.chain().focus().setColor((event.target as HTMLInputElement).value).run()}

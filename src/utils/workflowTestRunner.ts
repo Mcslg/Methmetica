@@ -1,11 +1,13 @@
 import type { Edge } from '@xyflow/react';
 import type { AppNode } from '../store/useStore';
-import type { BuiltWorkflowNode, TemplateInterfaceSchema } from '../community/types';
+import type { BuiltWorkflowNode, TemplateControlPort, TemplateElementBinding, TemplateInterfaceSchema } from '../community/types';
 import type { MathValue } from '../types/mathTypes';
 import { executeCodeNode } from '../nodes/CodeNode';
+import { resolveTemplateViewOverridesFromBindings } from '../community/templateView';
 
 type WorkflowTestResult = {
   outputs: Record<string, string>;
+  templateViewOverrides?: Record<string, Record<string, unknown>>;
   error?: string;
   trace: string[];
 };
@@ -15,6 +17,8 @@ type BuildWorkflowNodeArgs = {
   sourceEdges: Edge[];
   bridgeNodeId: string;
   interfaceSchema: TemplateInterfaceSchema;
+  controlPorts?: TemplateControlPort[];
+  elementBindings?: TemplateElementBinding[];
 };
 
 const cloneNodes = (nodes: AppNode[]): AppNode[] => JSON.parse(JSON.stringify(nodes));
@@ -180,9 +184,13 @@ export const buildWorkflowNode = ({
   sourceEdges,
   bridgeNodeId,
   interfaceSchema,
+  controlPorts,
+  elementBindings,
 }: BuildWorkflowNodeArgs): BuiltWorkflowNode => ({
   bridgeNodeId,
   interfaceSchema,
+  controlPorts: controlPorts?.map(port => ({ ...port })),
+  elementBindings: elementBindings?.map(binding => ({ ...binding })),
   nodes: cloneNodes(sourceNodes),
   edges: sourceEdges.map(edge => ({ ...edge })),
 });
@@ -240,8 +248,12 @@ export const runBuiltWorkflowNode = async (
   const outputs = Object.fromEntries(
     builtNode.interfaceSchema.outputs.map(port => [port.id, finalBridge?.data.inputs?.[port.id] || ''])
   );
+  const controlValues = Object.fromEntries(
+    (builtNode.controlPorts || []).map(port => [port.id, finalBridge?.data.inputs?.[port.id] || ''])
+  );
+  const templateViewOverrides = resolveTemplateViewOverridesFromBindings(builtNode.elementBindings, controlValues);
 
-  return { outputs, trace };
+  return { outputs, templateViewOverrides, trace };
 };
 
 export const runTemplateWorkflowTest = async (

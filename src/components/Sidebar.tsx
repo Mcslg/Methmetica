@@ -107,7 +107,11 @@ export function Sidebar() {
     const holdTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const isDirty = createGraphSignature(nodes, edges) !== savedGraphSignature;
     const projectRoot = nodes.find(node => node.type === 'projectNode');
-    const hasBuilderDraft = Boolean(projectRoot?.data.builderDraft);
+    const linkedBuilderNode = projectRoot
+        ? nodes.find(node => node.type === 'nodeBuilderNode' && (node.data.projectNodeId === projectRoot.id || node.id === projectRoot.data.builderNodeId))
+        : undefined;
+    const publishTargetNode = linkedBuilderNode ?? projectRoot;
+    const hasBuilderDraft = Boolean((linkedBuilderNode ?? projectRoot)?.data.builderDraft);
     const hasPublishedTemplate = Boolean(projectRoot?.data.hasPublishedTemplate || projectRoot?.data.supabaseWorkflowId);
     const isCurrentUserOwner = Boolean(projectRoot?.data.ownerId && user?.id === projectRoot.data.ownerId);
     const isContributor = Boolean(user && ['contributor', 'expert', 'trusted_editor', 'admin'].includes(user.role));
@@ -256,7 +260,7 @@ export function Sidebar() {
         const eventName = hasBuilderDraft ? 'publish-project-template' : 'publish-project-workflow';
         window.dispatchEvent(new CustomEvent(eventName, {
             detail: {
-                projectNodeId: projectRoot.id,
+                projectNodeId: publishTargetNode?.id ?? projectRoot.id,
                 ...detail,
             },
         }));
@@ -326,7 +330,6 @@ export function Sidebar() {
                 <label className="publish-update-summary">
                     <span>更新說明</span>
                     <textarea
-                        id="publish-update-summary"
                         name="publishUpdateSummary"
                         value={publishUpdateSummary}
                         onChange={(event) => setPublishUpdateSummary(event.target.value)}

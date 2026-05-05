@@ -207,7 +207,6 @@ export const FormulaSidebarArea: React.FC<FormulaSidebarAreaProps> = ({ containe
                                     
                                     <div style={{ position: 'relative', width: '100%', padding: '4px 0' }}>
                                         <input
-                                            id={`formula-slider-${proxyNode.id}`}
                                             name={`formula-slider-${proxyNode.id}`}
                                             type="range"
                                             className="nodrag premium-slider"

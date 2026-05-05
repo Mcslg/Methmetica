@@ -262,6 +262,8 @@ export type WorkflowBlueprint = {
 export type BuiltWorkflowNode = {
   bridgeNodeId: string;
   interfaceSchema: TemplateInterfaceSchema;
+  controlPorts?: TemplateControlPort[];
+  elementBindings?: TemplateElementBinding[];
   nodes: AppNode[];
   edges: Edge[];
 };
@@ -309,6 +311,14 @@ export const getTemplateHandles = (template: CommunityNodeTemplate): TemplateHan
 
 export const getTemplateInternalHandles = (template: CommunityNodeTemplate): TemplateHandleSpec[] => {
   const schema = getTemplateInterfaceSchema(template);
+  const controlHandles = (template.controlPorts || []).map((port, index) => ({
+    id: port.id,
+    label: port.label,
+    labelI18n: port.labelI18n,
+    position: 'left' as const,
+    type: 'input' as const,
+    offset: Math.max(16, Math.min(84, 24 + (schema.outputs.length + index) * 18)),
+  }));
   return [
     ...schema.inputs.map(port => ({
       id: port.id,
@@ -324,5 +334,6 @@ export const getTemplateInternalHandles = (template: CommunityNodeTemplate): Tem
       type: 'input' as const,
       offset: port.offset,
     })),
+    ...controlHandles,
   ];
 };

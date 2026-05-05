@@ -123,7 +123,6 @@ export const CommentArea: React.FC<CommentAreaProps> = ({ containerId, commentSi
             }}>
                 {isEditing ? (
                     <input 
-                        id={`comment-area-${commentSid}`}
                         name={`comment-area-${commentSid}`}
                         className="nodrag"
                         autoFocus

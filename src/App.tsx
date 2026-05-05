@@ -14,6 +14,7 @@ import { WorkflowHeader } from './components/WorkflowHeader';
 import { Icons } from './components/Icons';
 import { Dashboard } from './components/Dashboard';
 import { DebugOverlay, countRender } from './components/DebugOverlay';
+import { TemplateBehaviorTesterPanel } from './components/TemplateBehaviorTesterPanel';
 import { LiveNodePreview } from './components/LiveNodePreview';
 import { WorkflowSketch } from './components/WorkflowSketch';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
@@ -800,6 +801,7 @@ function Flow() {
       <DebugOverlay />
       <Sidebar />
       <FloatingPalette />
+      <TemplateBehaviorTesterPanel />
       <button
         className="nodrag"
         onClick={() => {
@@ -1014,7 +1016,6 @@ function Flow() {
               </div>
             </div>
             <input
-              id="quick-nav-search"
               name="quickNavSearch"
               ref={quickNavInputRef}
               value={quickNavQuery}
@@ -1123,7 +1124,6 @@ function Flow() {
         >
           <div className="command-search-container">
             <input
-              id="command-palette-search"
               name="commandPaletteSearch"
               ref={searchInputRef}
               type="text"
