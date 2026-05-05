@@ -1082,10 +1082,23 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
   }, [builderDraft, localVisibility, syncDraftWithLocalMetadata, syncLinkedTemplateNode, updateProjectData]);
 
   React.useEffect(() => {
+    const nextInternalHandles: CustomHandle[] = builderDraft
+      ? getTemplateInternalHandles(builderDraft).map(handle => ({
+        id: handle.id,
+        type: handle.type,
+        position: handle.position,
+        offset: handle.offset,
+        label: handle.label,
+      }))
+      : [];
+    const internalHandleIds = new Set(nextInternalHandles.map(handle => handle.id));
     const nextControlHandles = buildProjectControlHandles(builderDraft, controlHandleOffsets);
     const existingHandles = data.handles || [];
-    const persistentHandles = existingHandles.filter(handle => !handle.id.startsWith('control-'));
-    const nextHandles = [...persistentHandles, ...nextControlHandles];
+    const persistentHandles = existingHandles.filter(handle => (
+      !handle.id.startsWith('control-') &&
+      !internalHandleIds.has(handle.id)
+    ));
+    const nextHandles = [...nextInternalHandles, ...persistentHandles, ...nextControlHandles];
 
     if (JSON.stringify(existingHandles) !== JSON.stringify(nextHandles)) {
       updateProjectData({ handles: nextHandles });

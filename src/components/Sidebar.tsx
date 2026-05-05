@@ -1138,11 +1138,6 @@ export function Sidebar() {
                 .library-item:hover .library-review-badge {
                     color: #fbbf24;
                 }
-                .library-item .library-review-badge.update.feature {
-                    color: #93c5fd;
-                    border-color: rgba(96, 165, 250, 0.35);
-                    background: rgba(96, 165, 250, 0.08);
-                }
                 .library-item .library-review-badge.update.fix {
                     color: #fbbf24;
                 }

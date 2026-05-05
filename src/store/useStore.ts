@@ -4,7 +4,7 @@ import { type Edge } from '@xyflow/react';
 import { getNodeDefinition } from '../nodes/registry';
 import { canPlugin, PluginRules, type ProxyableType } from '../config/pluginRegistry';
 import { defaultCommunityTemplates } from '../community/catalog';
-import type { CommunityNodeTemplate, TemplateViewOverrides, WorkflowVisibility } from '../community/types';
+import { getTemplateInternalHandles, type CommunityNodeTemplate, type TemplateHandleSpec, type TemplateViewOverrides, type WorkflowVisibility } from '../community/types';
 import type { AppUser, AuthStatus } from '../integrations/supabase/types';
 import type { MathValue } from '../types/mathTypes';
 import {
@@ -178,6 +178,38 @@ export type NodeData = {
     driveThumbnailUrl?: string;
     nodeComments?: NodeComment[];
 };
+
+const templateHandleToCustomHandle = (handle: TemplateHandleSpec): CustomHandle => ({
+    id: handle.id,
+    type: handle.type,
+    position: handle.position,
+    offset: handle.offset,
+    label: handle.label,
+});
+
+const hydrateProjectBuilderHandles = (nodes: AppNode[]): AppNode[] => nodes.map((node) => {
+    if (node.type !== 'projectNode' || !node.data.builderDraft) return node;
+
+    const internalHandles = getTemplateInternalHandles(node.data.builderDraft).map(templateHandleToCustomHandle);
+    if (internalHandles.length === 0) return node;
+
+    const internalHandleIds = new Set(internalHandles.map(handle => handle.id));
+    const existingHandles = node.data.handles || [];
+    const preservedHandles = existingHandles.filter(handle => (
+        handle.id.startsWith('control-') ||
+        !internalHandleIds.has(handle.id)
+    ));
+    const nextHandles = [...internalHandles, ...preservedHandles];
+
+    if (JSON.stringify(existingHandles) === JSON.stringify(nextHandles)) return node;
+    return {
+        ...node,
+        data: {
+            ...node.data,
+            handles: nextHandles,
+        },
+    };
+});
 
 export type AppNode = Node<NodeData>;
 export type WorkflowListItem = {
@@ -767,16 +799,20 @@ const useStore = create<AppState>()(
                     set({ globalVars: {}, activeFileId: null });
                 }
 
+                finalNodes = hydrateProjectBuilderHandles(finalNodes);
+
                 set({ nodes: finalNodes, edges, savedGraphSignature: createGraphSignature(finalNodes, edges) });
                 // Defer evaluation
                 setTimeout(() => get().evaluateGraph(), 50);
             },
 
             setGraphWithSavedBaseline: (nodes, edges, savedNodes, savedEdges) => {
+                const finalNodes = hydrateProjectBuilderHandles(nodes);
+                const finalSavedNodes = hydrateProjectBuilderHandles(savedNodes);
                 set({
-                    nodes,
+                    nodes: finalNodes,
                     edges,
-                    savedGraphSignature: createGraphSignature(savedNodes, savedEdges),
+                    savedGraphSignature: createGraphSignature(finalSavedNodes, savedEdges),
                 });
                 setTimeout(() => get().evaluateGraph(), 50);
             },

@@ -8,6 +8,7 @@ import { getTemplateHandles, type CommunityNodeTemplate, type TemplateBuilderBlo
 import { applyBlockViewOverrides } from '../community/templateView';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getLocalizedText } from '../community/localizedText';
+import { getUpdateLabel, getUpdateMessage, toUpdateSeverity } from '../community/updateLabels';
 import {
   getWorkflowVersionBlueprintFromSupabase,
   listWorkflowVersions,
@@ -95,22 +96,19 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
       catalogTemplate?.sourceWorkflowVersionId ??
       template.sourceWorkflowVersionId);
   const hasVersionUpdate = Boolean(referencedVersionId && latestVersionId && referencedVersionId !== latestVersionId);
-  const updateSeverity = hasVersionUpdate
+  const rawUpdateSeverity = hasVersionUpdate
     ? latestSupersedingVersion?.changeType === 'hotfix' || latestSupersedingVersion?.changeType === 'fix' || latestSupersedingVersion?.changeType === 'feature'
       ? latestSupersedingVersion.changeType
       : catalogTemplate?.updateSeverity ?? catalogTemplate?.changeType ?? data.updateSeverity ?? template.updateSeverity
     : data.updateSeverity ?? template.updateSeverity;
+  const updateSeverity = toUpdateSeverity(rawUpdateSeverity) ?? 'feature';
   const updateMessage = hasVersionUpdate
     ? latestSupersedingVersion?.warningMessage ??
     catalogTemplate?.updateMessage ??
     data.updateMessage ??
-    (updateSeverity === 'hotfix'
-      ? '這個節點有重要修復，建議盡快更新。'
-      : updateSeverity === 'fix'
-        ? '這個節點已有修正版，建議手動更新。'
-        : '這個節點已有新版，可手動更新。')
+    getUpdateMessage(updateSeverity)
     : data.updateMessage ?? template.updateMessage;
-  const updateLabel = updateSeverity === 'hotfix' ? '重要修復' : updateSeverity === 'fix' ? '有修正版' : '有新版';
+  const updateLabel = getUpdateLabel(updateSeverity);
   const updateSummaryText = compactUpdateText(latestSupersedingVersion?.updateSummary ?? catalogTemplate?.updateSummary ?? data.updateSummary ?? template.updateSummary);
   const warningMessage = updateSummaryText ? `${updateLabel}：${updateSummaryText}` : updateMessage;
   const ignoredUpdateVersionId = typeof data.ignoredCommunityUpdateVersionId === 'string'
@@ -380,7 +378,7 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
         headerExtras={
           <>
             <button
-              className={`exec-button community-template-version-btn ${hasVersionUpdate ? 'has-update' : ''} ${ignoredUpdateVersionId === latestVersionId ? 'ignored' : ''}`}
+              className={`exec-button community-template-action-btn community-template-version-btn ${hasVersionUpdate ? 'has-update' : ''} ${ignoredUpdateVersionId === latestVersionId ? 'ignored' : ''}`}
               onClick={handleShowVersionInfo}
               title={versionStateLabel}
               aria-label={`Community node version: ${versionButtonLabel}`}
@@ -388,7 +386,7 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
               {versionButtonLabel}
             </button>
             <button
-              className="exec-button"
+              className="exec-button community-template-action-btn community-template-open-btn"
               onClick={(e) => {
                 e.stopPropagation();
                 const firstWorkflow = template.relatedWorkflowIds[0];
@@ -397,7 +395,7 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
               }}
               title={referencedVersionId ? 'Open this node version' : 'Open latest workflow'}
             >
-              Open
+              開啟
             </button>
           </>
         }
@@ -661,11 +659,20 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
           opacity: 0.52;
           cursor: not-allowed;
         }
+        .community-template-action-btn {
+          border-radius: 9px;
+          padding: 3px 7px;
+          font-size: 0.62rem;
+          letter-spacing: 0.01em;
+        }
         .community-template-version-btn {
           max-width: 82px;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+        }
+        .community-template-open-btn {
+          opacity: 0.82;
         }
         .community-template-version-btn.has-update {
           border-color: rgba(245, 158, 11, 0.45);

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import useStore from '../store/useStore';
 import { buildNodeCatalog } from '../nodes/registry';
 import { useLanguage } from '../contexts/LanguageContext';
+import { getUpdateLabel, isRepairUpdate } from '../community/updateLabels';
 
 interface NodeLibraryProps {
     onDragStart: (event: React.DragEvent, nodeType: string, templateId?: string) => void;
@@ -38,9 +39,9 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
                         {node.reviewStatus === 'unreviewed' && node.reviewWarning && (
                             <span className="library-review-badge">未驗證</span>
                         )}
-                        {node.updateAvailable && (
+                        {node.updateAvailable && isRepairUpdate(node.updateSeverity) && (
                             <span className={`library-review-badge update ${node.updateSeverity ?? 'feature'}`}>
-                                {node.updateSeverity === 'hotfix' ? '重要修復' : node.updateSeverity === 'fix' ? '有修正版' : '有新版'}
+                                {getUpdateLabel(node.updateSeverity)}
                             </span>
                         )}
                     </div>
@@ -73,9 +74,9 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
                             {node.reviewStatus === 'unreviewed' && node.reviewWarning && (
                                 <span className="library-review-badge">未驗證</span>
                             )}
-                            {node.updateAvailable && (
+                            {node.updateAvailable && isRepairUpdate(node.updateSeverity) && (
                                 <span className={`library-review-badge update ${node.updateSeverity ?? 'feature'}`}>
-                                    {node.updateSeverity === 'hotfix' ? '重要修復' : node.updateSeverity === 'fix' ? '有修正版' : '有新版'}
+                                    {getUpdateLabel(node.updateSeverity)}
                                 </span>
                             )}
                         </div>
