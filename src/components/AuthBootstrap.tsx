@@ -1,10 +1,6 @@
 import { useEffect } from 'react';
 import useStore from '../store/useStore';
-import {
-  buildAppUserFromSession,
-  getCurrentSession,
-  onAuthStateChange,
-} from '../integrations/supabase/auth';
+import { onAuthStateChange } from '../integrations/supabase/auth';
 import { isSupabaseConfigured } from '../integrations/supabase/client';
 
 export function AuthBootstrap() {
@@ -13,40 +9,17 @@ export function AuthBootstrap() {
 
   useEffect(() => {
     let cancelled = false;
-    let booted = false;
 
-    async function boot() {
-      if (!isSupabaseConfigured) {
-        setAuthStatus('anonymous');
-        return;
-      }
-
-      setAuthStatus('loading');
-      try {
-        const session = await getCurrentSession();
-        const appUser = await buildAppUserFromSession(session);
-
-        if (cancelled) return;
-        booted = true;
-        setUser(appUser);
-        setAuthStatus(appUser ? 'authenticated' : 'anonymous');
-      } catch (error) {
-        console.error('Failed to bootstrap auth', error);
-        if (cancelled) return;
-        setAuthStatus('error');
-      }
+    if (!isSupabaseConfigured) {
+      setAuthStatus('anonymous');
+      return () => {
+        cancelled = true;
+      };
     }
 
-    void boot();
-
-    const subscription = onAuthStateChange(async (appUser) => {
+    setAuthStatus('loading');
+    const subscription = onAuthStateChange((appUser) => {
       if (cancelled) return;
-      if (!booted) {
-        booted = true;
-        setUser(appUser);
-        setAuthStatus(appUser ? 'authenticated' : 'anonymous');
-        return;
-      }
       setUser(appUser);
       setAuthStatus(appUser ? 'authenticated' : 'anonymous');
     });

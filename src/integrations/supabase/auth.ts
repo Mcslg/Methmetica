@@ -44,13 +44,6 @@ export async function signOutSupabase() {
   if (error) throw error;
 }
 
-export async function getCurrentSession(): Promise<Session | null> {
-  if (!supabase) return null;
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  return data.session;
-}
-
 export async function buildAppUserFromSession(session: Session | null): Promise<AppUser | null> {
   if (!session?.user) return null;
   if (!supabase) return profileToAppUser(session.user, null);

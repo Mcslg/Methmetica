@@ -153,8 +153,10 @@ export type NodeData = {
     updateAvailable?: boolean;
     updateSeverity?: 'feature' | 'fix' | 'hotfix';
     updateMessage?: string;
+    ignoredCommunityUpdateVersionId?: string;
     sourceWorkflowId?: string;
     sourceWorkflowVersionId?: string;
+    sourceWorkflowSlug?: string;
     latestWorkflowVersionId?: string;
     latestWorkflowVersion?: number;
     reviewCount?: number;

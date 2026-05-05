@@ -94,6 +94,12 @@ export function Sidebar() {
     const [workflowVersions, setWorkflowVersions] = React.useState<WorkflowVersionSummary[]>([]);
     const [isLoadingVersions, setIsLoadingVersions] = React.useState(false);
     const [versionError, setVersionError] = React.useState<string | null>(null);
+    const [versionHoverCard, setVersionHoverCard] = React.useState<{
+        x: number;
+        y: number;
+        warningMessage?: string | null;
+        updateSummary?: string | null;
+    } | null>(null);
     const [publishDialogOpen, setPublishDialogOpen] = React.useState(false);
     const [publishChangeType, setPublishChangeType] = React.useState<WorkflowChangeType>('feature');
     const [publishUpdateSummary, setPublishUpdateSummary] = React.useState('');
@@ -830,26 +836,49 @@ export function Sidebar() {
                                 <div className="workflow-version-empty">還沒有發布版本。</div>
                             ) : (
                                 <div className="workflow-version-list">
-                                    {workflowVersions.map(version => (
-                                        <button
-                                            key={version.id}
-                                            className={`workflow-version-item ${version.id === activeWorkflowVersionId ? 'active' : ''} ${version.warningMessage ? 'has-warning' : ''}`}
+                                    {workflowVersions.map(version => {
+                                        const hasHoverDetails = Boolean(version.warningMessage);
+                                        return (
+                                            <button
+                                                key={version.id}
+                                                className={`workflow-version-item ${version.id === activeWorkflowVersionId ? 'active' : ''} ${version.warningMessage ? 'has-warning' : ''}`}
                                             onClick={() => handleOpenVersion(version)}
                                             disabled={isSyncing}
-                                            title={version.warningMessage || `Open v${version.version}`}
+                                            title={version.warningMessage || version.updateSummary || `Open v${version.version}`}
+                                            onMouseEnter={(event) => {
+                                                if (!hasHoverDetails) return;
+                                                const rect = event.currentTarget.getBoundingClientRect();
+                                                setVersionHoverCard({
+                                                    x: rect.right + 14,
+                                                    y: rect.top + rect.height / 2,
+                                                    warningMessage: version.warningMessage,
+                                                    updateSummary: version.updateSummary,
+                                                });
+                                            }}
+                                            onMouseLeave={() => setVersionHoverCard(null)}
+                                            onFocus={(event) => {
+                                                if (!hasHoverDetails) return;
+                                                const rect = event.currentTarget.getBoundingClientRect();
+                                                setVersionHoverCard({
+                                                    x: rect.right + 14,
+                                                    y: rect.top + rect.height / 2,
+                                                    warningMessage: version.warningMessage,
+                                                    updateSummary: version.updateSummary,
+                                                });
+                                            }}
+                                            onBlur={() => setVersionHoverCard(null)}
                                         >
-                                            <span>
-                                                v{version.version}
-                                                {version.isCurrent && <em>current</em>}
-                                                {version.changeType && (
-                                                    <em>{VERSION_CHANGE_LABELS[version.changeType] ?? version.changeType}</em>
+                                            <span className="workflow-version-row">
+                                                <strong>v{version.version}</strong>
+                                                    {version.isCurrent && <em>current</em>}
+                                                    {version.changeType && (
+                                                        <em>{VERSION_CHANGE_LABELS[version.changeType] ?? version.changeType}</em>
                                                 )}
+                                                <small>{new Date(version.publishedAt).toLocaleDateString()}</small>
                                             </span>
-                                            <small>
-                                                {version.warningMessage ? `警告：${version.warningMessage}` : new Date(version.publishedAt).toLocaleString()}
-                                            </small>
                                         </button>
-                                    ))}
+                                    );
+                                })}
                                 </div>
                             )}
                         </div>
@@ -905,6 +934,25 @@ export function Sidebar() {
                     </div>
                 )}
             </div>
+
+            {versionHoverCard && (
+                <div
+                    className="workflow-version-floating-card"
+                    style={{
+                        left: versionHoverCard.x,
+                        top: versionHoverCard.y,
+                    }}
+                >
+                    {versionHoverCard.warningMessage && (
+                        <span className="workflow-version-hover-warning">
+                            警告：{versionHoverCard.warningMessage}
+                        </span>
+                    )}
+                    {versionHoverCard.updateSummary && (
+                        <span>{versionHoverCard.updateSummary}</span>
+                    )}
+                </div>
+            )}
 
             {publishUpdateDialog}
 
@@ -1381,11 +1429,11 @@ export function Sidebar() {
                     display: grid;
                     gap: 6px;
                     max-height: 180px;
-                    overflow: auto;
+                    overflow: visible;
                 }
                 .workflow-version-item {
-                    display: grid;
-                    gap: 2px;
+                    position: relative;
+                    display: block;
                     width: 100%;
                     padding: 8px;
                     border: 1px solid var(--border-node);
@@ -1404,16 +1452,18 @@ export function Sidebar() {
                     border-color: rgba(245, 158, 11, 0.38);
                     background: rgba(245, 158, 11, 0.08);
                 }
-                .workflow-version-item.has-warning small {
-                    color: #fbbf24;
-                }
-                .workflow-version-item span {
+                .workflow-version-row {
                     display: flex;
                     align-items: center;
-                    justify-content: space-between;
+                    min-width: 0;
                     gap: 6px;
                     font-size: 0.76rem;
                     font-weight: 700;
+                }
+                .workflow-version-row strong {
+                    color: var(--text-main);
+                    font-size: 0.76rem;
+                    font-weight: 800;
                 }
                 .workflow-version-item em {
                     color: var(--accent-bright);
@@ -1421,9 +1471,35 @@ export function Sidebar() {
                     font-style: normal;
                     font-weight: 700;
                 }
-                .workflow-version-item small {
+                .workflow-version-row small {
+                    margin-left: auto;
                     color: var(--text-sub);
+                    font-size: 0.64rem;
+                    font-weight: 600;
+                    white-space: nowrap;
+                }
+                .workflow-version-floating-card {
+                    position: fixed;
+                    z-index: 10002;
+                    width: 240px;
+                    transform: translateY(-50%);
+                    display: grid;
+                    gap: 6px;
+                    padding: 10px 11px;
+                    border: 1px solid rgba(148, 163, 184, 0.24);
+                    border-radius: 10px;
+                    background: rgba(15, 23, 42, 0.96);
+                    color: var(--text-main);
+                    box-shadow: 0 16px 42px rgba(0, 0, 0, 0.36);
+                    backdrop-filter: blur(12px);
+                    pointer-events: none;
+                    white-space: normal;
                     font-size: 0.68rem;
+                    font-weight: 600;
+                    line-height: 1.45;
+                }
+                .workflow-version-hover-warning {
+                    color: #fbbf24;
                 }
                 .stat-row {
                     display: flex;

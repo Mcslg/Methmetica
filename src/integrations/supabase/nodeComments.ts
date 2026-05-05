@@ -107,6 +107,7 @@ export async function listForumNodeComments(options?: {
   kind?: 'all' | NodeCommentKind;
   status?: 'all' | Extract<NodeCommentStatus, 'open' | 'resolved'>;
   limit?: number;
+  currentUserId?: string;
 }) {
   if (!supabase) return [];
 
@@ -132,15 +133,13 @@ export async function listForumNodeComments(options?: {
   if (comments.length === 0 || !supabase) return comments;
 
   try {
-    const sessionResult = await withSupabaseTimeout(supabase.auth.getSession(), 'Loading forum read session', 1500);
-    const userId = sessionResult.data.session?.user?.id;
-    if (!userId) return comments;
+    if (!options?.currentUserId) return comments;
 
     const { data: readRows, error: readError } = await withSupabaseTimeout(
       supabase
         .from('node_comment_reads')
         .select('comment_id, read_at')
-        .eq('user_id', userId)
+        .eq('user_id', options.currentUserId)
         .in('comment_id', comments.map(comment => comment.id)),
       'Loading read receipts',
       1500,
@@ -161,11 +160,8 @@ export async function listForumNodeComments(options?: {
   }
 }
 
-export async function markNodeCommentRead(commentId: string) {
+export async function markNodeCommentRead(commentId: string, userId: string) {
   if (!supabase) return null;
-
-  const sessionResult = await withSupabaseTimeout(supabase.auth.getSession(), 'Loading read session', 1500);
-  const userId = sessionResult.data.session?.user?.id;
   if (!userId) return null;
 
   const { data, error } = await withSupabaseTimeout(

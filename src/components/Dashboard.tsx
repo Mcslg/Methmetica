@@ -188,7 +188,7 @@ export function Dashboard() {
     }
 
     const [workflowsWithInteractionsResult, nodeTemplatesResult] = await Promise.allSettled([
-      listPublicWorkflows({ includeInteractions: true, limit: 48 }),
+      listPublicWorkflows({ includeInteractions: true, limit: 48, currentUserId: user?.id }),
       listPublicNodeTemplates(),
     ]);
 
@@ -212,7 +212,7 @@ export function Dashboard() {
     } else {
       console.warn('[dashboard] public node templates unavailable:', nodeTemplatesResult.reason);
     }
-  }, [setCommunityTemplates]);
+  }, [setCommunityTemplates, user?.id]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -242,6 +242,7 @@ export function Dashboard() {
       kind: forumKindFilter,
       status: forumStatusFilter,
       limit: 100,
+      currentUserId: user?.id,
     })
       .then((comments) => {
         if (!isCancelled) setForumComments(comments);
@@ -258,7 +259,7 @@ export function Dashboard() {
     return () => {
       isCancelled = true;
     };
-  }, [activeTab, forumKindFilter, forumStatusFilter]);
+  }, [activeTab, forumKindFilter, forumStatusFilter, user?.id]);
 
   const handleDriveLogin = async (silent: boolean | React.MouseEvent = false) => {
     if (!user) return;
@@ -623,7 +624,7 @@ export function Dashboard() {
         : comment
     )));
     try {
-      await markNodeCommentRead(commentId);
+      await markNodeCommentRead(commentId, user.id);
     } catch (error) {
       console.error('[dashboard] failed to mark forum comment read:', error);
       setForumComments(prev => prev.map(comment => (

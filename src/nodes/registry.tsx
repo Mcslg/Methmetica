@@ -9,7 +9,7 @@ import { RangeNode, executeRangeNode } from './deprecated/RangeNode';
 import { ForEachNode, executeForEachNode } from './deprecated/ForEachNode';
 import { SliderNode } from './deprecated/SliderNode';
 import { ProjectNode } from './ProjectNode';
-import { CommunityTemplateNode } from './deprecated/CommunityTemplateNode';
+import { CommunityTemplateNode } from './CommunityTemplateNode';
 import { WorkflowLinkNode } from './deprecated/WorkflowLinkNode';
 import { CodeNode, executeCodeNode } from './CodeNode';
 import { DriveImageNode, executeDriveImageNode } from './DriveImageNode';

@@ -437,7 +437,7 @@ const versionRowToBlueprint = (version: WorkflowVersionRow, workflow: WorkflowRo
   },
 });
 
-export async function listPublicWorkflows(options?: { includeInteractions?: boolean; limit?: number }) {
+export async function listPublicWorkflows(options?: { includeInteractions?: boolean; limit?: number; currentUserId?: string }) {
   if (!supabase || !supabaseConfig.url || !supabaseConfig.anonKey) return [];
   const includeInteractions = options?.includeInteractions ?? true;
   const params = new URLSearchParams({
@@ -470,24 +470,20 @@ export async function listPublicWorkflows(options?: { includeInteractions?: bool
   let reviewedWorkflowIds = new Set<string>();
 
   try {
-    const [engagementResult, sessionResult] = await Promise.all([
-      withSupabaseTimeout(
-        supabase.rpc('get_workflow_engagement', { p_workflow_ids: workflowIds }),
-        'Loading workflow engagement',
-        WORKFLOW_INTERACTION_TIMEOUT_MS,
-      ),
-      withSupabaseTimeout(supabase.auth.getSession(), 'Loading current session', WORKFLOW_INTERACTION_TIMEOUT_MS),
-    ]);
+    const engagementResult = await withSupabaseTimeout(
+      supabase.rpc('get_workflow_engagement', { p_workflow_ids: workflowIds }),
+      'Loading workflow engagement',
+      WORKFLOW_INTERACTION_TIMEOUT_MS,
+    );
 
     if (engagementResult.error) throw engagementResult.error;
-    if (sessionResult.error) throw sessionResult.error;
 
     const engagementRows = ((engagementResult.data ?? []) as WorkflowEngagementRow[]);
     engagementByWorkflowId = new Map<string, WorkflowEngagementRow>(
       engagementRows.map(row => [row.workflow_id, row])
     );
 
-    const currentUserId = sessionResult.data.session?.user?.id;
+    const currentUserId = options?.currentUserId;
     if (currentUserId) {
       const [myInteractionResult, myReviewResult] = await Promise.all([
         withSupabaseTimeout(
@@ -629,7 +625,9 @@ export async function listWorkflowVersions(workflowId: string) {
 
   return rows.map((row): WorkflowVersionSummary => {
     const supersedingVersion = supersedingByOldVersionId.get(row.id);
-    const updateMessage = supersedingVersion ? getSupersededVersionMessage({
+    const supersedingChangeType = supersedingVersion?.change_type;
+    const shouldWarnSupersededVersion = supersedingChangeType === 'fix' || supersedingChangeType === 'hotfix';
+    const updateMessage = shouldWarnSupersededVersion && supersedingVersion ? getSupersededVersionMessage({
       changeType: supersedingVersion.change_type,
       warningMessage: supersedingVersion.warning_message,
     }) : null;
@@ -657,8 +655,8 @@ export async function listWorkflowVersions(workflowId: string) {
       warningMessage: updateMessage,
       supersedesVersionId: row.supersedes_version_id,
       updateAvailable: Boolean(supersedingVersion),
-      updateSeverity: supersedingVersion?.change_type === 'hotfix' || supersedingVersion?.change_type === 'fix'
-        ? supersedingVersion.change_type
+      updateSeverity: supersedingChangeType === 'hotfix' || supersedingChangeType === 'fix'
+        ? supersedingChangeType
         : supersedingVersion ? 'feature' : undefined,
       updateMessage: updateMessage ?? undefined,
       latestWorkflowVersionId: supersedingVersion?.id,
