@@ -326,6 +326,8 @@ export function Sidebar() {
                 <label className="publish-update-summary">
                     <span>更新說明</span>
                     <textarea
+                        id="publish-update-summary"
+                        name="publishUpdateSummary"
                         value={publishUpdateSummary}
                         onChange={(event) => setPublishUpdateSummary(event.target.value)}
                         placeholder="例如：修正輸出在空輸入時的錯誤，並保留原本的輸入/輸出介面。"

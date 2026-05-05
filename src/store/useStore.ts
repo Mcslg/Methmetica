@@ -86,6 +86,7 @@ export type NodeData = {
     code?: string;
     language?: string;
     error?: string;
+    showCodeErrorOutput?: boolean;
     formula?: string; // For function nodes
     text?: string; // For text nodes
     pages?: TextNodePage[]; // For text node pagination
@@ -1305,7 +1306,7 @@ const useStore = create<AppState>()(
                 console.warn("Snap fail: B not found");
             }
         } else {
-            console.log("Snap fail: No active hint");
+            return;
         }
         
         set({ pluginHint: null });

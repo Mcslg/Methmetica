@@ -762,21 +762,23 @@ export function CommunityNodeMaker({
                   {!hasLanguageText(draft.titleI18n, editingLanguage, draft.title) && <MissingLanguageBadge language={editingLanguage} />}
                 </span>
                 <input
+                  id={`community-maker-title-${draft.id}`}
+                  name={`community-maker-title-${draft.id}`}
                   value={getLanguageText(draft.titleI18n, editingLanguage, draft.title)}
                   onChange={(e) => updateLocalizedDraftText('title', e.target.value)}
                 />
               </label>
               <label>
                 <span>Slug</span>
-                <input value={draft.slug} onChange={(e) => updateDraft({ slug: e.target.value })} />
+                <input id={`community-maker-slug-${draft.id}`} name={`community-maker-slug-${draft.id}`} value={draft.slug} onChange={(e) => updateDraft({ slug: e.target.value })} />
               </label>
               <label>
                 <span>Category</span>
-                <input value={draft.category} onChange={(e) => updateDraft({ category: e.target.value })} />
+                <input id={`community-maker-category-${draft.id}`} name={`community-maker-category-${draft.id}`} value={draft.category} onChange={(e) => updateDraft({ category: e.target.value })} />
               </label>
               <label>
                 <span>Accent</span>
-                <input value={draft.accent} onChange={(e) => updateDraft({ accent: e.target.value })} />
+                <input id={`community-maker-accent-${draft.id}`} name={`community-maker-accent-${draft.id}`} value={draft.accent} onChange={(e) => updateDraft({ accent: e.target.value })} />
               </label>
             </div>
 
@@ -786,6 +788,8 @@ export function CommunityNodeMaker({
                 {!hasLanguageText(draft.summaryI18n, editingLanguage, draft.summary) && <MissingLanguageBadge language={editingLanguage} />}
               </span>
               <textarea
+                id={`community-maker-summary-${draft.id}`}
+                name={`community-maker-summary-${draft.id}`}
                 value={getLanguageText(draft.summaryI18n, editingLanguage, draft.summary)}
                 onChange={(e) => updateLocalizedDraftText('summary', e.target.value)}
               />
@@ -897,6 +901,8 @@ export function CommunityNodeMaker({
                             {!hasLanguageText(block.labelI18n, editingLanguage, block.label) && <MissingLanguageBadge language={editingLanguage} />}
                           </span>
                           <input
+                            id={`community-maker-block-label-${draft.id}-${block.id}`}
+                            name={`community-maker-block-label-${draft.id}-${block.id}`}
                             className="nodrag"
                             value={blockEditText(block, 'label', editingLanguage)}
                             onChange={(e) => updateLocalizedBlockText(block, 'label', e.target.value)}
@@ -931,6 +937,8 @@ export function CommunityNodeMaker({
                               );
                             })()}
                             <textarea
+                              id={`community-maker-block-content-${draft.id}-${block.id}`}
+                              name={`community-maker-block-content-${draft.id}-${block.id}`}
                               className="nodrag"
                               value={blockEditText(block, 'content', editingLanguage)}
                               onChange={(e) => updateLocalizedBlockText(block, 'content', e.target.value)}
@@ -955,6 +963,8 @@ export function CommunityNodeMaker({
                           <label className="stack compact nodrag">
                             <span>Description</span>
                             <input
+                              id={`community-maker-block-placeholder-${draft.id}-${block.id}`}
+                              name={`community-maker-block-placeholder-${draft.id}-${block.id}`}
                               className="nodrag"
                               value={blockEditText(block, 'placeholder', editingLanguage)}
                               onChange={(e) => updateLocalizedBlockText(block, 'placeholder', e.target.value)}

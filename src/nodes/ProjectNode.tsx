@@ -1184,6 +1184,8 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                 )}
               </span>
               <input
+                id={`project-name-${id}`}
+                name={`project-name-${id}`}
                 type="text"
                 className="project-name-input"
                 value={displayedProjectName}
@@ -1200,6 +1202,8 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                 )}
               </span>
               <textarea
+                id={`project-description-${id}`}
+                name={`project-description-${id}`}
                 className="project-desc-input"
                 value={displayedProjectDescription}
                 onChange={(e) => updateLocalizedProjectText('summary', e.target.value)}
@@ -1210,6 +1214,8 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
             <label className="root-field">
               <span>Tags</span>
               <input
+                id={`project-tags-${id}`}
+                name={`project-tags-${id}`}
                 type="text"
                 className="project-tags-input"
                 value={localTags}
@@ -1221,6 +1227,8 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
             <label className="root-field">
               <span>Visibility</span>
               <select
+                id={`project-visibility-${id}`}
+                name={`project-visibility-${id}`}
                 className="project-visibility-select"
                 value={localVisibility}
                 onChange={(e) => {
@@ -1312,6 +1320,8 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                         }}>
                           <div style={{ display: 'grid', gap: '6px' }}>
                             <input
+                              id={`project-builder-input-${id}-${port.id}`}
+                              name={`project-builder-input-${id}-${port.id}`}
                               className="project-tags-input"
                               value={getLanguageText(port.labelI18n, interfaceLanguage, port.label)}
                               onChange={(e) => {
@@ -1409,6 +1419,8 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                         }}>
                           <div style={{ display: 'grid', gap: '6px' }}>
                             <input
+                              id={`project-builder-output-${id}-${port.id}`}
+                              name={`project-builder-output-${id}-${port.id}`}
                               className="project-tags-input"
                               value={getLanguageText(port.labelI18n, interfaceLanguage, port.label)}
                               onChange={(e) => {
@@ -1569,6 +1581,8 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                             {getLocalizedText(port.labelI18n, language, port.label)}
                           </span>
                           <input
+                            id={`project-test-input-${id}-${port.id}`}
+                            name={`project-test-input-${id}-${port.id}`}
                             className="project-tags-input nodrag"
                             value={testInputs[port.id] || ''}
                             onChange={(event) => setTestInputs((current) => ({ ...current, [port.id]: event.target.value }))}

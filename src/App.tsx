@@ -643,6 +643,37 @@ function Flow() {
     }
     setNodeMenu(null);
   };
+  const handleToggleCodeErrorOutput = () => {
+    if (!nodeMenu) return;
+    const node = nodes.find(n => n.id === nodeMenu.nodeId);
+    if (!node || node.type !== 'codeNode') return;
+
+    const hasErrorOutput = Boolean(node.data.showCodeErrorOutput) || (node.data.handles || []).some(handle => handle.id === 'h-error');
+    if (hasErrorOutput) {
+      const nextHandles = (node.data.handles || []).filter(handle => handle.id !== 'h-error');
+      updateNodeData(node.id, { handles: nextHandles, showCodeErrorOutput: false });
+      useStore.setState((state) => ({
+        edges: state.edges.filter(edge => !(
+          (edge.source === node.id && edge.sourceHandle === 'h-error') ||
+          (edge.target === node.id && edge.targetHandle === 'h-error')
+        )),
+      }));
+    } else {
+      updateNodeData(node.id, { showCodeErrorOutput: true });
+      if (!(node.data.handles || []).some(handle => handle.id === 'h-error')) {
+        addHandle(node.id, {
+          id: 'h-error',
+          type: 'output',
+          position: 'right',
+          offset: (node.data.handles || []).some(handle => handle.id === 'h-result') ? 66 : 50,
+          label: 'error',
+          declaredType: 'error',
+          description: 'Any runtime errors captured',
+        });
+      }
+    }
+    setNodeMenu(null);
+  };
   const handleToggleHeader = () => {
     if (!nodeMenu) return;
     const node = nodes.find(n => n.id === nodeMenu.nodeId);
@@ -983,6 +1014,8 @@ function Flow() {
               </div>
             </div>
             <input
+              id="quick-nav-search"
+              name="quickNavSearch"
               ref={quickNavInputRef}
               value={quickNavQuery}
               onChange={(e) => {
@@ -1090,6 +1123,8 @@ function Flow() {
         >
           <div className="command-search-container">
             <input
+              id="command-palette-search"
+              name="commandPaletteSearch"
               ref={searchInputRef}
               type="text"
               className="command-input"
@@ -1178,6 +1213,14 @@ function Flow() {
               {(nodes.find(n => n.id === nodeMenu.nodeId)?.data.handles || []).some(handle => handle.id === 'h-image')
                 ? (language === 'zh-TW' ? '隱藏圖片輸出' : 'Hide Image Output')
                 : (language === 'zh-TW' ? '新增圖片輸出' : 'Add Image Output')}
+            </div>
+          )}
+          {nodes.find(n => n.id === nodeMenu.nodeId)?.type === 'codeNode' && (
+            <div className="menu-item" onClick={handleToggleCodeErrorOutput}>
+              {nodes.find(n => n.id === nodeMenu.nodeId)?.data.showCodeErrorOutput ||
+                (nodes.find(n => n.id === nodeMenu.nodeId)?.data.handles || []).some(handle => handle.id === 'h-error')
+                ? (language === 'zh-TW' ? '隱藏 error 輸出' : 'Hide Error Output')
+                : (language === 'zh-TW' ? '顯示 error 輸出' : 'Show Error Output')}
             </div>
           )}
           <div className="menu-item" onClick={handleDuplicateNode}>{t('common.duplicate')}</div>

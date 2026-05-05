@@ -129,6 +129,8 @@ export function NodeComments({ nodeId, data }: NodeCommentsProps) {
           </div>
           <div className="node-comments-compose-row">
             <select
+              id={`node-comment-kind-${nodeId}`}
+              name={`node-comment-kind-${nodeId}`}
               value={kind}
               onChange={(event) => setKind(event.target.value as NodeComment['kind'])}
               aria-label="Comment type"
@@ -140,6 +142,8 @@ export function NodeComments({ nodeId, data }: NodeCommentsProps) {
             <span>{kind === 'comment' ? '一般討論' : kind === 'question' ? '可進論壇提問' : kind === 'request' ? '可追蹤要求' : '可追蹤問題'}</span>
           </div>
           <textarea
+            id={`node-comment-draft-${nodeId}`}
+            name={`node-comment-draft-${nodeId}`}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             placeholder="對這個節點留言..."

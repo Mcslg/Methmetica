@@ -10,11 +10,12 @@ interface MathInputProps {
     style?: React.CSSProperties;
     readOnly?: boolean;
     id?: string;
+    name?: string;
 }
 
 type MathfieldElement = HTMLElement & { value: string };
 
-export const MathInput = forwardRef<MathfieldElement, MathInputProps>(({ value, onChange, onKeyDown, onBlur, className, style, readOnly, id }, ref) => {
+export const MathInput = forwardRef<MathfieldElement, MathInputProps>(({ value, onChange, onKeyDown, onBlur, className, style, readOnly, id, name }, ref) => {
     const mfRef = useRef<MathfieldElement | null>(null);
     const isSettingValueRef = useRef(false);
     const valueRef = useRef(value);
@@ -98,6 +99,7 @@ export const MathInput = forwardRef<MathfieldElement, MathInputProps>(({ value, 
         <math-field
             ref={mfRef}
             id={id}
+            name={name}
             class={className}
             style={style}
             read-only={readOnly ? "true" : undefined}

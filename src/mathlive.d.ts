@@ -6,6 +6,7 @@ declare namespace React {
             'math-field': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
                 ref?: React.RefObject<HTMLElement | null>;
                 class?: string;
+                name?: string;
                 value?: string;
                 style?: React.CSSProperties;
             };

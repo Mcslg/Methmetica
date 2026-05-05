@@ -422,6 +422,7 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
 
         const hasReturn = /\breturn\b/.test(currentCode);
         const currentHandles = data.handles || [];
+        const showErrorOutput = Boolean(data.showCodeErrorOutput);
         
         let newInputHandles: any[] = [];
         if (newInputs.length > 0) {
@@ -460,9 +461,11 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
 
         const baseOutputHandles: any[] = [];
         if (hasReturn) {
-            baseOutputHandles.push({ id: 'h-result', type: 'output', position: 'right', offset: 33, description: 'The value returned by the code' });
+            baseOutputHandles.push({ id: 'h-result', type: 'output', position: 'right', offset: showErrorOutput ? 33 : 50, label: 'result', description: 'The value returned by the code' });
         }
-        baseOutputHandles.push({ id: 'h-error', type: 'output', position: 'right', offset: 66, description: 'Any runtime errors captured' });
+        if (showErrorOutput) {
+            baseOutputHandles.push({ id: 'h-error', type: 'output', position: 'right', offset: hasReturn ? 66 : 50, label: 'error', description: 'Any runtime errors captured' });
+        }
 
         const nextHandles = [...newInputHandles, ...newOutputHandles, ...baseOutputHandles];
 
@@ -470,7 +473,7 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
             // Uses a requestAnimationFrame to avoid update-during-render React warnings if triggered immediately
             requestAnimationFrame(() => updateNodeData(id, { handles: nextHandles }));
         }
-    }, [currentCode, id, updateNodeData, data.handles]);
+    }, [currentCode, id, updateNodeData, data.handles, data.showCodeErrorOutput]);
 
     useEffect(() => {
         if (data.autoRun && (data.inputSignature || currentCode)) {
@@ -533,6 +536,8 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
         >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
                 <textarea
+                    id={`code-editor-${id}`}
+                    name={`code-editor-${id}`}
                     ref={textareaRef}
                     className="nodrag"
                     spellCheck={false}
