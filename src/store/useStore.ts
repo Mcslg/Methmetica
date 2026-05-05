@@ -4,7 +4,7 @@ import { type Edge } from '@xyflow/react';
 import { getNodeDefinition } from '../nodes/registry';
 import { canPlugin, PluginRules, type ProxyableType } from '../config/pluginRegistry';
 import { defaultCommunityTemplates } from '../community/catalog';
-import { getTemplateInternalHandles, type CommunityNodeTemplate, type TemplateHandleSpec, type TemplateViewOverrides, type WorkflowVisibility } from '../community/types';
+import { getTemplateHandles, getTemplateInternalHandles, getTemplateInterfaceSchema, type CommunityNodeTemplate, type TemplateHandleSpec, type TemplateViewOverrides, type WorkflowVisibility } from '../community/types';
 import type { AppUser, AuthStatus } from '../integrations/supabase/types';
 import type { MathValue } from '../types/mathTypes';
 import {
@@ -187,29 +187,77 @@ const templateHandleToCustomHandle = (handle: TemplateHandleSpec): CustomHandle 
     label: handle.label,
 });
 
-const hydrateProjectBuilderHandles = (nodes: AppNode[]): AppNode[] => nodes.map((node) => {
-    if (node.type !== 'projectNode' || !node.data.builderDraft) return node;
+const hydrateTemplateNodeHandles = (nodes: AppNode[]): AppNode[] => nodes.map((node) => {
+    if (node.type !== 'communityTemplateNode') return node;
+    const template = node.data.templateDraft;
+    if (!template) return node;
 
-    const internalHandles = getTemplateInternalHandles(node.data.builderDraft).map(templateHandleToCustomHandle);
-    if (internalHandles.length === 0) return node;
+    const templateHandles = node.data.autoManagedTemplateNode
+        ? getTemplateInternalHandles(template).map(templateHandleToCustomHandle)
+        : getTemplateHandles(template).map(templateHandleToCustomHandle);
+    if (templateHandles.length === 0) return node;
 
-    const internalHandleIds = new Set(internalHandles.map(handle => handle.id));
     const existingHandles = node.data.handles || [];
-    const preservedHandles = existingHandles.filter(handle => (
-        handle.id.startsWith('control-') ||
-        !internalHandleIds.has(handle.id)
-    ));
-    const nextHandles = [...internalHandles, ...preservedHandles];
-
-    if (JSON.stringify(existingHandles) === JSON.stringify(nextHandles)) return node;
+    if (JSON.stringify(existingHandles) === JSON.stringify(templateHandles)) return node;
     return {
         ...node,
         data: {
             ...node.data,
-            handles: nextHandles,
+            handles: templateHandles,
         },
     };
 });
+
+const normalizeBuilderBridgeGraph = (nodes: AppNode[], edges: Edge[]) => {
+    const hydratedNodes = hydrateTemplateNodeHandles(nodes).map((node) => (
+        node.type === 'projectNode' && (node.data.handles?.length ?? 0) > 0
+            ? { ...node, data: { ...node.data, handles: [] } }
+            : node
+    ));
+
+    const nodeById = new Map(hydratedNodes.map(node => [node.id, node]));
+    const bridgeByProjectId = new Map<string, string>();
+    hydratedNodes.forEach((node) => {
+        if (node.type !== 'communityTemplateNode' || !node.data.builderSourceId || !node.data.autoManagedTemplateNode) return;
+        bridgeByProjectId.set(node.data.builderSourceId, node.id);
+    });
+
+    const nextEdges = edges.map((edge) => {
+        const sourceNode = nodeById.get(edge.source);
+        const targetNode = nodeById.get(edge.target);
+        const nextEdge = { ...edge };
+
+        if (sourceNode?.type === 'projectNode' && sourceNode.data.builderDraft) {
+            const bridgeId = sourceNode.data.linkedTemplateNodeId || bridgeByProjectId.get(sourceNode.id);
+            const schema = getTemplateInterfaceSchema(sourceNode.data.builderDraft);
+            const inputHandleIds = new Set(schema.inputs.map(port => port.id));
+            if (bridgeId && edge.sourceHandle && inputHandleIds.has(edge.sourceHandle)) {
+                nextEdge.source = bridgeId;
+            }
+        }
+
+        if (targetNode?.type === 'projectNode' && targetNode.data.builderDraft) {
+            const bridgeId = targetNode.data.linkedTemplateNodeId || bridgeByProjectId.get(targetNode.id);
+            const schema = getTemplateInterfaceSchema(targetNode.data.builderDraft);
+            const outputHandleIds = new Set(schema.outputs.map(port => port.id));
+            if (bridgeId && edge.targetHandle && outputHandleIds.has(edge.targetHandle)) {
+                nextEdge.target = bridgeId;
+            }
+        }
+
+        return nextEdge;
+    });
+
+    const validEdges = nextEdges.filter((edge) => {
+        const sourceHandle = nodeById.get(edge.source)?.data.handles?.find(handle => handle.id === edge.sourceHandle);
+        const targetHandle = nodeById.get(edge.target)?.data.handles?.find(handle => handle.id === edge.targetHandle);
+        if (!sourceHandle || !targetHandle) return true;
+        if (sourceHandle.type === 'scope' || targetHandle.type === 'scope') return true;
+        return sourceHandle.type === 'output' && targetHandle.type === 'input';
+    });
+
+    return { nodes: hydratedNodes, edges: validEdges };
+};
 
 export type AppNode = Node<NodeData>;
 export type WorkflowListItem = {
@@ -799,20 +847,24 @@ const useStore = create<AppState>()(
                     set({ globalVars: {}, activeFileId: null });
                 }
 
-                finalNodes = hydrateProjectBuilderHandles(finalNodes);
+                const normalizedGraph = normalizeBuilderBridgeGraph(finalNodes, edges);
 
-                set({ nodes: finalNodes, edges, savedGraphSignature: createGraphSignature(finalNodes, edges) });
+                set({
+                    nodes: normalizedGraph.nodes,
+                    edges: normalizedGraph.edges,
+                    savedGraphSignature: createGraphSignature(normalizedGraph.nodes, normalizedGraph.edges),
+                });
                 // Defer evaluation
                 setTimeout(() => get().evaluateGraph(), 50);
             },
 
             setGraphWithSavedBaseline: (nodes, edges, savedNodes, savedEdges) => {
-                const finalNodes = hydrateProjectBuilderHandles(nodes);
-                const finalSavedNodes = hydrateProjectBuilderHandles(savedNodes);
+                const normalizedGraph = normalizeBuilderBridgeGraph(nodes, edges);
+                const normalizedSavedGraph = normalizeBuilderBridgeGraph(savedNodes, savedEdges);
                 set({
-                    nodes: finalNodes,
-                    edges,
-                    savedGraphSignature: createGraphSignature(finalSavedNodes, savedEdges),
+                    nodes: normalizedGraph.nodes,
+                    edges: normalizedGraph.edges,
+                    savedGraphSignature: createGraphSignature(normalizedSavedGraph.nodes, normalizedSavedGraph.edges),
                 });
                 setTimeout(() => get().evaluateGraph(), 50);
             },
@@ -869,6 +921,10 @@ const useStore = create<AppState>()(
         const sourceHandle = sourceNode?.data.handles?.find(h => h.id === connection.sourceHandle);
         const targetHandle = targetNode?.data.handles?.find(h => h.id === connection.targetHandle);
         const isScopeEdge = sourceHandle?.type === 'scope' || targetHandle?.type === 'scope';
+        if (!isScopeEdge && sourceHandle && targetHandle && (sourceHandle.type !== 'output' || targetHandle.type !== 'input')) {
+            console.warn('Invalid handle direction. Connect outputs to inputs.', connection);
+            return;
+        }
         const newEdge = {
             ...connection,
             type: 'default',

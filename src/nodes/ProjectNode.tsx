@@ -3,7 +3,7 @@ import { type Edge, type NodeProps, Handle, Position, useReactFlow } from '@xyfl
 import { Icons } from '../components/Icons';
 import { NodeFrame } from '../components/NodeFrame';
 import { LiveNodePreview } from '../components/LiveNodePreview';
-import useStore, { type AppNode, type CustomHandle, type NodeData } from '../store/useStore';
+import useStore, { type AppNode, type NodeData } from '../store/useStore';
 import { useLanguage } from '../contexts/LanguageContext';
 import { CommunityNodeMaker, buildTemplateFromBlocks, validateDraft } from '../components/CommunityNodeMaker';
 import type { CommunityNodeTemplate, TemplateInterfaceSchema, TemplatePortSpec, WorkflowChangeType, WorkflowVisibility } from '../community/types';
@@ -139,24 +139,6 @@ const MissingLanguageBadge = ({ language }: { language: SupportedLanguage }) => 
     未填 {languageLabel(language)}
   </small>
 );
-
-const buildProjectControlHandles = (
-  draft?: CommunityNodeTemplate,
-  measuredOffsets: Record<string, number> = {}
-): CustomHandle[] => {
-  const controlPorts = draft?.controlPorts || [];
-  if (controlPorts.length === 0) return [];
-  const spacing = 100 / (controlPorts.length + 1);
-
-  return controlPorts.map((port, index) => ({
-    id: port.id,
-    label: port.label,
-    type: 'input',
-    position: 'left',
-    offset: measuredOffsets[port.id] ?? Math.max(12, Math.min(88, Math.round((index + 1) * spacing))),
-    description: 'Controls the linked community template preview.',
-  }));
-};
 
 const attachRuntimePlan = (
   draft: CommunityNodeTemplate,
@@ -309,7 +291,6 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
   const [interfaceLanguage, setInterfaceLanguage] = React.useState<SupportedLanguage>(language);
   const [isExpanded, setIsExpanded] = React.useState(true);
   const [isPublishing, setIsPublishing] = React.useState(false);
-  const [controlHandleOffsets, setControlHandleOffsets] = React.useState<Record<string, number>>({});
   const projectContentRef = React.useRef<HTMLDivElement | null>(null);
   const builderDraft = localBuilderDraft;
   const linkedTemplateNodeId = data.linkedTemplateNodeId as string | undefined;
@@ -407,7 +388,6 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     publishStatus: string;
     linkedTemplateNodeId: string;
     supabaseWorkflowId: string;
-    handles: CustomHandle[];
     reviewStatus: 'unreviewed' | 'approved';
     reviewCount: number;
     reviewRequired: boolean;
@@ -1082,65 +1062,11 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
   }, [builderDraft, localVisibility, syncDraftWithLocalMetadata, syncLinkedTemplateNode, updateProjectData]);
 
   React.useEffect(() => {
-    const nextInternalHandles: CustomHandle[] = builderDraft
-      ? getTemplateInternalHandles(builderDraft).map(handle => ({
-        id: handle.id,
-        type: handle.type,
-        position: handle.position,
-        offset: handle.offset,
-        label: handle.label,
-      }))
-      : [];
-    const internalHandleIds = new Set(nextInternalHandles.map(handle => handle.id));
-    const nextControlHandles = buildProjectControlHandles(builderDraft, controlHandleOffsets);
     const existingHandles = data.handles || [];
-    const persistentHandles = existingHandles.filter(handle => (
-      !handle.id.startsWith('control-') &&
-      !internalHandleIds.has(handle.id)
-    ));
-    const nextHandles = [...nextInternalHandles, ...persistentHandles, ...nextControlHandles];
-
-    if (JSON.stringify(existingHandles) !== JSON.stringify(nextHandles)) {
-      updateProjectData({ handles: nextHandles });
+    if (existingHandles.length > 0) {
+      updateNodeData(id, { handles: [] }, { skipGraphEval: true });
     }
-  }, [builderDraft, controlHandleOffsets, data.handles, updateProjectData]);
-
-  React.useEffect(() => {
-    const measureControlHandles = () => {
-      const contentEl = projectContentRef.current;
-      const nodeEl = contentEl?.closest('.math-node');
-      if (!contentEl || !nodeEl) return;
-
-      const nodeRect = nodeEl.getBoundingClientRect();
-      if (nodeRect.height === 0) return;
-
-      const nextOffsets: Record<string, number> = {};
-      contentEl.querySelectorAll<HTMLElement>('[data-project-control-port-id]').forEach((el) => {
-        const portId = el.dataset.projectControlPortId;
-        if (!portId) return;
-        const rect = el.getBoundingClientRect();
-        const centerY = rect.top + rect.height / 2;
-        nextOffsets[portId] = Math.max(8, Math.min(92, Math.round(((centerY - nodeRect.top) / nodeRect.height) * 1000) / 10));
-      });
-
-      setControlHandleOffsets((current) => (
-        JSON.stringify(current) === JSON.stringify(nextOffsets) ? current : nextOffsets
-      ));
-    };
-
-    const timeoutId = window.setTimeout(measureControlHandles, 40);
-    const resizeObserver = new ResizeObserver(measureControlHandles);
-    if (projectContentRef.current) {
-      resizeObserver.observe(projectContentRef.current);
-      const nodeEl = projectContentRef.current.closest('.math-node');
-      if (nodeEl) resizeObserver.observe(nodeEl);
-    }
-
-    return () => {
-      window.clearTimeout(timeoutId);
-      resizeObserver.disconnect();
-    };
-  }, [builderDraft, isExpanded]);
+  }, [data.handles, id, updateNodeData]);
 
   React.useEffect(() => {
     if (!builderDraft) return;

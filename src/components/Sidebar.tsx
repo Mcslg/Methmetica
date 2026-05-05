@@ -1397,6 +1397,7 @@ export function Sidebar() {
                 .workflow-version-panel {
                     display: grid;
                     gap: 8px;
+                    min-height: 0;
                     padding: 10px;
                     border: 1px solid var(--border-node);
                     border-radius: 8px;
@@ -1423,8 +1424,22 @@ export function Sidebar() {
                 .workflow-version-list {
                     display: grid;
                     gap: 6px;
-                    max-height: 180px;
-                    overflow: visible;
+                    max-height: min(180px, 32vh);
+                    min-height: 0;
+                    overflow-y: auto;
+                    overflow-x: hidden;
+                    padding-right: 3px;
+                    overscroll-behavior: contain;
+                }
+                .workflow-version-list::-webkit-scrollbar {
+                    width: 3px;
+                }
+                .workflow-version-list::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+                .workflow-version-list::-webkit-scrollbar-thumb {
+                    background: rgba(148, 163, 184, 0.36);
+                    border-radius: 999px;
                 }
                 .workflow-version-item {
                     position: relative;
