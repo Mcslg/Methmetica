@@ -4,7 +4,7 @@ import { Icons } from '../components/Icons';
 import { NodeFrame } from '../components/NodeFrame';
 import useStore, { type AppNode } from '../store/useStore';
 import { useLanguage } from '../contexts/LanguageContext';
-import type { CommunityNodeTemplate, WorkflowIcon, WorkflowVisibility } from '../community/types';
+import type { CommunityNodeTemplate, WorkflowIcon } from '../community/types';
 import { makeInitialDraft } from '../community/templateDraft';
 import { DEFAULT_WORKFLOW_ICON, WORKFLOW_ICON_OPTIONS, normalizeWorkflowIcon, renderWorkflowIconVisual } from '../utils/workflowIcons';
 
@@ -25,7 +25,6 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
   const [localName, setLocalName] = React.useState(data.label || '');
   const [localDesc, setLocalDesc] = React.useState(data.description || '');
   const [localTags, setLocalTags] = React.useState(Array.isArray(data.tags) ? data.tags.join(', ') : '');
-  const [localVisibility, setLocalVisibility] = React.useState<WorkflowVisibility>(data.visibility || 'private');
   const [localWorkflowIcon, setLocalWorkflowIcon] = React.useState(normalizeWorkflowIcon(data.workflowIcon));
   const [isIconPickerOpen, setIsIconPickerOpen] = React.useState(false);
   const [isExpanded, setIsExpanded] = React.useState(true);
@@ -41,31 +40,25 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     if (nextTags !== localTags && document.activeElement?.className !== 'project-tags-input') {
       setLocalTags(nextTags);
     }
-    if (data.visibility && data.visibility !== localVisibility) {
-      setLocalVisibility(data.visibility);
-    }
     const nextWorkflowIcon = normalizeWorkflowIcon(data.workflowIcon);
     if (JSON.stringify(nextWorkflowIcon) !== JSON.stringify(localWorkflowIcon)) {
       setLocalWorkflowIcon(nextWorkflowIcon);
     }
-  }, [data.description, data.label, data.tags, data.visibility, data.workflowIcon, localDesc, localName, localTags, localVisibility, localWorkflowIcon]);
+  }, [data.description, data.label, data.tags, data.workflowIcon, localDesc, localName, localTags, localWorkflowIcon]);
 
   const saveWorkflowMetadata = React.useCallback((patch?: Partial<{
     label: string;
     description: string;
     tags: string[];
-    visibility: WorkflowVisibility;
     workflowIcon: WorkflowIcon;
   }>) => {
     const finalName = (patch?.label ?? localName).trim() || 'Untitled Workflow';
     const finalDesc = patch?.description ?? localDesc;
     const finalTags = patch?.tags ?? parseTags(localTags);
-    const finalVisibility = patch?.visibility ?? localVisibility;
     const finalWorkflowIcon = patch?.workflowIcon ?? localWorkflowIcon;
 
     if (finalName !== localName) setLocalName(finalName);
     if (finalDesc !== localDesc) setLocalDesc(finalDesc);
-    if (finalVisibility !== localVisibility) setLocalVisibility(finalVisibility);
     const finalTagsText = finalTags.join(', ');
     if (finalTagsText !== localTags) setLocalTags(finalTagsText);
 
@@ -73,7 +66,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
       label: finalName,
       description: finalDesc,
       tags: finalTags,
-      visibility: finalVisibility,
+      visibility: data.visibility || 'private',
       workflowIcon: finalWorkflowIcon,
     }, { skipGraphEval: true });
 
@@ -83,11 +76,11 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         label: finalName,
         description: finalDesc,
         tags: finalTags,
-        visibility: finalVisibility,
+        visibility: data.visibility || 'private',
         workflowIcon: finalWorkflowIcon,
       }, { skipGraphEval: true });
     }
-  }, [data.builderNodeId, id, localDesc, localName, localTags, localVisibility, localWorkflowIcon, updateNodeData]);
+  }, [data.builderNodeId, data.visibility, id, localDesc, localName, localTags, localWorkflowIcon, updateNodeData]);
 
   const focusNodeById = React.useCallback((nodeId: string) => {
     const node = getNodes().find(n => n.id === nodeId);
@@ -131,7 +124,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         label: draft.title,
         description: draft.summary,
         tags: draft.tags,
-        visibility: localVisibility,
+        visibility: data.visibility || 'private',
         workflowIcon: localWorkflowIcon,
         builderDraft: draft,
         publishStatus: 'Node Builder 已獨立成節點，發布時仍會同步到 Project Root。',
@@ -143,7 +136,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
       label: draft.title,
       description: draft.summary,
       tags: draft.tags,
-      visibility: localVisibility,
+      visibility: data.visibility || 'private',
       workflowIcon: localWorkflowIcon,
       builderDraft: draft,
       publishStatus: '這條工作流已連到獨立 Node Builder。',
@@ -298,28 +291,6 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                   placeholder="geometry, theorem, core"
                 />
               </label>
-              <label className="root-field">
-                <span>Visibility</span>
-                <select
-                  name={`project-visibility-${id}`}
-                  className="project-visibility-select"
-                  value={localVisibility}
-                  onChange={(e) => {
-                    const nextVisibility = e.target.value as WorkflowVisibility;
-                    setLocalVisibility(nextVisibility);
-                    saveWorkflowMetadata({ visibility: nextVisibility });
-                  }}
-                >
-                  <option value="private">Private</option>
-                  <option value="public">Public</option>
-                  <option value="core">Core</option>
-                </select>
-              </label>
-            </div>
-            <div className="root-visibility-hint">
-              {localVisibility === 'private' && 'Private 不會出現在公開社群。'}
-              {localVisibility === 'public' && 'Public 會出現在公開社群，任何人都可讀。'}
-              {localVisibility === 'core' && 'Core 只允許 trusted_editor / admin 發布與更新。'}
             </div>
 
             <div className="builder-cta">

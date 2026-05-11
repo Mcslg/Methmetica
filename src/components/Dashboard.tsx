@@ -12,8 +12,10 @@ import { signInWithGoogle, signOutSupabase } from '../integrations/supabase/auth
 import {
   adminSetWorkflowFeaturedInSupabase,
   getWorkflowBlueprintFromSupabase,
+  listCoreProposalQueue,
   listWorkflowReviewQueue,
   listPublicWorkflows,
+  type CoreProposalSummary,
 } from '../integrations/supabase/workflows';
 import { recordWorkflowView, setWorkflowInteraction, type WorkflowInteractionKind } from '../integrations/supabase/workflowInteractions';
 import { listPublicNodeTemplates } from '../integrations/supabase/nodeTemplates';
@@ -56,6 +58,13 @@ const WORKFLOW_CHANGE_LABELS = {
   feature: '新增',
   fix: '除錯',
   hotfix: '修復',
+} as const;
+
+const CORE_PROPOSAL_KIND_LABELS = {
+  content: '內容整理',
+  behavior: '行為調整',
+  fix: '修正',
+  hotfix: '緊急修復',
 } as const;
 
 const renderWorkflowIcon = (icon?: WorkflowIcon, fallback?: ReactNode) => {
@@ -157,6 +166,7 @@ export function Dashboard() {
   const [communitySortMode, setCommunitySortMode] = useState<CommunitySortMode>('recent');
   const [publicWorkflows, setPublicWorkflows] = useState<CommunityWorkflowCard[]>([]);
   const [contributorWorkflows, setContributorWorkflows] = useState<CommunityWorkflowCard[]>([]);
+  const [coreProposals, setCoreProposals] = useState<CoreProposalSummary[]>([]);
   const [localDrafts, setLocalDrafts] = useState<LocalDraftSummary[]>([]);
   const [isLoadingPublicWorkflows, setIsLoadingPublicWorkflows] = useState(false);
   const [publicWorkflowError, setPublicWorkflowError] = useState<string | null>(null);
@@ -714,18 +724,26 @@ export function Dashboard() {
   const refreshContributorQueue = useCallback(async (isCancelled: () => boolean = () => false) => {
     if (!canUseContributorArea) {
       setContributorWorkflows([]);
+      setCoreProposals([]);
       return;
     }
 
     setIsLoadingContributorQueue(true);
     setContributorQueueError(null);
     try {
-      const workflows = await listWorkflowReviewQueue({ limit: 96, currentUserId: user?.id });
-      if (!isCancelled()) setContributorWorkflows(workflows);
+      const [workflows, proposals] = await Promise.all([
+        listWorkflowReviewQueue({ limit: 96, currentUserId: user?.id }),
+        listCoreProposalQueue({ limit: 48 }),
+      ]);
+      if (!isCancelled()) {
+        setContributorWorkflows(workflows);
+        setCoreProposals(proposals);
+      }
     } catch (error) {
       console.error('[dashboard] contributor queue failed:', error);
       if (!isCancelled()) {
         setContributorWorkflows([]);
+        setCoreProposals([]);
         setContributorQueueError(error instanceof Error ? error.message : 'Contributor queue could not load.');
       }
     } finally {
@@ -783,6 +801,18 @@ export function Dashboard() {
       },
     ];
   }, [contributorWorkflows, searchQuery]);
+
+  const filteredCoreProposals = useMemo(() => {
+    const keyword = searchQuery.toLowerCase();
+    if (!keyword) return coreProposals;
+    return coreProposals.filter(proposal => [
+      proposal.title,
+      proposal.summary,
+      proposal.coreTitle,
+      proposal.authorName,
+      proposal.proposalKind,
+    ].filter(Boolean).join(' ').toLowerCase().includes(keyword));
+  }, [coreProposals, searchQuery]);
 
   const filteredWorkflows = workflowList.filter(w =>
     w.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -1412,7 +1442,7 @@ export function Dashboard() {
                 <p>先集中處理未審核、核心與額外審核需求。點卡片會直接開啟 workflow 進行審核。</p>
               </div>
               <div className="review-summary-count">
-                <strong>{contributorReviewSections.reduce((sum, section) => sum + section.workflows.length, 0)}</strong>
+                <strong>{filteredCoreProposals.length + contributorReviewSections.reduce((sum, section) => sum + section.workflows.length, 0)}</strong>
                 <span>pending items</span>
               </div>
             </div>
@@ -1432,12 +1462,60 @@ export function Dashboard() {
               </div>
             )}
 
-            {!isLoadingContributorQueue && !contributorQueueError && contributorReviewSections.every(section => section.workflows.length === 0) && (
+            {!isLoadingContributorQueue && !contributorQueueError && filteredCoreProposals.length === 0 && contributorReviewSections.every(section => section.workflows.length === 0) && (
               <div className="empty-state">
                 <Icons.Check size={42} style={{ opacity: 0.16, marginBottom: 12 }} />
                 <h3>目前沒有待審核項目</h3>
                 <p>未來的新發布、核心頁、額外審核與更新審核會集中出現在這裡。</p>
               </div>
+            )}
+
+            {!isLoadingContributorQueue && !contributorQueueError && filteredCoreProposals.length > 0 && (
+              <section className="review-queue-section core-proposal-section">
+                <div className="review-queue-header">
+                  <div>
+                    <h3>核心修改提案</h3>
+                    <p>從核心 workflow fork 出來的修改草稿。這裡先收件，下一步會接上審核、合併與版本升級。</p>
+                  </div>
+                  <span>{filteredCoreProposals.length}</span>
+                </div>
+                <div className="section-grid compact-review-grid">
+                  {filteredCoreProposals.map(proposal => {
+                    const isStale = Boolean(
+                      proposal.baseVersionId &&
+                      proposal.currentVersionId &&
+                      proposal.baseVersionId !== proposal.currentVersionId
+                    );
+                    return (
+                      <article
+                        key={proposal.id}
+                        className={`workflow-card review-card core-proposal-card ${isStale ? 'is-stale' : ''}`}
+                        onClick={() => openBlueprint(proposal.coreWorkflowId)}
+                        title="先開啟來源核心 workflow；提案 diff/merge 面板會在下一步接上。"
+                      >
+                        <div className="card-top">
+                          <div className="card-icon-box" style={workflowIconStyle(undefined, '#60a5fa')}>
+                            <Icons.Check size={20} />
+                          </div>
+                          <span className="status-pill core">proposal</span>
+                        </div>
+                        <div className="card-body">
+                          <h3>{proposal.title}</h3>
+                          <p>{proposal.summary || `修改 ${proposal.coreTitle}`}</p>
+                          <div className="review-update-meta">
+                            <span>{CORE_PROPOSAL_KIND_LABELS[proposal.proposalKind]}</span>
+                            {isStale && <small>來源核心已有新版，行為/修正類提案需要重新 fork 最新版。</small>}
+                          </div>
+                        </div>
+                        <div className="card-footer">
+                          <span className="card-author">{proposal.authorName}</span>
+                          <span className="review-progress card-hover-fade">{proposal.coreTitle}</span>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
             )}
 
             {!isLoadingContributorQueue && !contributorQueueError && contributorReviewSections.some(section => section.workflows.length > 0) && contributorReviewSections.map(section => (
@@ -2694,6 +2772,13 @@ export function Dashboard() {
         .review-card {
           box-shadow: none;
           border-radius: 12px;
+        }
+        .core-proposal-card {
+          border-color: rgba(96, 165, 250, 0.26);
+        }
+        .core-proposal-card.is-stale {
+          border-color: rgba(251, 191, 36, 0.45);
+          background: linear-gradient(180deg, rgba(251, 191, 36, 0.08), transparent 46%), var(--bg-sidebar);
         }
         .empty-state.small {
           min-height: 150px;

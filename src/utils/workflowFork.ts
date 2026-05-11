@@ -19,6 +19,15 @@ export const forkWorkflowToLocalDraft = ({
   setGraph,
   setActiveFileId,
 }: ForkWorkflowArgs) => {
+  const sourceProject = nodes.find(node => node.type === 'projectNode');
+  const isCoreSource = sourceProject?.data.visibility === 'core';
+  const sourceWorkflowId = typeof sourceProject?.data.supabaseWorkflowId === 'string'
+    ? sourceProject.data.supabaseWorkflowId
+    : undefined;
+  const sourceVersionId = typeof sourceProject?.data.workflowVersionId === 'string'
+    ? sourceProject.data.workflowVersionId
+    : undefined;
+  const sourceTitle = String(sourceProject?.data.label || 'Core Workflow');
   const forkedNodes = nodes.map(node => (
     node.type === 'projectNode'
       ? {
@@ -33,7 +42,20 @@ export const forkWorkflowToLocalDraft = ({
             authorName: user?.name,
             supabaseWorkflowId: undefined,
             hasPublishedTemplate: false,
-            publishStatus: '這是從公開工作流 Fork 出來的本機副本。',
+            ...(isCoreSource && sourceWorkflowId ? {
+              coreProposalWorkflowId: sourceWorkflowId,
+              coreProposalBaseVersionId: sourceVersionId,
+              coreProposalSourceTitle: sourceTitle,
+              coreProposalStatus: 'draft' as const,
+            } : {
+              coreProposalWorkflowId: undefined,
+              coreProposalBaseVersionId: undefined,
+              coreProposalSourceTitle: undefined,
+              coreProposalStatus: undefined,
+            }),
+            publishStatus: isCoreSource
+              ? '這是從核心工作流 Fork 出來的修改提案草稿。'
+              : '這是從公開工作流 Fork 出來的本機副本。',
           },
         }
       : node

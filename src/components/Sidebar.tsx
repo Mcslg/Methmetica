@@ -23,9 +23,11 @@ import {
     requestExtraWorkflowReviewInSupabase,
     requestWorkflowReviewInSupabase,
     reviewWorkflowInSupabase,
+    submitCoreWorkflowProposalToSupabase,
+    type CoreProposalKind,
     type WorkflowVersionSummary,
 } from '../integrations/supabase/workflows';
-import type { WorkflowChangeType } from '../community/types';
+import type { WorkflowChangeType, WorkflowVisibility } from '../community/types';
 
 const getDisplayErrorMessage = (error: unknown, fallback: string) => {
     if (error instanceof Error && error.message) return error.message;
@@ -78,6 +80,15 @@ const PUBLISH_CHANGE_OPTIONS: Array<{
     },
 ];
 
+const CORE_PROPOSAL_KIND_LABELS: Record<CoreProposalKind, string> = {
+    content: '內容整理',
+    behavior: '行為調整',
+    fix: '修正',
+    hotfix: '緊急修復',
+};
+
+const CORE_PROPOSAL_KINDS = new Set<CoreProposalKind>(['content', 'behavior', 'fix', 'hotfix']);
+
 const getPublishChangeOption = (changeType: WorkflowChangeType) => (
     PUBLISH_CHANGE_OPTIONS.find(option => option.value === changeType) ?? PUBLISH_CHANGE_OPTIONS[0]
 );
@@ -114,6 +125,7 @@ export function Sidebar() {
     const publishTargetNode = linkedBuilderNode ?? projectRoot;
     const hasBuilderDraft = Boolean((linkedBuilderNode ?? projectRoot)?.data.builderDraft);
     const hasPublishedTemplate = Boolean(projectRoot?.data.hasPublishedTemplate || projectRoot?.data.supabaseWorkflowId);
+    const projectVisibility = (projectRoot?.data.visibility as WorkflowVisibility | undefined) ?? 'private';
     const isCurrentUserOwner = Boolean(projectRoot?.data.ownerId && user?.id === projectRoot.data.ownerId);
     const isContributor = Boolean(user && ['contributor', 'expert', 'trusted_editor', 'admin'].includes(user.role));
     const isExpertReviewer = Boolean(user && ['expert', 'trusted_editor', 'admin'].includes(user.role));
@@ -130,9 +142,25 @@ export function Sidebar() {
     const reviewedByMe = Boolean(projectRoot?.data.reviewedByMe);
     const shouldShowReviewedState = Boolean(isContributor && (reviewedByMe || isCurrentUserOwner));
     const isForkablePublicWorkflow = Boolean(projectRoot?.data.readOnlyPreview && !isCurrentUserOwner);
+    const coreProposalWorkflowId = typeof projectRoot?.data.coreProposalWorkflowId === 'string'
+        ? projectRoot.data.coreProposalWorkflowId
+        : null;
+    const coreProposalBaseVersionId = typeof projectRoot?.data.coreProposalBaseVersionId === 'string'
+        ? projectRoot.data.coreProposalBaseVersionId
+        : null;
+    const coreProposalStatus = typeof projectRoot?.data.coreProposalStatus === 'string'
+        ? projectRoot.data.coreProposalStatus
+        : null;
+    const isCoreProposal = Boolean(coreProposalWorkflowId);
+    const isCoreProposalSubmitted = Boolean(coreProposalWorkflowId && coreProposalStatus === 'submitted');
+    const isCoreProposalDraft = Boolean(coreProposalWorkflowId && !isCoreProposalSubmitted);
     const publishTemplateLabel = isForkablePublicWorkflow
         ? 'Fork'
-        : hasBuilderDraft
+        : isCoreProposalSubmitted
+            ? '已提交核心提案'
+        : isCoreProposalDraft
+            ? '提交核心提案'
+            : hasBuilderDraft
             ? hasPublishedTemplate ? '更新節點' : '發布節點'
             : hasPublishedTemplate ? '更新工作流' : '發布工作流';
     const publishStatus = typeof projectRoot?.data.publishStatus === 'string' ? projectRoot.data.publishStatus : '';
@@ -145,7 +173,7 @@ export function Sidebar() {
         return '';
     })();
     const hasPublishFailure = Boolean(publishFailureReason);
-    const isPublishClean = hasPublishedTemplate && !isDirty && !hasPublishFailure && !isForkablePublicWorkflow;
+    const isPublishClean = hasPublishedTemplate && !isDirty && !hasPublishFailure && !isForkablePublicWorkflow && !isCoreProposalDraft;
     const publishButtonClassName = [
         'sidebar-btn',
         'publish',
@@ -156,6 +184,13 @@ export function Sidebar() {
     const supabaseWorkflowId = typeof projectRoot?.data.supabaseWorkflowId === 'string'
         ? projectRoot.data.supabaseWorkflowId
         : null;
+    const handleWorkflowVisibilityChange = React.useCallback((nextVisibility: WorkflowVisibility) => {
+        if (!projectRoot) return;
+        updateNodeData(projectRoot.id, { visibility: nextVisibility }, { skipGraphEval: true });
+        if (linkedBuilderNode) {
+            updateNodeData(linkedBuilderNode.id, { visibility: nextVisibility }, { skipGraphEval: true });
+        }
+    }, [linkedBuilderNode, projectRoot, updateNodeData]);
     const canReviewWorkflow = Boolean(
         supabaseWorkflowId &&
         projectRoot &&
@@ -291,6 +326,11 @@ export function Sidebar() {
             return;
         }
         if (!projectRoot) return;
+        if (isCoreProposalSubmitted) return;
+        if (isCoreProposalDraft) {
+            void handleSubmitCoreProposal();
+            return;
+        }
         if (hasPublishedTemplate) {
             setPublishChangeType((projectRoot.data.changeType as WorkflowChangeType | undefined) ?? 'feature');
             setPublishUpdateSummary(typeof projectRoot.data.updateSummary === 'string' ? projectRoot.data.updateSummary : '');
@@ -298,6 +338,62 @@ export function Sidebar() {
             return;
         }
         dispatchPublishEvent();
+    };
+
+    const handleSubmitCoreProposal = async () => {
+        if (!projectRoot || !coreProposalWorkflowId) return;
+        if (!user) {
+            alert('請先登入後再提交核心提案。');
+            return;
+        }
+
+        const rawKind = window.prompt(
+            '提案類型：content / behavior / fix / hotfix',
+            'content',
+        )?.trim() as CoreProposalKind | undefined;
+        if (!rawKind) return;
+        if (!CORE_PROPOSAL_KINDS.has(rawKind)) {
+            alert('提案類型請填 content、behavior、fix 或 hotfix。');
+            return;
+        }
+
+        const sourceTitle = typeof projectRoot.data.coreProposalSourceTitle === 'string'
+            ? projectRoot.data.coreProposalSourceTitle
+            : String(projectRoot.data.label || '核心工作流');
+        const title = window.prompt(
+            '提案標題',
+            `${CORE_PROPOSAL_KIND_LABELS[rawKind]}：${sourceTitle}`,
+        )?.trim();
+        if (!title) return;
+
+        const summary = window.prompt(
+            '提案說明（給審核者看的變更摘要）',
+            '說明這次修改的目的、影響範圍，以及需要審核者特別看的地方。',
+        )?.trim() ?? '';
+
+        setIsSyncing(true);
+        try {
+            const result = await submitCoreWorkflowProposalToSupabase({
+                coreWorkflowId: coreProposalWorkflowId,
+                baseVersionId: coreProposalBaseVersionId,
+                title,
+                summary,
+                proposalKind: rawKind,
+                nodes,
+                edges,
+            });
+            updateNodeData(projectRoot.id, {
+                coreProposalStatus: 'submitted',
+                publishStatus: `已提交核心提案「${result.title}」，狀態：submitted。`,
+            }, { skipGraphEval: true });
+            markCurrentGraphSaved();
+            alert('核心提案已提交，會出現在貢獻者專區。');
+        } catch (error) {
+            console.error('[sidebar] failed to submit core proposal:', error);
+            alert(getDisplayErrorMessage(error, '提交核心提案失敗。'));
+        } finally {
+            setIsSyncing(false);
+        }
     };
 
     const handleConfirmPublishUpdate = () => {
@@ -807,14 +903,37 @@ export function Sidebar() {
                             }
                         </button>
                     )}
+                    {projectRoot && !isForkablePublicWorkflow && (
+                        <label className="sidebar-visibility-field">
+                            <span>Visibility</span>
+                            <select
+                                name="workflow-visibility"
+                                value={projectVisibility}
+                                onChange={(event) => handleWorkflowVisibilityChange(event.target.value as WorkflowVisibility)}
+                            >
+                                <option value="private">Private</option>
+                                <option value="public">Public</option>
+                                <option value="core">Core</option>
+                            </select>
+                            <small>
+                                {projectVisibility === 'private' && 'Private 不會出現在公開社群。'}
+                                {projectVisibility === 'public' && 'Public 會出現在公開社群，任何人都可讀。'}
+                                {projectVisibility === 'core' && 'Core 只允許 trusted_editor / admin 發布與更新。'}
+                            </small>
+                        </label>
+                    )}
                     <div className="publish-action-row">
                         <button
                             className={publishButtonClassName}
                             onClick={handlePublishTemplate}
-                            disabled={!projectRoot && !isForkablePublicWorkflow}
+                            disabled={(!projectRoot && !isForkablePublicWorkflow) || isCoreProposalSubmitted}
                             title={
                                 isForkablePublicWorkflow
                                     ? 'Fork 這個公開工作流成為你的本機副本'
+                                    : isCoreProposalSubmitted
+                                        ? '這份核心提案已提交，等待貢獻者審核'
+                                    : isCoreProposalDraft
+                                        ? '提交這份核心 workflow 修改提案給貢獻者審核'
                                     : hasPublishFailure
                                         ? publishFailureReason
                                         : isPublishClean
@@ -824,7 +943,7 @@ export function Sidebar() {
                                                 : '只發布 workflow，不建立 community node template'
                             }
                         >
-                            {isPublishClean ? <Icons.Check /> : hasPublishFailure ? <Icons.Clear /> : <Icons.Package />}
+                            {isPublishClean || isCoreProposal ? <Icons.Check /> : hasPublishFailure ? <Icons.Clear /> : <Icons.Package />}
                             {publishTemplateLabel}
                         </button>
                     </div>
@@ -1276,6 +1395,36 @@ export function Sidebar() {
                     align-items: stretch;
                     gap: 8px;
                     width: 100%;
+                }
+                .sidebar-visibility-field {
+                    display: grid;
+                    gap: 7px;
+                    padding: 10px;
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 10px;
+                    background: rgba(255, 255, 255, 0.03);
+                }
+                .sidebar-visibility-field span {
+                    color: var(--text-sub);
+                    font-size: 0.66rem;
+                    font-weight: 800;
+                    letter-spacing: 0.04em;
+                    text-transform: uppercase;
+                }
+                .sidebar-visibility-field select {
+                    width: 100%;
+                    min-height: 34px;
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 8px;
+                    background: rgba(0, 0, 0, 0.24);
+                    color: var(--text-main);
+                    padding: 0 9px;
+                    outline: none;
+                }
+                .sidebar-visibility-field small {
+                    color: var(--text-sub);
+                    font-size: 0.68rem;
+                    line-height: 1.45;
                 }
                 .sidebar-btn.publish {
                     flex: 1;

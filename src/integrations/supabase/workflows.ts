@@ -40,6 +40,25 @@ export type WorkflowPayload = {
   workflowIcon?: WorkflowIcon;
 };
 
+export type CoreProposalKind = 'content' | 'behavior' | 'fix' | 'hotfix';
+
+export type CoreProposalSummary = {
+  id: string;
+  coreWorkflowId: string;
+  baseVersionId: string | null;
+  authorId: string;
+  authorName: string;
+  title: string;
+  summary: string;
+  proposalKind: CoreProposalKind;
+  status: 'draft' | 'submitted' | 'needs_changes' | 'approved' | 'merged' | 'rejected' | 'superseded';
+  coreTitle: string;
+  coreSlug: string | null;
+  currentVersionId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type WorkflowRow = {
   id: string;
   owner_id: string;
@@ -223,6 +242,23 @@ type MyWorkflowReviewRow = {
   review_requests?: { workflow_id?: string | null } | null;
 };
 
+type CoreProposalQueueRow = {
+  id: string;
+  core_workflow_id: string;
+  base_version_id: string | null;
+  author_id: string;
+  author_name: string;
+  title: string;
+  summary: string;
+  proposal_kind: CoreProposalKind;
+  status: CoreProposalSummary['status'];
+  core_title: string;
+  core_slug: string | null;
+  current_version_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 const FALLBACK_AUTHOR = 'Methmatica Community';
 const slugify = (value: string) =>
   value
@@ -360,6 +396,39 @@ const publicRowToCard = (row: PublicWorkflowCardRow): CommunityWorkflowCard => {
     seoDescription: row.summary || `${row.title} 的工作流頁面`,
   };
 };
+
+const coreProposalRowToSummary = (row: CoreProposalQueueRow): CoreProposalSummary => ({
+  id: row.id,
+  coreWorkflowId: row.core_workflow_id,
+  baseVersionId: row.base_version_id,
+  authorId: row.author_id,
+  authorName: row.author_name,
+  title: row.title,
+  summary: row.summary,
+  proposalKind: row.proposal_kind,
+  status: row.status,
+  coreTitle: row.core_title,
+  coreSlug: row.core_slug,
+  currentVersionId: row.current_version_id,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+export async function listCoreProposalQueue(options?: { limit?: number }) {
+  if (!supabase) return [];
+
+  const { data, error } = await withSupabaseTimeout(
+    supabase
+      .from('core_proposal_queue')
+      .select('id, core_workflow_id, base_version_id, author_id, author_name, title, summary, proposal_kind, status, core_title, core_slug, current_version_id, created_at, updated_at')
+      .order('updated_at', { ascending: false })
+      .limit(options?.limit ?? 80),
+    'Loading core proposal queue',
+  );
+
+  if (error) throw error;
+  return ((data ?? []) as CoreProposalQueueRow[]).map(coreProposalRowToSummary);
+}
 
 const normalizeNodes = (nodes: AppNode[] = []): WorkflowGraphNode[] =>
   nodes.map(node => ({
@@ -822,6 +891,58 @@ export async function publishWorkflowToSupabase(payload: WorkflowPayload) {
 
   if (error) throw error;
   return rowToBlueprint(data as WorkflowRow);
+}
+
+export async function submitCoreWorkflowProposalToSupabase(payload: {
+  coreWorkflowId: string;
+  baseVersionId?: string | null;
+  title: string;
+  summary: string;
+  proposalKind: CoreProposalKind;
+  nodes: AppNode[];
+  edges: Edge[];
+  compiledArtifact?: CompiledWorkflowArtifact | null;
+}) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const workflowJson = {
+    nodes: payload.nodes,
+    edges: payload.edges,
+    meta: {
+      title: payload.title,
+      description: payload.summary,
+      proposalKind: payload.proposalKind,
+      compiledArtifact: payload.compiledArtifact,
+      artifactStatus: payload.compiledArtifact ? 'ready' : 'legacy',
+    },
+  };
+
+  const { data, error } = await withSupabaseTimeout(
+    supabase
+      .rpc('submit_core_workflow_proposal', {
+        p_core_workflow_id: payload.coreWorkflowId,
+        p_base_version_id: payload.baseVersionId ?? null,
+        p_title: payload.title,
+        p_summary: payload.summary,
+        p_proposal_kind: payload.proposalKind,
+        p_workflow_json: workflowJson,
+        p_compiled_artifact: payload.compiledArtifact ?? null,
+      })
+      .single(),
+    'Submitting core proposal',
+  );
+
+  if (error) throw error;
+  return data as {
+    proposal_id: string;
+    core_workflow_id: string;
+    base_version_id: string | null;
+    status: CoreProposalSummary['status'];
+    title: string;
+    summary: string;
+    proposal_kind: CoreProposalKind;
+    created_at: string;
+  };
 }
 
 export async function adminDeletePublicWorkflowInSupabase(workflowId: string) {

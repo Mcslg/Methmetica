@@ -177,6 +177,10 @@ export type NodeData = {
     featured?: boolean;
     featuredAt?: string | null;
     curationScore?: number;
+    coreProposalWorkflowId?: string;
+    coreProposalBaseVersionId?: string;
+    coreProposalSourceTitle?: string;
+    coreProposalStatus?: 'draft' | 'submitted' | 'needs_changes' | 'approved' | 'merged' | 'rejected' | 'superseded';
      visibility?: WorkflowVisibility;
     autoRun?: boolean; // For nodes that can toggle automatic execution
     driveFileId?: string;
