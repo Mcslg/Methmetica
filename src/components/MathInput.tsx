@@ -29,6 +29,17 @@ export const MathInput = forwardRef<MathfieldElement, MathInputProps>(({ value, 
         valueRef.current = value;
     }, [value]);
 
+    useEffect(() => {
+        const mf = mfRef.current;
+        if (!mf || !isReady) return;
+
+        if (name) {
+            mf.setAttribute('name', name);
+        } else {
+            mf.removeAttribute('name');
+        }
+    }, [name, isReady]);
+
     const onChangeRef = useRef(onChange);
     useEffect(() => {
         onChangeRef.current = onChange;
@@ -99,7 +110,6 @@ export const MathInput = forwardRef<MathfieldElement, MathInputProps>(({ value, 
         <math-field
             ref={mfRef}
             id={id}
-            name={name}
             class={className}
             style={style}
             read-only={readOnly ? "true" : undefined}

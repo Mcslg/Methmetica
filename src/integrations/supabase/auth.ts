@@ -6,7 +6,11 @@ import { withSupabaseTimeout } from './utils';
 const makeFallbackAvatar = (name: string) =>
   `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'User')}&background=0f766e&color=fff&bold=true`;
 
-export const profileToAppUser = (user: User, profile: AppProfile | null): AppUser => {
+export const profileToAppUser = (
+  user: User,
+  profile: AppProfile | null,
+  roleSource: AppUser['roleSource'] = profile ? 'profile' : 'fallback'
+): AppUser => {
   const name =
     profile?.display_name ||
     user.user_metadata?.full_name ||
@@ -22,6 +26,7 @@ export const profileToAppUser = (user: User, profile: AppProfile | null): AppUse
     avatarUrl,
     fallbackAvatar: makeFallbackAvatar(name),
     role: profile?.role || 'user',
+    roleSource,
     authProvider: 'supabase-google',
   };
 };
@@ -59,7 +64,7 @@ export async function buildAppUserFromSession(session: Session | null): Promise<
     );
 
     if (error) throw error;
-    return profileToAppUser(session.user, data as AppProfile | null);
+    return profileToAppUser(session.user, data as AppProfile | null, data ? 'profile' : 'fallback');
   } catch (error) {
     console.warn('[auth] buildAppUserFromSession fallback without profile:', error);
     return profileToAppUser(session.user, null);

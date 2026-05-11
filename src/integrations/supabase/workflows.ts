@@ -6,6 +6,7 @@ import type {
   WorkflowChangeType,
   WorkflowGraphEdge,
   WorkflowGraphNode,
+  WorkflowIcon,
   WorkflowPublishKind,
   WorkflowUpdateSeverity,
   WorkflowUpdatePolicy,
@@ -36,6 +37,7 @@ export type WorkflowPayload = {
   updatePolicy?: WorkflowUpdatePolicy;
   updateSummary?: string;
   warningMessage?: string;
+  workflowIcon?: WorkflowIcon;
 };
 
 type WorkflowRow = {
@@ -57,6 +59,9 @@ type WorkflowRow = {
   expert_review_count?: number | null;
   extra_contributor_reviews?: number | null;
   extra_expert_reviews?: number | null;
+  featured?: boolean | null;
+  featured_at?: string | null;
+  curation_score?: number | null;
   reviewed_by_me?: boolean | null;
   workflow_json: {
     nodes?: AppNode[];
@@ -73,6 +78,7 @@ type WorkflowRow = {
       updatePolicy?: WorkflowUpdatePolicy;
       updateSummary?: string;
       warningMessage?: string;
+      workflowIcon?: WorkflowIcon;
     };
   } | null;
   compiled_artifact?: CompiledWorkflowArtifact | null;
@@ -117,6 +123,9 @@ type PublicWorkflowCardRow = {
   expert_review_count?: number | null;
   extra_contributor_reviews?: number | null;
   extra_expert_reviews?: number | null;
+  featured?: boolean | null;
+  featured_at?: string | null;
+  curation_score?: number | null;
 };
 
 export type WorkflowVersionSummary = {
@@ -225,7 +234,8 @@ const slugify = (value: string) =>
 
 const WORKFLOW_REVIEW_COLUMNS = 'review_status, review_count, review_required, review_warning, required_contributor_reviews, required_expert_reviews, contributor_review_count, expert_review_count, extra_contributor_reviews, extra_expert_reviews';
 const WORKFLOW_UPDATE_COLUMNS = 'publish_kind,change_type,update_policy,update_summary,warning_message,supersedes_version_id';
-const WORKFLOW_OPEN_COLUMNS = `id,owner_id,slug,title,description,tags,visibility,status,${WORKFLOW_REVIEW_COLUMNS.replaceAll(' ', '')},workflow_json,artifact_status,compiler_version,runtime_version,${WORKFLOW_UPDATE_COLUMNS},published_at,updated_at,created_at,current_version_id`;
+const WORKFLOW_CURATION_COLUMNS = 'featured,featured_at,curation_score';
+const WORKFLOW_OPEN_COLUMNS = `id,owner_id,slug,title,description,tags,visibility,status,${WORKFLOW_REVIEW_COLUMNS.replaceAll(' ', '')},${WORKFLOW_CURATION_COLUMNS},workflow_json,compiled_artifact,artifact_status,compiler_version,runtime_version,${WORKFLOW_UPDATE_COLUMNS},published_at,updated_at,created_at,current_version_id`;
 const SUPABASE_HEALTH_TIMEOUT_MS = 1500;
 const WORKFLOW_INTERACTION_TIMEOUT_MS = 2000;
 const OPEN_WORKFLOW_TIMEOUT_MS = 3500;
@@ -292,6 +302,8 @@ const rowToCard = (row: WorkflowRow): CommunityWorkflowCard => {
   const tags = row.tags ?? [];
   const author = row.workflow_json?.meta?.authorName || FALLBACK_AUTHOR;
   const review = getReviewMetadata(row);
+  const changeType = row.change_type ?? row.workflow_json?.meta?.changeType ?? 'edit';
+  const updatePolicy = row.update_policy ?? row.workflow_json?.meta?.updatePolicy ?? 'none';
 
   return {
     id: row.id,
@@ -304,9 +316,19 @@ const rowToCard = (row: WorkflowRow): CommunityWorkflowCard => {
     tags,
     updatedAt: row.updated_at,
     featuredTemplateIds: [],
+    icon: row.workflow_json?.meta?.workflowIcon,
     nodeCount: graphNodes.length,
     edgeCount: graphEdges.length,
     ...review,
+    featured: Boolean(row.featured),
+    featuredAt: row.featured_at ?? null,
+    curationScore: Number(row.curation_score ?? 0),
+    publishKind: row.publish_kind ?? row.workflow_json?.meta?.publishKind ?? 'workflow',
+    changeType,
+    updatePolicy,
+    updateSummary: row.update_summary ?? row.workflow_json?.meta?.updateSummary ?? undefined,
+    warningMessage: row.warning_message ?? row.workflow_json?.meta?.warningMessage ?? undefined,
+    supersedesVersionId: row.supersedes_version_id ?? undefined,
     seoTitle: `${row.title} | Methmatica`,
     seoDescription: row.description || `${row.title} 的工作流頁面`,
   };
@@ -327,9 +349,13 @@ const publicRowToCard = (row: PublicWorkflowCardRow): CommunityWorkflowCard => {
     tags,
     updatedAt: row.updated_at,
     featuredTemplateIds: [],
+    icon: undefined,
     nodeCount: row.node_count ?? 0,
     edgeCount: row.edge_count ?? 0,
     ...review,
+    featured: Boolean(row.featured),
+    featuredAt: row.featured_at ?? null,
+    curationScore: Number(row.curation_score ?? 0),
     seoTitle: `${row.title} | Methmatica`,
     seoDescription: row.summary || `${row.title} 的工作流頁面`,
   };
@@ -367,10 +393,12 @@ const rowToBlueprint = (row: WorkflowRow): WorkflowBlueprint => ({
     supersedesVersionId: row.supersedes_version_id ?? undefined,
     ownerId: row.owner_id,
     authorName: row.workflow_json?.meta?.authorName || FALLBACK_AUTHOR,
+    icon: row.workflow_json?.meta?.workflowIcon,
     ...getReviewMetadata(row),
     artifactStatus: row.artifact_status ?? undefined,
     compilerVersion: row.compiler_version ?? undefined,
     runtimeVersion: row.runtime_version ?? undefined,
+    compiledArtifact: row.compiled_artifact ?? null,
   },
 });
 
@@ -430,6 +458,7 @@ const versionRowToBlueprint = (version: WorkflowVersionRow, workflow: WorkflowRo
     supersedesVersionId: version.supersedes_version_id ?? undefined,
     ownerId: workflow.owner_id,
     authorName: version.workflow_json?.meta?.authorName || FALLBACK_AUTHOR,
+    icon: version.workflow_json?.meta?.workflowIcon,
     ...getReviewMetadata(version),
     artifactStatus: version.artifact_status ?? undefined,
     compilerVersion: version.compiler_version ?? undefined,
@@ -441,7 +470,7 @@ export async function listPublicWorkflows(options?: { includeInteractions?: bool
   if (!supabase || !supabaseConfig.url || !supabaseConfig.anonKey) return [];
   const includeInteractions = options?.includeInteractions ?? true;
   const params = new URLSearchParams({
-    select: `id,slug,title,summary,author,difficulty,visibility,tags,updated_at,node_count,edge_count,${WORKFLOW_REVIEW_COLUMNS.replaceAll(' ', '')}`,
+    select: `id,slug,title,summary,author,difficulty,visibility,tags,updated_at,node_count,edge_count,${WORKFLOW_REVIEW_COLUMNS.replaceAll(' ', '')},${WORKFLOW_CURATION_COLUMNS}`,
     order: 'updated_at.desc',
   });
   if (options?.limit) params.set('limit', String(options.limit));
@@ -532,6 +561,55 @@ export async function listPublicWorkflows(options?: { includeInteractions?: bool
       reviewedByMe: reviewedWorkflowIds.has(card.id) || card.reviewedByMe,
     };
   });
+}
+
+export async function listWorkflowReviewQueue(options?: { limit?: number; currentUserId?: string }) {
+  if (!supabase) return [];
+
+  const { data, error } = await withSupabaseTimeout(
+    supabase
+      .from('workflows')
+      .select(`id,owner_id,slug,title,description,tags,visibility,status,${WORKFLOW_REVIEW_COLUMNS.replaceAll(' ', '')},${WORKFLOW_CURATION_COLUMNS},workflow_json,${WORKFLOW_UPDATE_COLUMNS},published_at,updated_at,created_at,current_version_id`)
+      .eq('status', 'published')
+      .in('visibility', ['public', 'core'])
+      .order('updated_at', { ascending: false })
+      .limit(options?.limit ?? 80),
+    'Loading contributor review queue',
+  );
+
+  if (error) throw error;
+
+  const cards = ((data ?? []) as unknown as WorkflowRow[]).map(rowToCard);
+  if (cards.length === 0 || !options?.currentUserId) return cards;
+
+  try {
+    const workflowIds = cards.map(card => card.id);
+    const myReviewResult = await withSupabaseTimeout(
+      supabase
+        .from('reviews')
+        .select('review_requests!inner(workflow_id)')
+        .eq('reviewer_id', options.currentUserId)
+        .in('review_requests.workflow_id', workflowIds),
+      'Loading my review queue state',
+      WORKFLOW_INTERACTION_TIMEOUT_MS,
+    );
+
+    if (myReviewResult.error) throw myReviewResult.error;
+
+    const reviewedWorkflowIds = new Set(
+      ((myReviewResult.data ?? []) as unknown as MyWorkflowReviewRow[])
+        .map(row => row.review_requests?.workflow_id)
+        .filter((workflowId): workflowId is string => Boolean(workflowId))
+    );
+
+    return cards.map(card => ({
+      ...card,
+      reviewedByMe: reviewedWorkflowIds.has(card.id) || card.reviewedByMe,
+    }));
+  } catch (reviewError) {
+    console.warn('[workflows] review queue personal state unavailable:', reviewError);
+    return cards;
+  }
 }
 
 export async function getWorkflowBlueprintFromSupabase(workflowId: string) {
@@ -722,6 +800,7 @@ export async function publishWorkflowToSupabase(payload: WorkflowPayload) {
       updatePolicy: payload.updatePolicy ?? 'none',
       updateSummary: payload.updateSummary,
       warningMessage: payload.warningMessage,
+      workflowIcon: payload.workflowIcon,
     },
   };
 
@@ -841,6 +920,52 @@ export async function requestExtraWorkflowReviewInSupabase(
     workflowVersionId: row.workflow_version_id,
     ...getReviewMetadata(row),
     status: row.status,
+  };
+}
+
+export async function requestWorkflowReviewInSupabase(workflowId: string, reason?: string) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { data, error } = await withSupabaseTimeout(
+    supabase
+      .rpc('request_workflow_review', {
+        p_workflow_id: workflowId,
+        p_reason: reason ?? null,
+      })
+      .single(),
+    'Requesting workflow review',
+  );
+
+  if (error) throw error;
+  const row = data as ReviewWorkflowRow;
+  return {
+    workflowId: row.workflow_id,
+    workflowVersionId: row.workflow_version_id,
+    ...getReviewMetadata(row),
+    status: row.status,
+  };
+}
+
+export async function adminSetWorkflowFeaturedInSupabase(workflowId: string, featured: boolean) {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { data, error } = await withSupabaseTimeout(
+    supabase
+      .rpc('admin_set_workflow_featured', {
+        p_workflow_id: workflowId,
+        p_featured: featured,
+        p_curation_score: null,
+      })
+      .single(),
+    featured ? 'Featuring workflow' : 'Unfeaturing workflow',
+  );
+
+  if (error) throw error;
+  return data as {
+    workflow_id: string;
+    featured: boolean;
+    featured_at: string | null;
+    curation_score: number;
   };
 }
 

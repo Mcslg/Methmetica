@@ -6,7 +6,7 @@ import '@xyflow/react/dist/style.css';
 
 import useStore, { createGraphSignature, type AppNode } from './store/useStore';
 import { nodeTypes, getNodeDefinition, buildNodeCatalog } from './nodes/registry';
-import { getTemplateHandles, type ReviewMetadata } from './community/types';
+import { getTemplateHandles, type ReviewMetadata, type WorkflowIcon } from './community/types';
 import { Sidebar } from './components/Sidebar';
 import { ExplainOverlay } from './components/ExplainOverlay';
 import { FloatingPalette } from './components/FloatingPalette';
@@ -121,6 +121,7 @@ const annotatePublicWorkflowNodes = (
     workflowVersion?: number;
     ownerId?: string;
     authorName?: string;
+    icon?: WorkflowIcon;
   } & ReviewMetadata,
 ) => nodes.map(node => (
   node.type === 'projectNode'
@@ -135,6 +136,7 @@ const annotatePublicWorkflowNodes = (
           workflowVersion: meta?.workflowVersion,
           ownerId: meta?.ownerId ?? node.data.ownerId,
           authorName: meta?.authorName ?? node.data.authorName,
+          workflowIcon: meta?.icon ?? node.data.workflowIcon,
           reviewStatus: meta?.reviewStatus ?? node.data.reviewStatus,
           reviewCount: meta?.reviewCount ?? node.data.reviewCount,
           reviewRequired: meta?.reviewRequired ?? node.data.reviewRequired,

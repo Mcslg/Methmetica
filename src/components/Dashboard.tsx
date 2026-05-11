@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from 'react';
 import { type Edge } from '@xyflow/react';
 import useStore, { type AppNode, type WorkflowListItem } from '../store/useStore';
 import { Icons } from './Icons';
@@ -6,16 +6,19 @@ import { WorkflowSketch } from './WorkflowSketch';
 import { useLanguage } from '../contexts/LanguageContext';
 import * as driveService from '../utils/googleDriveService';
 import LogoIcon from '../assets/icon.svg';
-import type { CommunityWorkflowCard, ReviewMetadata } from '../community/types';
+import type { CommunityWorkflowCard, ReviewMetadata, WorkflowIcon } from '../community/types';
 import { isSupabaseConfigured } from '../integrations/supabase/client';
 import { signInWithGoogle, signOutSupabase } from '../integrations/supabase/auth';
 import {
+  adminSetWorkflowFeaturedInSupabase,
   getWorkflowBlueprintFromSupabase,
+  listWorkflowReviewQueue,
   listPublicWorkflows,
 } from '../integrations/supabase/workflows';
 import { recordWorkflowView, setWorkflowInteraction, type WorkflowInteractionKind } from '../integrations/supabase/workflowInteractions';
 import { listPublicNodeTemplates } from '../integrations/supabase/nodeTemplates';
 import {
+  getWorkflowCommentCounts,
   listForumNodeComments,
   markNodeCommentRead,
   type NodeCommentKind,
@@ -28,6 +31,8 @@ import {
   loadLocalDraft,
   type LocalDraftSummary,
 } from '../utils/localDraftService';
+import { renderWorkflowIconVisual } from '../utils/workflowIcons';
+import { runCompiledArtifact, type CompiledWorkflowArtifact, type RuntimeExecutionResult } from '../utils/workflowCompiler';
 
 type DashboardTab = 'community' | 'private' | 'contributor' | 'forum';
 type CommunityListMode = 'all' | 'likes' | 'bookmarks';
@@ -36,6 +41,54 @@ type ForumKindFilter = 'all' | Extract<NodeCommentKind, 'question' | 'request' |
 type ForumStatusFilter = 'open' | 'resolved' | 'all';
 type WorkflowPreviewGraph = { nodes: AppNode[]; edges: Edge[] };
 type HoverPreviewState = { kind: 'public' | 'local'; id: string } | null;
+type HomeNodeTrialState = {
+  open: boolean;
+  loading?: boolean;
+  running?: boolean;
+  artifact?: CompiledWorkflowArtifact | null;
+  inputs: Record<string, string>;
+  result?: RuntimeExecutionResult | null;
+  error?: string | null;
+};
+
+const WORKFLOW_CHANGE_LABELS = {
+  edit: '編修',
+  feature: '新增',
+  fix: '除錯',
+  hotfix: '修復',
+} as const;
+
+const renderWorkflowIcon = (icon?: WorkflowIcon, fallback?: ReactNode) => {
+  return renderWorkflowIconVisual(icon, 20, fallback ?? <Icons.Languages size={20} style={{ marginRight: 0 }} />);
+};
+
+const workflowIconStyle = (icon?: WorkflowIcon, fallbackColor = 'var(--accent-bright)') => ({
+  background: `${icon?.accent || fallbackColor}22`,
+  color: icon?.accent || fallbackColor,
+});
+
+const getDiscoveryScore = (workflow: CommunityWorkflowCard) => (
+  (workflow.viewCount ?? 0) * 0.05 +
+  (workflow.likeCount ?? 0) * 3 +
+  (workflow.bookmarkCount ?? 0) * 4 +
+  (workflow.forkCount ?? 0) * 5
+);
+
+const getDiscussionScore = (workflow: CommunityWorkflowCard) => (
+  (workflow.commentCount ?? 0) * 4 +
+  (workflow.forkCount ?? 0) * 5 +
+  (workflow.bookmarkCount ?? 0) * 1.5
+);
+
+const getStableRandomScore = (workflow: CommunityWorkflowCard) => {
+  const text = `${workflow.id}:${workflow.updatedAt}`;
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+};
 
 const annotatePublicWorkflowNodes = (
   nodes: AppNode[],
@@ -45,6 +98,7 @@ const annotatePublicWorkflowNodes = (
     workflowVersion?: number;
     ownerId?: string;
     authorName?: string;
+    icon?: WorkflowIcon;
   } & ReviewMetadata,
 ) => nodes.map(node => (
   node.type === 'projectNode'
@@ -59,6 +113,7 @@ const annotatePublicWorkflowNodes = (
           workflowVersion: meta?.workflowVersion ?? node.data.workflowVersion,
           ownerId: meta?.ownerId ?? node.data.ownerId,
           authorName: meta?.authorName ?? node.data.authorName,
+          workflowIcon: meta?.icon ?? node.data.workflowIcon,
           reviewStatus: meta?.reviewStatus ?? node.data.reviewStatus,
           reviewCount: meta?.reviewCount ?? node.data.reviewCount,
           reviewRequired: meta?.reviewRequired ?? node.data.reviewRequired,
@@ -101,14 +156,19 @@ export function Dashboard() {
   const [communityListMode, setCommunityListMode] = useState<CommunityListMode>('all');
   const [communitySortMode, setCommunitySortMode] = useState<CommunitySortMode>('recent');
   const [publicWorkflows, setPublicWorkflows] = useState<CommunityWorkflowCard[]>([]);
+  const [contributorWorkflows, setContributorWorkflows] = useState<CommunityWorkflowCard[]>([]);
   const [localDrafts, setLocalDrafts] = useState<LocalDraftSummary[]>([]);
   const [isLoadingPublicWorkflows, setIsLoadingPublicWorkflows] = useState(false);
   const [publicWorkflowError, setPublicWorkflowError] = useState<string | null>(null);
+  const [isLoadingContributorQueue, setIsLoadingContributorQueue] = useState(false);
+  const [contributorQueueError, setContributorQueueError] = useState<string | null>(null);
+  const [pendingFeatureToggles, setPendingFeatureToggles] = useState<Record<string, boolean>>({});
   const [pendingInteractions, setPendingInteractions] = useState<Record<string, boolean>>({});
   const [hoverPreview, setHoverPreview] = useState<HoverPreviewState>(null);
   const [publicPreviewCache, setPublicPreviewCache] = useState<Record<string, WorkflowPreviewGraph>>({});
   const [localPreviewCache, setLocalPreviewCache] = useState<Record<string, WorkflowPreviewGraph>>({});
   const [previewLoadingKey, setPreviewLoadingKey] = useState<string | null>(null);
+  const [homeNodeTrials, setHomeNodeTrials] = useState<Record<string, HomeNodeTrialState>>({});
   const [forumComments, setForumComments] = useState<NodeCommentRecord[]>([]);
   const [isLoadingForumComments, setIsLoadingForumComments] = useState(false);
   const [forumError, setForumError] = useState<string | null>(null);
@@ -117,6 +177,7 @@ export function Dashboard() {
   const [pendingForumReads, setPendingForumReads] = useState<Record<string, boolean>>({});
   const hoverPreviewTimerRef = useRef<number | null>(null);
   const canUseContributorArea = Boolean(user && ['contributor', 'expert', 'trusted_editor', 'admin'].includes(user.role));
+  const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
     if (!user) {
@@ -168,8 +229,10 @@ export function Dashboard() {
 
     setIsLoadingPublicWorkflows(true);
     setPublicWorkflowError(null);
+    let baseWorkflows: CommunityWorkflowCard[] = [];
     try {
       const workflows = await listPublicWorkflows({ includeInteractions: false, limit: 48 });
+      baseWorkflows = workflows;
       if (!isCancelled()) {
         setPublicWorkflows(workflows);
         setIsLoadingPublicWorkflows(false);
@@ -187,18 +250,33 @@ export function Dashboard() {
       }
     }
 
-    const [workflowsWithInteractionsResult, nodeTemplatesResult] = await Promise.allSettled([
+    const workflowIds = baseWorkflows.map(workflow => workflow.id);
+    const [workflowsWithInteractionsResult, nodeTemplatesResult, commentCountsResult] = await Promise.allSettled([
       listPublicWorkflows({ includeInteractions: true, limit: 48, currentUserId: user?.id }),
       listPublicNodeTemplates(),
+      getWorkflowCommentCounts(workflowIds),
     ]);
 
     if (isCancelled()) return;
 
+    let nextWorkflows = baseWorkflows;
     if (workflowsWithInteractionsResult.status === 'fulfilled') {
-      setPublicWorkflows(workflowsWithInteractionsResult.value);
+      nextWorkflows = workflowsWithInteractionsResult.value;
     } else {
       console.warn('[dashboard] public workflow interactions unavailable:', workflowsWithInteractionsResult.reason);
     }
+
+    if (commentCountsResult.status === 'fulfilled') {
+      const commentCounts = commentCountsResult.value;
+      nextWorkflows = nextWorkflows.map(workflow => ({
+        ...workflow,
+        commentCount: commentCounts.get(workflow.id) ?? 0,
+      }));
+    } else {
+      console.warn('[dashboard] public workflow comment counts unavailable:', commentCountsResult.reason);
+    }
+
+    setPublicWorkflows(nextWorkflows);
 
     if (nodeTemplatesResult.status === 'fulfilled') {
       const nodeTemplates = nodeTemplatesResult.value;
@@ -543,6 +621,84 @@ export function Dashboard() {
     return rows;
   }, [publicWorkflows, searchQuery, communityListMode, communitySortMode]);
 
+  const shouldUseDiscoverySections = communityListMode === 'all' && searchQuery.trim().length === 0;
+  const communityDiscoverySections = useMemo(() => {
+    const approved = filteredPublicWorkflows.filter(workflow => workflow.reviewStatus !== 'unreviewed');
+    const uniqueRows = (rows: CommunityWorkflowCard[]) => {
+      const seen = new Set<string>();
+      return rows.filter((workflow) => {
+        if (seen.has(workflow.id)) return false;
+        seen.add(workflow.id);
+        return true;
+      });
+    };
+
+    return [
+      {
+        id: 'featured',
+        title: '精選工作流',
+        description: 'Admin 從優良池挑出的每週推薦。',
+        workflows: [...approved]
+          .filter(workflow => workflow.featured)
+          .sort((a, b) => new Date(b.featuredAt ?? b.updatedAt).getTime() - new Date(a.featuredAt ?? a.updatedAt).getTime())
+          .slice(0, 6),
+      },
+      {
+        id: 'quality',
+        title: '優良列表',
+        description: '已通過審核的公開 workflow，是精選池的來源。',
+        workflows: [...approved]
+          .sort((a, b) => (
+            (b.curationScore ?? 0) - (a.curationScore ?? 0) ||
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+          ))
+          .slice(0, 6),
+      },
+      {
+        id: 'new-approved',
+        title: '新審核過',
+        description: '剛通過社群審核的 workflow，適合找穩定素材。',
+        workflows: [...approved]
+          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+          .slice(0, 6),
+      },
+      {
+        id: 'new-core',
+        title: '新核心',
+        description: '核心內容像 wiki 頁面，適合當共同知識基礎。',
+        workflows: [...approved]
+          .filter(workflow => workflow.visibility === 'core')
+          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+          .slice(0, 6),
+      },
+      {
+        id: 'popular',
+        title: '近期熱門',
+        description: '依瀏覽、按讚、收藏與 fork 加權排序。',
+        workflows: [...filteredPublicWorkflows]
+          .sort((a, b) => getDiscoveryScore(b) - getDiscoveryScore(a))
+          .slice(0, 6),
+      },
+      {
+        id: 'discussion',
+        title: '高留言 / 高 fork',
+        description: '討論多或被改作多的內容，通常值得 contributor 注意。',
+        workflows: [...filteredPublicWorkflows]
+          .filter(workflow => (workflow.commentCount ?? 0) > 0 || (workflow.forkCount ?? 0) > 0)
+          .sort((a, b) => getDiscussionScore(b) - getDiscussionScore(a))
+          .slice(0, 6),
+      },
+      {
+        id: 'random',
+        title: '完全隨機',
+        description: '讓冷門內容也有被看見的機會。',
+        workflows: uniqueRows([...filteredPublicWorkflows]
+          .sort((a, b) => getStableRandomScore(a) - getStableRandomScore(b)))
+          .slice(0, 6),
+      },
+    ].filter(section => section.workflows.length > 0);
+  }, [filteredPublicWorkflows]);
+
   useEffect(() => {
     if (!user && communityListMode !== 'all') {
       setCommunityListMode('all');
@@ -555,28 +711,63 @@ export function Dashboard() {
     }
   }, [activeTab, canUseContributorArea]);
 
+  const refreshContributorQueue = useCallback(async (isCancelled: () => boolean = () => false) => {
+    if (!canUseContributorArea) {
+      setContributorWorkflows([]);
+      return;
+    }
+
+    setIsLoadingContributorQueue(true);
+    setContributorQueueError(null);
+    try {
+      const workflows = await listWorkflowReviewQueue({ limit: 96, currentUserId: user?.id });
+      if (!isCancelled()) setContributorWorkflows(workflows);
+    } catch (error) {
+      console.error('[dashboard] contributor queue failed:', error);
+      if (!isCancelled()) {
+        setContributorWorkflows([]);
+        setContributorQueueError(error instanceof Error ? error.message : 'Contributor queue could not load.');
+      }
+    } finally {
+      if (!isCancelled()) setIsLoadingContributorQueue(false);
+    }
+  }, [canUseContributorArea, user?.id]);
+
+  useEffect(() => {
+    if (activeTab !== 'contributor' || !canUseContributorArea) return;
+    let isCancelled = false;
+    void refreshContributorQueue(() => isCancelled);
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeTab, canUseContributorArea, refreshContributorQueue]);
+
   const contributorReviewSections = useMemo(() => {
     const matchesKeyword = (workflow: CommunityWorkflowCard) =>
       `${workflow.title} ${workflow.summary} ${workflow.tags.join(' ')}`.toLowerCase().includes(searchQuery.toLowerCase());
-    const pending = publicWorkflows
+    const isUpdateReview = (workflow: CommunityWorkflowCard) => Boolean(workflow.supersedesVersionId);
+    const pending = contributorWorkflows
       .filter(workflow => workflow.reviewStatus === 'unreviewed')
+      .filter(workflow => workflow.reviewRequired || (workflow.extraContributorReviews ?? 0) > 0 || (workflow.extraExpertReviews ?? 0) > 0)
       .filter(matchesKeyword);
     const extraReview = pending.filter(workflow =>
       (workflow.extraContributorReviews ?? 0) > 0 || (workflow.extraExpertReviews ?? 0) > 0
     );
+    const updateReview = pending.filter(isUpdateReview);
 
     return [
       {
         id: 'new-review',
         title: '新審核需求',
         description: '一般公開 workflow，審核不是必需，但通過後會移除未驗證感。',
-        workflows: pending.filter(workflow => workflow.visibility !== 'core'),
+        workflows: pending.filter(workflow => workflow.visibility !== 'core' && !isUpdateReview(workflow)),
       },
       {
         id: 'core-review',
         title: '新核心審核需求',
         description: '核心 workflow 需要 contributor 與 expert 共同通過後才算穩定。',
-        workflows: pending.filter(workflow => workflow.visibility === 'core'),
+        workflows: pending.filter(workflow => workflow.visibility === 'core' && !isUpdateReview(workflow)),
       },
       {
         id: 'extra-review',
@@ -584,8 +775,14 @@ export function Dashboard() {
         description: '貢獻者已要求更多 contributor 或 expert 參與確認。',
         workflows: extraReview,
       },
+      {
+        id: 'update-review',
+        title: '更新審核需求',
+        description: '新增、除錯或修復版本需要至少一位 contributor 確認後再推給社群。',
+        workflows: updateReview,
+      },
     ];
-  }, [publicWorkflows, searchQuery]);
+  }, [contributorWorkflows, searchQuery]);
 
   const filteredWorkflows = workflowList.filter(w =>
     w.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -634,6 +831,320 @@ export function Dashboard() {
     } finally {
       setPendingForumReads(prev => ({ ...prev, [commentId]: false }));
     }
+  };
+
+  const handleToggleFeaturedWorkflow = async (
+    event: React.MouseEvent<HTMLButtonElement>,
+    workflow: CommunityWorkflowCard,
+  ) => {
+    event.stopPropagation();
+    if (!isAdmin) return;
+    if (workflow.reviewStatus !== 'approved' && !workflow.featured) {
+      alert('只有通過審核的 workflow 可以加入精選。');
+      return;
+    }
+
+    const nextFeatured = !workflow.featured;
+    setPendingFeatureToggles(prev => ({ ...prev, [workflow.id]: true }));
+    setPublicWorkflows(prev => prev.map(item => (
+      item.id === workflow.id
+        ? {
+            ...item,
+            featured: nextFeatured,
+            featuredAt: nextFeatured ? new Date().toISOString() : null,
+          }
+        : item
+    )));
+    try {
+      const result = await adminSetWorkflowFeaturedInSupabase(workflow.id, nextFeatured);
+      setPublicWorkflows(prev => prev.map(item => (
+        item.id === workflow.id
+          ? {
+              ...item,
+              featured: result.featured,
+              featuredAt: result.featured_at,
+              curationScore: Number(result.curation_score ?? item.curationScore ?? 0),
+            }
+          : item
+      )));
+    } catch (error) {
+      console.error('[dashboard] failed to toggle featured workflow:', error);
+      setPublicWorkflows(prev => prev.map(item => (
+        item.id === workflow.id
+          ? {
+              ...item,
+              featured: workflow.featured,
+              featuredAt: workflow.featuredAt,
+            }
+          : item
+      )));
+      alert(error instanceof Error ? error.message : '更新精選失敗。');
+    } finally {
+      setPendingFeatureToggles(prev => ({ ...prev, [workflow.id]: false }));
+    }
+  };
+
+  const handleToggleHomeNodeTrial = async (
+    event: React.MouseEvent<HTMLButtonElement>,
+    workflow: CommunityWorkflowCard,
+  ) => {
+    event.stopPropagation();
+    const current = homeNodeTrials[workflow.id];
+    if (current?.open) {
+      setHomeNodeTrials(prev => ({
+        ...prev,
+        [workflow.id]: { ...current, open: false },
+      }));
+      return;
+    }
+
+    setHomeNodeTrials(prev => ({
+      ...prev,
+      [workflow.id]: {
+        open: true,
+        loading: !current?.artifact && !current?.error,
+        artifact: current?.artifact,
+        inputs: current?.inputs ?? {},
+        result: current?.result ?? null,
+        error: current?.error ?? null,
+      },
+    }));
+
+    if (current?.artifact || current?.error) return;
+
+    try {
+      const blueprint = await getWorkflowBlueprintFromSupabase(workflow.id);
+      const artifact = blueprint?.meta?.compiledArtifact ?? null;
+      const inputs = Object.fromEntries(
+        (artifact?.interfaceSchema.inputs ?? []).map(port => [port.id, '']),
+      );
+      setHomeNodeTrials(prev => ({
+        ...prev,
+        [workflow.id]: {
+          open: true,
+          loading: false,
+          artifact,
+          inputs,
+          result: null,
+          error: artifact ? null : '這個 workflow 還沒有可試用 artifact，需要重新發布後才能在首頁試用。',
+        },
+      }));
+    } catch (error) {
+      setHomeNodeTrials(prev => ({
+        ...prev,
+        [workflow.id]: {
+          open: true,
+          loading: false,
+          artifact: null,
+          inputs: {},
+          result: null,
+          error: error instanceof Error ? error.message : '載入試用資料失敗。',
+        },
+      }));
+    }
+  };
+
+  const handleHomeNodeInputChange = (workflowId: string, portId: string, value: string) => {
+    setHomeNodeTrials(prev => {
+      const current = prev[workflowId];
+      if (!current) return prev;
+      return {
+        ...prev,
+        [workflowId]: {
+          ...current,
+          inputs: {
+            ...current.inputs,
+            [portId]: value,
+          },
+          result: null,
+        },
+      };
+    });
+  };
+
+  const handleRunHomeNodeTrial = async (
+    event: React.MouseEvent<HTMLButtonElement>,
+    workflowId: string,
+  ) => {
+    event.stopPropagation();
+    const current = homeNodeTrials[workflowId];
+    if (!current?.artifact || current.running) return;
+    setHomeNodeTrials(prev => ({
+      ...prev,
+      [workflowId]: { ...current, running: true, error: null },
+    }));
+    try {
+      const result = await runCompiledArtifact(current.artifact, current.inputs);
+      setHomeNodeTrials(prev => ({
+        ...prev,
+        [workflowId]: {
+          ...(prev[workflowId] ?? current),
+          running: false,
+          result,
+          error: result.error ?? null,
+        },
+      }));
+    } catch (error) {
+      setHomeNodeTrials(prev => ({
+        ...prev,
+        [workflowId]: {
+          ...(prev[workflowId] ?? current),
+          running: false,
+          error: error instanceof Error ? error.message : '試用執行失敗。',
+        },
+      }));
+    }
+  };
+
+  const renderHomeNodeTrial = (workflow: CommunityWorkflowCard) => {
+    const trial = homeNodeTrials[workflow.id];
+    if (!trial?.open) return null;
+    const inputPorts = trial.artifact?.interfaceSchema.inputs ?? [];
+    const outputEntries = Object.entries(trial.result?.outputs ?? {});
+
+    return (
+      <div className="home-node-trial nodrag" onClick={(event) => event.stopPropagation()}>
+        {trial.loading ? (
+          <span className="home-node-trial-note">載入首頁節點中...</span>
+        ) : trial.error && !trial.artifact ? (
+          <span className="home-node-trial-error">{trial.error}</span>
+        ) : trial.artifact ? (
+          <>
+            <div className="home-node-trial-inputs">
+              {inputPorts.length === 0 ? (
+                <span className="home-node-trial-note">這個節點不需要輸入，可以直接執行。</span>
+              ) : inputPorts.map(port => (
+                <label key={port.id}>
+                  <span>{port.label || port.id}</span>
+                  <input
+                    value={trial.inputs[port.id] ?? ''}
+                    placeholder={port.description || '輸入測試值'}
+                    onChange={(event) => handleHomeNodeInputChange(workflow.id, port.id, event.target.value)}
+                  />
+                </label>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="home-node-run-btn"
+              onClick={(event) => handleRunHomeNodeTrial(event, workflow.id)}
+              disabled={trial.running}
+            >
+              {trial.running ? '執行中...' : 'Run'}
+            </button>
+            {trial.error && <span className="home-node-trial-error">{trial.error}</span>}
+            {outputEntries.length > 0 && (
+              <div className="home-node-trial-outputs">
+                {outputEntries.map(([key, value]) => (
+                  <span key={key}><strong>{key}</strong>{value}</span>
+                ))}
+              </div>
+            )}
+          </>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderPublicWorkflowCard = (workflow: CommunityWorkflowCard, keyPrefix = 'public') => {
+    const isHomeNodeOpen = Boolean(homeNodeTrials[workflow.id]?.open);
+    return (
+    <article
+      key={`${keyPrefix}-${workflow.id}`}
+      className={`workflow-card has-preview ${isHomeNodeOpen ? 'home-node-card is-trial-open' : ''}`}
+      onClick={() => openBlueprint(workflow.id, workflow)}
+      onMouseEnter={() => handlePublicCardEnter(workflow.id)}
+      onMouseLeave={handleCardLeave}
+    >
+      <div className="card-top">
+        <div className="card-icon-box" style={workflowIconStyle(workflow.icon)}>
+          {renderWorkflowIcon(workflow.icon)}
+        </div>
+        <span className={`status-pill card-hover-fade ${workflow.reviewStatus === 'unreviewed' ? 'review' : workflow.visibility}`}>
+          {workflow.reviewStatus === 'unreviewed'
+            ? workflow.reviewRequired
+              ? `review ${workflow.contributorReviewCount ?? workflow.reviewCount ?? 0}/${workflow.requiredContributorReviews ?? 0}${workflow.requiredExpertReviews ? ` + expert ${workflow.expertReviewCount ?? 0}/${workflow.requiredExpertReviews}` : ''}`
+              : '未審核'
+            : workflow.visibility}
+        </span>
+      </div>
+      {workflow.reviewedByMe && (
+        <span className="reviewed-badge card-hover-fade"><Icons.Check size={12} style={{ marginRight: 4 }} />已審核</span>
+      )}
+      <button
+        className={`card-quick-bookmark ${workflow.bookmarked ? 'active' : ''}`}
+        onClick={(e) => handleToggleInteraction(e, workflow.id, 'bookmark', workflow.bookmarked)}
+        disabled={pendingInteractions[`${workflow.id}:bookmark`]}
+        title={workflow.bookmarked ? '取消收藏' : '收藏'}
+      >
+        <Icons.Bookmark size={15} style={{ marginRight: 0 }} />
+      </button>
+      {isAdmin && workflow.reviewStatus === 'approved' && (
+        <button
+          className={`card-quick-feature ${workflow.featured ? 'active' : ''}`}
+          onClick={(event) => handleToggleFeaturedWorkflow(event, workflow)}
+          disabled={pendingFeatureToggles[workflow.id]}
+          title={workflow.featured ? '取消精選' : '加入精選'}
+        >
+          <Icons.Star size={15} style={{ marginRight: 0 }} />
+        </button>
+      )}
+      <button
+        type="button"
+        className={`home-node-toggle ${isHomeNodeOpen ? 'active' : ''}`}
+        onClick={(event) => handleToggleHomeNodeTrial(event, workflow)}
+        title={isHomeNodeOpen ? '收起試用' : '把卡片切成節點樣式並試用'}
+      >
+        {isHomeNodeOpen ? '收起' : '試用'}
+      </button>
+      <div className="card-metrics card-hover-fade">
+        <span title="Views"><Icons.Eye size={12} style={{ marginRight: 4 }} />{workflow.viewCount ?? 0}</span>
+        <span title="Likes"><Icons.Heart size={12} style={{ marginRight: 4 }} />{workflow.likeCount ?? 0}</span>
+        <span title="Bookmarks"><Icons.Bookmark size={12} style={{ marginRight: 4 }} />{workflow.bookmarkCount ?? 0}</span>
+        <span title="Forks"><Icons.Fork size={12} style={{ marginRight: 4 }} />{workflow.forkCount ?? 0}</span>
+        <span title="Comments"><Icons.Comment size={12} style={{ marginRight: 4 }} />{workflow.commentCount ?? 0}</span>
+      </div>
+      <div className="card-body">
+        <h3>{workflow.title}</h3>
+        <p>{workflow.summary}</p>
+        <div className="card-tags card-hover-fade">
+          {workflow.tags.map(tag => <span key={tag}>{tag}</span>)}
+        </div>
+      </div>
+      {hoverPreview?.kind === 'public' && hoverPreview.id === workflow.id
+        ? renderWorkflowPreview(publicPreviewCache[workflow.id], previewLoadingKey === `public:${workflow.id}`)
+        : null}
+      {renderHomeNodeTrial(workflow)}
+      <div className="card-footer">
+        <span className="card-author">{workflow.author}</span>
+        <div className="card-footer-actions card-hover-fade">
+          <div className="workflow-interactions">
+            <button
+              className={`interaction-btn ${workflow.liked ? 'active' : ''}`}
+              onClick={(e) => handleToggleInteraction(e, workflow.id, 'like', workflow.liked)}
+              disabled={pendingInteractions[`${workflow.id}:like`]}
+              title={workflow.liked ? '取消讚' : '按讚'}
+            >
+              <Icons.Heart size={14} style={{ marginRight: 0 }} />
+              <span>{workflow.likeCount ?? 0}</span>
+            </button>
+            <button
+              className={`interaction-btn ${workflow.bookmarked ? 'active' : ''}`}
+              onClick={(e) => handleToggleInteraction(e, workflow.id, 'bookmark', workflow.bookmarked)}
+              disabled={pendingInteractions[`${workflow.id}:bookmark`]}
+              title={workflow.bookmarked ? '取消收藏' : '收藏'}
+            >
+              <Icons.Bookmark size={14} style={{ marginRight: 0 }} />
+              <span>{workflow.bookmarkCount ?? 0}</span>
+            </button>
+          </div>
+          <button className="card-open-btn icon-open" onClick={(e) => { e.stopPropagation(); openBlueprint(workflow.id, workflow); }} title="Open workflow">
+            <Icons.ExternalLink size={14} style={{ marginRight: 0 }} />
+          </button>
+        </div>
+      </div>
+    </article>
+    );
   };
 
   return (
@@ -781,82 +1292,26 @@ export function Dashboard() {
                 <p>{communityListMode === 'all' ? '第一條公開 workflow 發布後，就會出現在這裡。' : '先在公開工作流按讚或收藏，就會出現在這裡。'}</p>
               </div>
             )}
-            {filteredPublicWorkflows.map(workflow => (
-              <article
-                key={workflow.id}
-                className="workflow-card has-preview"
-                onClick={() => openBlueprint(workflow.id, workflow)}
-                onMouseEnter={() => handlePublicCardEnter(workflow.id)}
-                onMouseLeave={handleCardLeave}
-              >
-                <div className="card-top">
-                  <div className="card-icon-box" style={{ background: 'rgba(74, 222, 128, 0.1)', color: 'var(--accent-bright)' }}>
-                    <Icons.Languages size={20} />
-                  </div>
-                  <span className={`status-pill card-hover-fade ${workflow.reviewStatus === 'unreviewed' ? 'review' : workflow.visibility}`}>
-                    {workflow.reviewStatus === 'unreviewed'
-                      ? `review ${workflow.contributorReviewCount ?? workflow.reviewCount ?? 0}/${workflow.requiredContributorReviews ?? 0}${workflow.requiredExpertReviews ? ` + expert ${workflow.expertReviewCount ?? 0}/${workflow.requiredExpertReviews}` : ''}`
-                      : workflow.visibility}
-                  </span>
-                </div>
-                {workflow.reviewedByMe && (
-                  <span className="reviewed-badge card-hover-fade"><Icons.Check size={12} style={{ marginRight: 4 }} />已審核</span>
-                )}
-                <button
-                  className={`card-quick-bookmark ${workflow.bookmarked ? 'active' : ''}`}
-                  onClick={(e) => handleToggleInteraction(e, workflow.id, 'bookmark', workflow.bookmarked)}
-                  disabled={pendingInteractions[`${workflow.id}:bookmark`]}
-                  title={workflow.bookmarked ? '取消收藏' : '收藏'}
-                >
-                  <Icons.Bookmark size={15} style={{ marginRight: 0 }} />
-                </button>
-                <div className="card-metrics card-hover-fade">
-                  <span title="Views"><Icons.Eye size={12} style={{ marginRight: 4 }} />{workflow.viewCount ?? 0}</span>
-                  <span title="Likes"><Icons.Heart size={12} style={{ marginRight: 4 }} />{workflow.likeCount ?? 0}</span>
-                  <span title="Bookmarks"><Icons.Bookmark size={12} style={{ marginRight: 4 }} />{workflow.bookmarkCount ?? 0}</span>
-                  <span title="Forks"><Icons.Fork size={12} style={{ marginRight: 4 }} />{workflow.forkCount ?? 0}</span>
-                </div>
-                <div className="card-body">
-                  <h3>{workflow.title}</h3>
-                  <p>{workflow.summary}</p>
-                  <div className="card-tags card-hover-fade">
-                    {workflow.tags.map(tag => <span key={tag}>{tag}</span>)}
-                  </div>
-                </div>
-                {hoverPreview?.kind === 'public' && hoverPreview.id === workflow.id
-                  ? renderWorkflowPreview(publicPreviewCache[workflow.id], previewLoadingKey === `public:${workflow.id}`)
-                  : null}
-                <div className="card-footer">
-                  <span className="card-author">{workflow.author}</span>
-                  <div className="card-footer-actions card-hover-fade">
-                    <div className="workflow-interactions">
-                      <button
-                        className={`interaction-btn ${workflow.liked ? 'active' : ''}`}
-                        onClick={(e) => handleToggleInteraction(e, workflow.id, 'like', workflow.liked)}
-                        disabled={pendingInteractions[`${workflow.id}:like`]}
-                        title={workflow.liked ? '取消讚' : '按讚'}
-                      >
-                        <Icons.Heart size={14} style={{ marginRight: 0 }} />
-                        <span>{workflow.likeCount ?? 0}</span>
-                      </button>
-                      <button
-                        className={`interaction-btn ${workflow.bookmarked ? 'active' : ''}`}
-                        onClick={(e) => handleToggleInteraction(e, workflow.id, 'bookmark', workflow.bookmarked)}
-                        disabled={pendingInteractions[`${workflow.id}:bookmark`]}
-                        title={workflow.bookmarked ? '取消收藏' : '收藏'}
-                      >
-                        <Icons.Bookmark size={14} style={{ marginRight: 0 }} />
-                        <span>{workflow.bookmarkCount ?? 0}</span>
-                      </button>
-                    </div>
-                    <button className="card-open-btn icon-open" onClick={(e) => { e.stopPropagation(); openBlueprint(workflow.id, workflow); }} title="Open workflow">
-                      <Icons.ExternalLink size={14} style={{ marginRight: 0 }} />
-                    </button>
-                  </div>
-                </div>
-              </article>
-            ))}
+            {!shouldUseDiscoverySections && filteredPublicWorkflows.map(workflow => renderPublicWorkflowCard(workflow))}
           </div>
+          {shouldUseDiscoverySections && !isLoadingPublicWorkflows && !publicWorkflowError && communityDiscoverySections.length > 0 && (
+            <div className="community-discovery">
+              {communityDiscoverySections.map(section => (
+                <section key={section.id} className={`discovery-section ${section.id}`}>
+                  <div className="discovery-section-header">
+                    <div>
+                      <h3>{section.title}</h3>
+                      <p>{section.description}</p>
+                    </div>
+                    <span>{section.workflows.length}</span>
+                  </div>
+                  <div className="section-grid discovery-grid">
+                    {section.workflows.map(workflow => renderPublicWorkflowCard(workflow, section.id))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          )}
           </section>
         )}
 
@@ -962,7 +1417,30 @@ export function Dashboard() {
               </div>
             </div>
 
-            {contributorReviewSections.map(section => (
+            {isLoadingContributorQueue && (
+              <div className="loading-state">
+                <div className="spinner"></div>
+                <p>Loading contributor queue...</p>
+              </div>
+            )}
+
+            {!isLoadingContributorQueue && contributorQueueError && (
+              <div className="empty-state">
+                <Icons.Clear size={42} style={{ opacity: 0.18, marginBottom: 12 }} />
+                <h3>審核工作台無法載入</h3>
+                <p>{contributorQueueError}</p>
+              </div>
+            )}
+
+            {!isLoadingContributorQueue && !contributorQueueError && contributorReviewSections.every(section => section.workflows.length === 0) && (
+              <div className="empty-state">
+                <Icons.Check size={42} style={{ opacity: 0.16, marginBottom: 12 }} />
+                <h3>目前沒有待審核項目</h3>
+                <p>未來的新發布、核心頁、額外審核與更新審核會集中出現在這裡。</p>
+              </div>
+            )}
+
+            {!isLoadingContributorQueue && !contributorQueueError && contributorReviewSections.some(section => section.workflows.length > 0) && contributorReviewSections.map(section => (
               <section key={section.id} className="review-queue-section">
                 <div className="review-queue-header">
                   <div>
@@ -982,8 +1460,8 @@ export function Dashboard() {
                         onMouseLeave={handleCardLeave}
                       >
                         <div className="card-top">
-                          <div className="card-icon-box" style={{ background: 'rgba(251, 191, 36, 0.1)', color: '#fbbf24' }}>
-                            <Icons.Check size={20} />
+                          <div className="card-icon-box" style={workflowIconStyle(workflow.icon, '#fbbf24')}>
+                            {renderWorkflowIcon(workflow.icon, <Icons.Check size={20} />)}
                           </div>
                           <span className={`status-pill card-hover-fade ${workflow.visibility === 'core' ? 'core' : 'review'}`}>
                             {workflow.visibility === 'core' ? 'core' : 'review'}
@@ -995,6 +1473,12 @@ export function Dashboard() {
                         <div className="card-body">
                           <h3>{workflow.title}</h3>
                           <p>{workflow.summary}</p>
+                          {section.id === 'update-review' && (
+                            <div className="review-update-meta">
+                              <span>{WORKFLOW_CHANGE_LABELS[workflow.changeType ?? 'edit'] ?? workflow.changeType}</span>
+                              {workflow.updateSummary && <small>{workflow.updateSummary}</small>}
+                            </div>
+                          )}
                         </div>
                         {hoverPreview?.kind === 'public' && hoverPreview.id === workflow.id
                           ? renderWorkflowPreview(publicPreviewCache[workflow.id], previewLoadingKey === `public:${workflow.id}`)
@@ -1034,8 +1518,8 @@ export function Dashboard() {
                     onMouseLeave={handleCardLeave}
                   >
                     <div className="card-top">
-                      <div className="card-icon-box" style={{ background: 'rgba(96, 165, 250, 0.12)', color: '#60a5fa' }}>
-                        <Icons.Text size={20} />
+                      <div className="card-icon-box" style={workflowIconStyle(draft.icon, '#60a5fa')}>
+                        {renderWorkflowIcon(draft.icon, <Icons.Text size={20} />)}
                       </div>
                     </div>
                     <div className="card-body">
@@ -1088,7 +1572,7 @@ export function Dashboard() {
                 {filteredWorkflows.map(workflow => (
                   <div key={workflow.id} className="workflow-card" onClick={() => handleOpenWorkflow(workflow)}>
                     <div className="card-top">
-                      <div className="card-icon-box" style={{ background: 'rgba(74, 222, 128, 0.1)', color: 'var(--accent-bright)' }}>
+                      <div className="card-icon-box" style={workflowIconStyle(undefined)}>
                         <Icons.Languages size={20} />
                       </div>
                       <div className="card-actions">
@@ -1443,6 +1927,57 @@ export function Dashboard() {
           display: grid;
           gap: 12px;
         }
+        .community-discovery {
+          display: grid;
+          gap: 18px;
+        }
+        .discovery-section {
+          display: grid;
+          gap: 12px;
+          padding: 16px;
+          border: 1px solid var(--border-node);
+          border-radius: 14px;
+          background:
+            linear-gradient(135deg, rgba(96, 165, 250, 0.045), rgba(74, 222, 128, 0.035)),
+            rgba(255,255,255,0.025);
+          box-shadow: var(--node-shadow);
+        }
+        [data-theme='light'] .discovery-section {
+          background:
+            linear-gradient(135deg, rgba(34, 197, 94, 0.06), rgba(245, 158, 11, 0.045)),
+            rgba(255,255,255,0.82);
+        }
+        .discovery-section-header {
+          display: flex;
+          align-items: start;
+          justify-content: space-between;
+          gap: 12px;
+        }
+        .discovery-section-header h3 {
+          margin: 0;
+          font-size: 1rem;
+        }
+        .discovery-section-header p {
+          margin: 5px 0 0;
+          color: var(--text-sub);
+          font-size: 0.82rem;
+          line-height: 1.4;
+        }
+        .discovery-section-header > span {
+          min-width: 32px;
+          height: 32px;
+          border-radius: 9px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid rgba(74, 222, 128, 0.22);
+          background: rgba(74, 222, 128, 0.08);
+          color: var(--accent-bright);
+          font-weight: 800;
+        }
+        .discovery-grid {
+          grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        }
         .community-toolbar {
           display: flex;
           align-items: center;
@@ -1489,6 +2024,12 @@ export function Dashboard() {
           padding: 6px 8px;
           font: inherit;
         }
+        .section-grid,
+        .workflow-grid,
+        .discovery-grid,
+        .compact-review-grid {
+          overflow: visible;
+        }
         .workflow-card {
           position: relative;
           overflow: visible;
@@ -1514,46 +2055,56 @@ export function Dashboard() {
           background: rgba(255,255,255,0.88);
         }
         .workflow-card:hover {
-          transform: translateY(-10px) scale(1.05);
-          box-shadow: 0 28px 64px rgba(2, 8, 23, 0.38);
+          transform: none;
+          box-shadow: 0 18px 42px rgba(2, 8, 23, 0.28);
           border-color: rgba(96, 165, 250, 0.32);
           z-index: 5;
-          filter: saturate(1.04);
+          filter: saturate(1.02);
         }
         .workflow-card.has-preview:hover {
-          min-height: 430px;
-          height: 430px;
           background:
             linear-gradient(180deg, rgba(96, 165, 250, 0.08), rgba(255,255,255,0.02)),
             var(--bg-sidebar);
         }
+        .workflow-card.home-node-card.is-trial-open {
+          height: 372px;
+          min-height: 372px;
+          border-color: rgba(74, 222, 128, 0.46);
+          border-radius: 18px;
+          background:
+            radial-gradient(circle at 18px 18px, rgba(74, 222, 128, 0.16), transparent 34%),
+            linear-gradient(180deg, rgba(74, 222, 128, 0.07), rgba(96, 165, 250, 0.035)),
+            var(--bg-sidebar);
+          box-shadow:
+            0 0 0 1px rgba(74, 222, 128, 0.12),
+            0 24px 52px rgba(2, 8, 23, 0.32);
+        }
         .workflow-card-preview {
-          position: relative;
-          min-height: 0;
-          height: 0;
+          position: absolute;
+          left: 14px;
+          right: 14px;
+          top: calc(100% + 8px);
+          height: 184px;
           display: grid;
           grid-template-rows: auto 1fr;
           gap: 8px;
-          padding: 0 10px;
-          margin-top: 0;
+          padding: 10px;
           border-radius: 12px;
           border: 1px solid rgba(96, 165, 250, 0.22);
-          background: rgba(0, 0, 0, 0.12);
+          background:
+            linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.9));
           opacity: 0;
           overflow: hidden;
-          transform: translateY(8px) scale(0.985);
-          transition: opacity 0.18s ease, transform 0.18s ease, height 0.18s ease, padding 0.18s ease;
+          transform: translateY(-4px);
+          transition: opacity 0.18s ease, transform 0.18s ease;
           pointer-events: none;
-          z-index: 1;
-          flex: 0 0 auto;
+          z-index: 30;
+          box-shadow: 0 18px 46px rgba(2, 8, 23, 0.42);
+          backdrop-filter: blur(14px);
         }
-        .workflow-card:hover .workflow-card-preview,
-        .workflow-card-preview.is-visible,
-        .workflow-card-preview.is-loading {
+        .workflow-card:hover .workflow-card-preview {
           opacity: 1;
-          transform: translateY(0) scale(1);
-          height: 184px;
-          padding: 10px;
+          transform: translateY(0);
         }
         .workflow-card-preview-header {
           display: flex;
@@ -1570,8 +2121,6 @@ export function Dashboard() {
         }
         .workflow-card-preview-sketch svg {
           min-height: 140px;
-        }
-        .workflow-card-preview-sketch svg {
           border-color: rgba(255,255,255,0.06) !important;
           background: rgba(2, 6, 23, 0.28) !important;
         }
@@ -1623,7 +2172,7 @@ export function Dashboard() {
         .workflow-card .card-footer {
           position: relative;
           margin-top: 0;
-          z-index: 3;
+          z-index: 7;
           backdrop-filter: blur(8px);
           margin-top: auto;
         }
@@ -1641,7 +2190,7 @@ export function Dashboard() {
         .workflow-card .card-top,
         .workflow-card .card-body {
           position: relative;
-          z-index: 3;
+          z-index: 7;
         }
         .card-quick-bookmark {
           position: absolute;
@@ -1675,6 +2224,132 @@ export function Dashboard() {
         .card-quick-bookmark:disabled {
           cursor: wait;
           opacity: 0.55;
+        }
+        .card-quick-feature {
+          position: absolute;
+          right: 58px;
+          top: 18px;
+          z-index: 4;
+          width: 34px;
+          height: 34px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid var(--border-node);
+          border-radius: 10px;
+          background: rgba(255,255,255,0.08);
+          color: var(--text-sub);
+          opacity: 0;
+          transform: translateY(-4px);
+          cursor: pointer;
+          transition: opacity 0.16s ease, transform 0.16s ease, background 0.16s ease, color 0.16s ease;
+        }
+        .workflow-card:hover .card-quick-feature,
+        .card-quick-feature.active {
+          opacity: 1;
+          transform: translateY(0);
+        }
+        .card-quick-feature.active {
+          color: #fbbf24;
+          border-color: rgba(251, 191, 36, 0.45);
+          background: rgba(251, 191, 36, 0.12);
+        }
+        .card-quick-feature:disabled {
+          cursor: wait;
+          opacity: 0.55;
+        }
+        .home-node-toggle {
+          position: absolute;
+          right: 18px;
+          top: 58px;
+          z-index: 8;
+          border: 1px solid rgba(74, 222, 128, 0.32);
+          border-radius: 999px;
+          padding: 5px 9px;
+          background: rgba(74, 222, 128, 0.08);
+          color: var(--accent-bright);
+          font-size: 0.68rem;
+          font-weight: 800;
+          cursor: pointer;
+        }
+        .home-node-toggle.active {
+          background: var(--accent);
+          border-color: var(--accent);
+          color: white;
+        }
+        .home-node-trial {
+          position: relative;
+          z-index: 9;
+          display: grid;
+          gap: 8px;
+          max-height: 150px;
+          overflow: auto;
+          padding: 10px;
+          border: 1px solid rgba(74, 222, 128, 0.28);
+          border-radius: 12px;
+          background: rgba(15, 23, 42, 0.94);
+          box-shadow: 0 16px 36px rgba(2, 8, 23, 0.34);
+          backdrop-filter: blur(14px);
+        }
+        .home-node-trial-inputs {
+          display: grid;
+          gap: 7px;
+        }
+        .home-node-trial label {
+          display: grid;
+          gap: 4px;
+          color: var(--text-sub);
+          font-size: 0.68rem;
+          font-weight: 700;
+        }
+        .home-node-trial input {
+          border: 1px solid rgba(148, 163, 184, 0.24);
+          border-radius: 8px;
+          padding: 7px 8px;
+          background: rgba(2, 6, 23, 0.42);
+          color: var(--text-main);
+          font: inherit;
+          font-size: 0.74rem;
+        }
+        .home-node-run-btn {
+          justify-self: start;
+          border: 1px solid rgba(74, 222, 128, 0.45);
+          border-radius: 9px;
+          padding: 6px 10px;
+          background: rgba(74, 222, 128, 0.12);
+          color: var(--accent-bright);
+          font-weight: 800;
+          cursor: pointer;
+        }
+        .home-node-run-btn:disabled {
+          opacity: 0.62;
+          cursor: wait;
+        }
+        .home-node-trial-note,
+        .home-node-trial-error {
+          color: var(--text-sub);
+          font-size: 0.72rem;
+          line-height: 1.4;
+        }
+        .home-node-trial-error {
+          color: #fca5a5;
+        }
+        .home-node-trial-outputs {
+          display: grid;
+          gap: 5px;
+        }
+        .home-node-trial-outputs span {
+          display: grid;
+          gap: 2px;
+          color: var(--text-main);
+          font-size: 0.72rem;
+          line-height: 1.35;
+        }
+        .home-node-trial-outputs strong {
+          color: var(--accent-bright);
+          font-size: 0.66rem;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
         }
         .card-top,
         .card-footer {
@@ -1963,6 +2638,33 @@ export function Dashboard() {
           font-size: 0.72rem;
           text-transform: uppercase;
           letter-spacing: 0.08em;
+        }
+        .review-update-meta {
+          display: grid;
+          gap: 5px;
+          margin-top: 10px;
+          padding-top: 10px;
+          border-top: 1px solid var(--border-header);
+        }
+        .review-update-meta span {
+          width: fit-content;
+          border: 1px solid rgba(251, 191, 36, 0.3);
+          border-radius: 7px;
+          padding: 3px 7px;
+          color: #fbbf24;
+          background: rgba(251, 191, 36, 0.08);
+          font-size: 0.66rem;
+          font-weight: 800;
+          letter-spacing: 0.04em;
+        }
+        .review-update-meta small {
+          color: var(--text-sub);
+          font-size: 0.72rem;
+          line-height: 1.35;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
         }
         .review-queue-section {
           padding: 16px;

@@ -311,23 +311,23 @@ export function CommunityNodeMaker({
     kind,
     label:
       kind === 'input' ? 'input' :
-      kind === 'output' ? 'output' :
-      kind === 'toggle' ? 'toggle' :
-      kind === 'math' ? 'formula' :
-      '',
+        kind === 'output' ? 'output' :
+          kind === 'toggle' ? 'toggle' :
+            kind === 'math' ? 'formula' :
+              '',
     labelI18n: {
       'zh-TW':
         kind === 'input' ? 'input' :
-        kind === 'output' ? 'output' :
-        kind === 'toggle' ? 'toggle' :
-        kind === 'math' ? 'formula' :
-        '',
+          kind === 'output' ? 'output' :
+            kind === 'toggle' ? 'toggle' :
+              kind === 'math' ? 'formula' :
+                '',
       en:
         kind === 'input' ? 'input' :
-        kind === 'output' ? 'output' :
-        kind === 'toggle' ? 'toggle' :
-        kind === 'math' ? 'formula' :
-        '',
+          kind === 'output' ? 'output' :
+            kind === 'toggle' ? 'toggle' :
+              kind === 'math' ? 'formula' :
+                '',
     },
     content: kind === 'text' ? '輸入教學說明...' : kind === 'math' ? 'a^2 + b^2 = c^2' : '',
     contentI18n: {
@@ -631,17 +631,17 @@ export function CommunityNodeMaker({
         kind: draggingKind,
         label:
           draggingKind === 'input' ? 'input' :
-          draggingKind === 'output' ? 'output' :
-          draggingKind === 'toggle' ? 'toggle' :
-          draggingKind === 'math' ? 'formula' :
-          'text',
+            draggingKind === 'output' ? 'output' :
+              draggingKind === 'toggle' ? 'toggle' :
+                draggingKind === 'math' ? 'formula' :
+                  'text',
         labelI18n: {
           [editingLanguage]:
             draggingKind === 'input' ? 'input' :
-            draggingKind === 'output' ? 'output' :
-            draggingKind === 'toggle' ? 'toggle' :
-            draggingKind === 'math' ? 'formula' :
-            'text',
+              draggingKind === 'output' ? 'output' :
+                draggingKind === 'toggle' ? 'toggle' :
+                  draggingKind === 'math' ? 'formula' :
+                    'text',
         },
         content: draggingKind === 'text' ? '輸入教學說明...' : draggingKind === 'math' ? 'a^2 + b^2 = c^2' : '',
         contentI18n: {
@@ -683,14 +683,14 @@ export function CommunityNodeMaker({
   };
 
   const renderToolkit = () => (
-    <div 
-      className="builder-toolbar nodrag" 
+    <div
+      className="builder-toolbar nodrag"
       style={{ transform: `translateY(${toolkitOffsetY}px)` }}
-      onPointerDown={stopNodeDragPropagation} 
+      onPointerDown={stopNodeDragPropagation}
       onMouseDown={stopNodeDragPropagation}
     >
-      <div 
-        className="panel-title" 
+      <div
+        className="panel-title"
         style={{ cursor: 'grab', display: 'flex', alignItems: 'center', gap: '6px', userSelect: 'none' }}
         onPointerDown={handleToolkitDragStart}
         title="Drag to move vertically"
@@ -1500,10 +1500,10 @@ export function CommunityNodeMaker({
                   const ty = center + Math.sin(rad) * 96;
                   const color =
                     item.kind === 'input' ? '#4facfe' :
-                    item.kind === 'output' ? '#f59e0b' :
-                    item.kind === 'math' ? '#10b981' :
-                    item.kind === 'toggle' ? '#f472b6' :
-                    '#a78bfa';
+                      item.kind === 'output' ? '#f59e0b' :
+                        item.kind === 'math' ? '#10b981' :
+                          item.kind === 'toggle' ? '#f472b6' :
+                            '#a78bfa';
                   const isActive = pieSelection === item.kind;
 
                   return (

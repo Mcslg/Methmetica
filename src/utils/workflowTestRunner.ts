@@ -16,6 +16,7 @@ type BuildWorkflowNodeArgs = {
   sourceNodes: AppNode[];
   sourceEdges: Edge[];
   bridgeNodeId: string;
+  builderNodeId?: string;
   interfaceSchema: TemplateInterfaceSchema;
   controlPorts?: TemplateControlPort[];
   elementBindings?: TemplateElementBinding[];
@@ -131,12 +132,15 @@ const collectCanReach = (targetId: string, edges: Edge[]) => {
   return reachable;
 };
 
-const getExecutableCodeNodes = (nodes: AppNode[], edges: Edge[], bridgeNodeId: string) => {
+const getExecutableCodeNodes = (nodes: AppNode[], edges: Edge[], bridgeNodeId: string, terminalIds: string[] = [bridgeNodeId]) => {
   const reachableFromBridge = collectReachableFrom(bridgeNodeId, edges);
-  const canReachBridge = collectCanReach(bridgeNodeId, edges);
+  const canReachTerminal = new Set<string>();
+  terminalIds.forEach(targetId => {
+    collectCanReach(targetId, edges).forEach(nodeId => canReachTerminal.add(nodeId));
+  });
   const executableIds = new Set(
     nodes
-      .filter(node => node.type === 'codeNode' && reachableFromBridge.has(node.id) && canReachBridge.has(node.id))
+      .filter(node => node.type === 'codeNode' && reachableFromBridge.has(node.id) && canReachTerminal.has(node.id))
       .map(node => node.id)
   );
 
@@ -183,11 +187,13 @@ export const buildWorkflowNode = ({
   sourceNodes,
   sourceEdges,
   bridgeNodeId,
+  builderNodeId,
   interfaceSchema,
   controlPorts,
   elementBindings,
 }: BuildWorkflowNodeArgs): BuiltWorkflowNode => ({
   bridgeNodeId,
+  builderNodeId,
   interfaceSchema,
   controlPorts: controlPorts?.map(port => ({ ...port })),
   elementBindings: elementBindings?.map(binding => ({ ...binding })),
@@ -215,7 +221,12 @@ export const runBuiltWorkflowNode = async (
     },
   };
 
-  const executableCodeNodes = getExecutableCodeNodes(nodes, edges, builtNode.bridgeNodeId);
+  const executableCodeNodes = getExecutableCodeNodes(
+    nodes,
+    edges,
+    builtNode.bridgeNodeId,
+    [builtNode.bridgeNodeId, builtNode.builderNodeId].filter(Boolean) as string[]
+  );
 
   if (executableCodeNodes.error) {
     return { outputs: {}, error: executableCodeNodes.error, trace: [] };
@@ -249,7 +260,15 @@ export const runBuiltWorkflowNode = async (
     builtNode.interfaceSchema.outputs.map(port => [port.id, finalBridge?.data.inputs?.[port.id] || ''])
   );
   const controlValues = Object.fromEntries(
-    (builtNode.controlPorts || []).map(port => [port.id, finalBridge?.data.inputs?.[port.id] || ''])
+    (builtNode.controlPorts || []).map(port => {
+      const edgeValue = builtNode.builderNodeId
+        ? edges
+            .filter(edge => edge.target === builtNode.builderNodeId && edge.targetHandle === port.id)
+            .map(edge => readSourceValue(nodes.find(node => node.id === edge.source), edge.sourceHandle))
+            .find(value => value !== undefined)
+        : undefined;
+      return [port.id, edgeValue ?? ''];
+    })
   );
   const templateViewOverrides = resolveTemplateViewOverridesFromBindings(builtNode.elementBindings, controlValues);
 

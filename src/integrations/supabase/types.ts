@@ -8,6 +8,7 @@ export type AppUser = {
   name: string;
   avatarUrl?: string | null;
   role: AppRole;
+  roleSource?: 'profile' | 'fallback';
   authProvider: 'supabase-google' | 'legacy-google-drive';
   fallbackAvatar?: string;
 };

@@ -4,7 +4,7 @@ import { type Edge } from '@xyflow/react';
 import { getNodeDefinition } from '../nodes/registry';
 import { canPlugin, PluginRules, type ProxyableType } from '../config/pluginRegistry';
 import { defaultCommunityTemplates } from '../community/catalog';
-import { getTemplateHandles, getTemplateInternalHandles, getTemplateInterfaceSchema, type CommunityNodeTemplate, type TemplateHandleSpec, type TemplateViewOverrides, type WorkflowVisibility } from '../community/types';
+import { getTemplateHandles, getTemplateInternalHandles, getTemplateInterfaceSchema, type CommunityNodeTemplate, type TemplateHandleSpec, type TemplateViewOverrides, type WorkflowIcon, type WorkflowVisibility } from '../community/types';
 import type { AppUser, AuthStatus } from '../integrations/supabase/types';
 import type { MathValue } from '../types/mathTypes';
 import {
@@ -121,6 +121,7 @@ export type NodeData = {
     limitPoint?: string; // For CalculusNode limit target (e.g. x -> a)
     description?: string; // For ProjectNode metadata
     tags?: string[]; // Shared workflow/tag metadata for builder root
+    workflowIcon?: WorkflowIcon;
     ownerId?: string;
     authorName?: string;
     workflowSource?: 'local' | 'public' | 'drive' | 'draft';
@@ -173,6 +174,9 @@ export type NodeData = {
     extraContributorReviews?: number;
     extraExpertReviews?: number;
     reviewedByMe?: boolean;
+    featured?: boolean;
+    featuredAt?: string | null;
+    curationScore?: number;
      visibility?: WorkflowVisibility;
     autoRun?: boolean; // For nodes that can toggle automatic execution
     driveFileId?: string;
@@ -214,7 +218,7 @@ const hydrateTemplateNodeHandles = (nodes: AppNode[]): AppNode[] => nodes.map((n
 
 const normalizeBuilderBridgeGraph = (nodes: AppNode[], edges: Edge[]) => {
     const hydratedNodes = hydrateTemplateNodeHandles(nodes).map((node) => (
-        (node.type === 'projectNode' || node.type === 'nodeBuilderNode') && (node.data.handles?.length ?? 0) > 0
+        node.type === 'projectNode' && (node.data.handles?.length ?? 0) > 0
             ? { ...node, data: { ...node.data, handles: [] } }
             : node
     ));

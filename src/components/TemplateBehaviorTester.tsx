@@ -1,5 +1,7 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { Icons } from './Icons';
+import { MathInput } from './MathInput';
 import useStore from '../store/useStore';
 import type { CommunityNodeTemplate, BuiltWorkflowNode } from '../community/types';
 import { getTemplateInterfaceSchema } from '../community/types';
@@ -38,9 +40,29 @@ export function TemplateBehaviorTester({
   const [testOutputs, setTestOutputs] = React.useState<Record<string, string>>({});
   const [testStatus, setTestStatus] = React.useState('');
   const [testTrace, setTestTrace] = React.useState<string[]>([]);
-  const [selectedInputId, setSelectedInputId] = React.useState<string | null>(null);
+  const [inputEditor, setInputEditor] = React.useState<{
+    handleId: string;
+    label: string;
+    screenX: number;
+    screenY: number;
+    value: string;
+  } | null>(null);
+  const [outputPopover, setOutputPopover] = React.useState<{
+    handleId: string;
+    label: string;
+    screenX: number;
+    screenY: number;
+  } | null>(null);
+  const inputMathRef = React.useRef<any>(null);
 
-  const selectedInput = activeInterfaceSchema.inputs.find(port => port.id === selectedInputId) || activeInterfaceSchema.inputs[0] || null;
+  React.useEffect(() => {
+    if (!inputEditor) return;
+    const timer = window.setTimeout(() => {
+      inputMathRef.current?.focus();
+      inputMathRef.current?.executeCommand?.('showVirtualKeyboard');
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [inputEditor]);
 
   React.useEffect(() => {
     setTestInputs((current) => {
@@ -58,12 +80,6 @@ export function TemplateBehaviorTester({
       });
       return next;
     });
-
-    setSelectedInputId((current) => (
-      activeInterfaceSchema.inputs.some(port => port.id === current)
-        ? current
-        : activeInterfaceSchema.inputs[0]?.id ?? null
-    ));
   }, [activeInterfaceSchema]);
 
   const handleRunBehaviorTest = React.useCallback(async () => {
@@ -85,6 +101,7 @@ export function TemplateBehaviorTester({
       sourceNodes: nodes,
       sourceEdges: edges,
       bridgeNodeId,
+      builderNodeId: projectNodeId,
       interfaceSchema: activeInterfaceSchema,
       controlPorts: builderDraft.controlPorts,
       elementBindings: builderDraft.elementBindings,
@@ -103,18 +120,34 @@ export function TemplateBehaviorTester({
 
   const renderPortButton = (port: typeof activeInterfaceSchema.inputs[number], kind: 'input' | 'output') => {
     const isInput = kind === 'input';
-    const isSelected = isInput && selectedInput?.id === port.id;
     const label = getLocalizedText(port.labelI18n, language, port.label);
 
     return (
       <button
         key={port.id}
         type="button"
-        className={`template-test-port nodrag ${kind} ${isSelected ? 'selected' : ''}`}
-        onClick={() => {
-          if (isInput) setSelectedInputId(port.id);
+        className={`template-test-port nodrag ${kind} ${testInputs[port.id] ? 'selected' : ''}`}
+        onClick={(event) => {
+          const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+          if (isInput) {
+            setInputEditor({
+              handleId: port.id,
+              label,
+              screenX: rect.left + rect.width / 2,
+              screenY: rect.bottom + 10,
+              value: testInputs[port.id] || '',
+            });
+            return;
+          }
+
+          setOutputPopover({
+            handleId: port.id,
+            label,
+            screenX: rect.right + 14,
+            screenY: rect.top + rect.height / 2,
+          });
         }}
-        title={isInput ? `Set test value for ${label}` : `Output ${label}`}
+        title={isInput ? `Set test value for ${label}` : `Show output ${label}`}
       >
         <span className="template-test-port-dot" />
         <span className="template-test-port-label">{label}</span>
@@ -204,30 +237,75 @@ export function TemplateBehaviorTester({
         </div>
       </div>
 
-      {selectedInput && (
-        <label className="template-test-input-editor nodrag">
-          <span>
-            {getLocalizedText(selectedInput.labelI18n, language, selectedInput.label)}
-          </span>
-          <input
-            name={`template-test-input-${projectNodeId}-${selectedInput.id}`}
-            className="project-tags-input nodrag"
-            value={testInputs[selectedInput.id] || ''}
-            onChange={(event) => setTestInputs((current) => ({ ...current, [selectedInput.id]: event.target.value }))}
-            placeholder="test value"
-          />
-        </label>
+      {inputEditor && createPortal(
+        <>
+          <div className="manual-input-editor-backdrop" onClick={() => setInputEditor(null)} />
+          <div
+            className="manual-input-editor nodrag"
+            style={{ left: inputEditor.screenX, top: inputEditor.screenY }}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="manual-input-editor-head">
+              <div>
+                <span>Test Input</span>
+                <strong>{inputEditor.label}</strong>
+              </div>
+            </div>
+            <MathInput
+              name={`template-test-input-${projectNodeId}-${inputEditor.handleId}`}
+              ref={inputMathRef}
+              value={inputEditor.value}
+              className="manual-input-math-field"
+              onChange={(value) => {
+                setInputEditor((current) => current ? { ...current, value } : current);
+                setTestInputs((current) => ({ ...current, [inputEditor.handleId]: value }));
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === 'Escape') {
+                  event.preventDefault();
+                  setInputEditor(null);
+                }
+              }}
+            />
+            <div className="manual-input-editor-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setTestInputs((current) => ({ ...current, [inputEditor.handleId]: '' }));
+                  setInputEditor(null);
+                }}
+              >
+                Clear
+              </button>
+              <button type="button" onClick={() => setInputEditor(null)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </>,
+        document.body
       )}
 
-      {activeInterfaceSchema.outputs.length > 0 && (
-        <div className="template-test-output-grid">
-          {activeInterfaceSchema.outputs.map((port) => (
-            <div key={port.id} className="template-test-output-card">
-              <span>{getLocalizedText(port.labelI18n, language, port.label)}</span>
-              <pre>{testOutputs[port.id] || 'Run test to preview'}</pre>
+      {outputPopover && createPortal(
+        <>
+          <div className="manual-input-editor-backdrop" onClick={() => setOutputPopover(null)} />
+          <div
+            className="template-test-output-popover nodrag"
+            style={{ left: outputPopover.screenX, top: outputPopover.screenY }}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="manual-input-editor-head">
+              <div>
+                <span>Test Output</span>
+                <strong>{outputPopover.label}</strong>
+              </div>
             </div>
-          ))}
-        </div>
+            <pre>{testOutputs[outputPopover.handleId] || 'Run test to preview'}</pre>
+          </div>
+        </>,
+        document.body
       )}
     </div>
   );

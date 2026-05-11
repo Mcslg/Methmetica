@@ -34,6 +34,10 @@ type NodeCommentReadRow = {
   read_at: string;
 };
 
+type NodeCommentWorkflowRow = {
+  workflow_id: string;
+};
+
 type SaveNodeCommentPayload = {
   comment: NodeComment;
   workflowId: string;
@@ -158,6 +162,28 @@ export async function listForumNodeComments(options?: {
     console.warn('[node-comments] read receipts unavailable:', error);
     return comments;
   }
+}
+
+export async function getWorkflowCommentCounts(workflowIds: string[]) {
+  if (!supabase || workflowIds.length === 0) return new Map<string, number>();
+
+  const { data, error } = await withSupabaseTimeout(
+    supabase
+      .from('node_comments')
+      .select('workflow_id')
+      .in('workflow_id', workflowIds)
+      .neq('status', 'hidden')
+      .limit(1000),
+    'Loading workflow comment counts',
+    1800,
+  );
+
+  if (error) throw error;
+
+  return ((data ?? []) as NodeCommentWorkflowRow[]).reduce((counts, row) => {
+    counts.set(row.workflow_id, (counts.get(row.workflow_id) ?? 0) + 1);
+    return counts;
+  }, new Map<string, number>());
 }
 
 export async function markNodeCommentRead(commentId: string, userId: string) {

@@ -4,8 +4,9 @@ import { Icons } from '../components/Icons';
 import { NodeFrame } from '../components/NodeFrame';
 import useStore, { type AppNode } from '../store/useStore';
 import { useLanguage } from '../contexts/LanguageContext';
-import type { CommunityNodeTemplate, WorkflowVisibility } from '../community/types';
+import type { CommunityNodeTemplate, WorkflowIcon, WorkflowVisibility } from '../community/types';
 import { makeInitialDraft } from '../community/templateDraft';
+import { DEFAULT_WORKFLOW_ICON, WORKFLOW_ICON_OPTIONS, normalizeWorkflowIcon, renderWorkflowIconVisual } from '../utils/workflowIcons';
 
 const parseTags = (value: string) => value
   .split(',')
@@ -25,6 +26,8 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
   const [localDesc, setLocalDesc] = React.useState(data.description || '');
   const [localTags, setLocalTags] = React.useState(Array.isArray(data.tags) ? data.tags.join(', ') : '');
   const [localVisibility, setLocalVisibility] = React.useState<WorkflowVisibility>(data.visibility || 'private');
+  const [localWorkflowIcon, setLocalWorkflowIcon] = React.useState(normalizeWorkflowIcon(data.workflowIcon));
+  const [isIconPickerOpen, setIsIconPickerOpen] = React.useState(false);
   const [isExpanded, setIsExpanded] = React.useState(true);
 
   React.useEffect(() => {
@@ -41,18 +44,24 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     if (data.visibility && data.visibility !== localVisibility) {
       setLocalVisibility(data.visibility);
     }
-  }, [data.description, data.label, data.tags, data.visibility, localDesc, localName, localTags, localVisibility]);
+    const nextWorkflowIcon = normalizeWorkflowIcon(data.workflowIcon);
+    if (JSON.stringify(nextWorkflowIcon) !== JSON.stringify(localWorkflowIcon)) {
+      setLocalWorkflowIcon(nextWorkflowIcon);
+    }
+  }, [data.description, data.label, data.tags, data.visibility, data.workflowIcon, localDesc, localName, localTags, localVisibility, localWorkflowIcon]);
 
   const saveWorkflowMetadata = React.useCallback((patch?: Partial<{
     label: string;
     description: string;
     tags: string[];
     visibility: WorkflowVisibility;
+    workflowIcon: WorkflowIcon;
   }>) => {
     const finalName = (patch?.label ?? localName).trim() || 'Untitled Workflow';
     const finalDesc = patch?.description ?? localDesc;
     const finalTags = patch?.tags ?? parseTags(localTags);
     const finalVisibility = patch?.visibility ?? localVisibility;
+    const finalWorkflowIcon = patch?.workflowIcon ?? localWorkflowIcon;
 
     if (finalName !== localName) setLocalName(finalName);
     if (finalDesc !== localDesc) setLocalDesc(finalDesc);
@@ -65,6 +74,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
       description: finalDesc,
       tags: finalTags,
       visibility: finalVisibility,
+      workflowIcon: finalWorkflowIcon,
     }, { skipGraphEval: true });
 
     const builderNodeId = data.builderNodeId as string | undefined;
@@ -74,9 +84,10 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         description: finalDesc,
         tags: finalTags,
         visibility: finalVisibility,
+        workflowIcon: finalWorkflowIcon,
       }, { skipGraphEval: true });
     }
-  }, [data.builderNodeId, id, localDesc, localName, localTags, localVisibility, updateNodeData]);
+  }, [data.builderNodeId, id, localDesc, localName, localTags, localVisibility, localWorkflowIcon, updateNodeData]);
 
   const focusNodeById = React.useCallback((nodeId: string) => {
     const node = getNodes().find(n => n.id === nodeId);
@@ -121,6 +132,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         description: draft.summary,
         tags: draft.tags,
         visibility: localVisibility,
+        workflowIcon: localWorkflowIcon,
         builderDraft: draft,
         publishStatus: 'Node Builder 已獨立成節點，發布時仍會同步到 Project Root。',
       },
@@ -132,6 +144,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
       description: draft.summary,
       tags: draft.tags,
       visibility: localVisibility,
+      workflowIcon: localWorkflowIcon,
       builderDraft: draft,
       publishStatus: '這條工作流已連到獨立 Node Builder。',
     }, { skipGraphEval: true });
@@ -190,6 +203,66 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         {isExpanded && (
           <div className="project-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div className="root-metadata">
+              <div className="root-field">
+                <span>Icon</span>
+                <div className="workflow-icon-picker">
+                  <button
+                    type="button"
+                    className={`workflow-icon-preview ${isIconPickerOpen ? 'active' : ''}`}
+                    title="Choose workflow icon"
+                    aria-expanded={isIconPickerOpen}
+                    onClick={() => setIsIconPickerOpen(value => !value)}
+                    style={{
+                      background: `${localWorkflowIcon.accent || DEFAULT_WORKFLOW_ICON.accent}22`,
+                      color: localWorkflowIcon.accent || DEFAULT_WORKFLOW_ICON.accent,
+                    }}
+                  >
+                    {renderWorkflowIconVisual(localWorkflowIcon, 20)}
+                  </button>
+                  <span className="workflow-icon-current">{localWorkflowIcon.value}</span>
+                  {isIconPickerOpen && (
+                    <div className="workflow-icon-popover">
+                      <div className="workflow-icon-popover-header">
+                        <strong>Icon</strong>
+                        <input
+                          name={`project-icon-accent-${id}`}
+                          className="workflow-icon-color"
+                          type="color"
+                          value={localWorkflowIcon.accent || DEFAULT_WORKFLOW_ICON.accent}
+                          title="Icon color"
+                          onChange={(e) => {
+                            const nextIcon = { ...localWorkflowIcon, accent: e.target.value };
+                            setLocalWorkflowIcon(nextIcon);
+                            saveWorkflowMetadata({ workflowIcon: nextIcon });
+                          }}
+                        />
+                      </div>
+                      <div className="workflow-icon-option-grid">
+                        {WORKFLOW_ICON_OPTIONS.map(option => {
+                          const isActive = option.value === localWorkflowIcon.value;
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              className={`workflow-icon-option ${isActive ? 'active' : ''}`}
+                              title={option.label}
+                              aria-pressed={isActive}
+                              onClick={() => {
+                                const nextIcon = normalizeWorkflowIcon({ ...localWorkflowIcon, type: 'lucide', value: option.value });
+                                setLocalWorkflowIcon(nextIcon);
+                                saveWorkflowMetadata({ workflowIcon: nextIcon });
+                                setIsIconPickerOpen(false);
+                              }}
+                            >
+                              {option.render({ size: 16, style: { marginRight: 0 } })}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
               <label className="root-field" style={{ gridColumn: '1 / -1' }}>
                 <span>{t('nodes.project.name_label') || 'Project Name'}</span>
                 <input

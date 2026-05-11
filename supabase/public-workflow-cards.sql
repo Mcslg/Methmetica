@@ -23,6 +23,9 @@ select
   w.expert_review_count,
   w.extra_contributor_reviews,
   w.extra_expert_reviews,
+  w.featured,
+  w.featured_at,
+  w.curation_score,
   coalesce(jsonb_array_length(w.workflow_json -> 'nodes'), 0) as node_count,
   coalesce(jsonb_array_length(w.workflow_json -> 'edges'), 0) as edge_count
 from public.workflows w

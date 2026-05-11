@@ -71,6 +71,7 @@ export type CompiledWorkflowArtifact = {
   compilerVersion: string;
   runtimeVersion: string;
   entryBridgeId: string;
+  builderNodeId?: string;
   interfaceSchema: TemplateInterfaceSchema;
   controlPorts?: TemplateControlPort[];
   elementBindings?: TemplateElementBinding[];
@@ -245,6 +246,7 @@ export const compileWorkflowToArtifact = (
     nodes: AppNode[];
     edges: Edge[];
     bridgeNodeId: string;
+    builderNodeId?: string;
     interfaceSchema: TemplateInterfaceSchema;
     controlPorts?: TemplateControlPort[];
     elementBindings?: TemplateElementBinding[];
@@ -273,10 +275,14 @@ export const compileWorkflowToArtifact = (
   }
 
   const reachableFromBridge = collectReachableFrom(sourceGraph.bridgeNodeId, sourceGraph.edges);
-  const canReachBridge = collectCanReach(sourceGraph.bridgeNodeId, sourceGraph.edges);
+  const terminalIds = [sourceGraph.bridgeNodeId, sourceGraph.builderNodeId].filter(Boolean) as string[];
+  const canReachTerminal = new Set<string>();
+  terminalIds.forEach(targetId => {
+    collectCanReach(targetId, sourceGraph.edges).forEach(nodeId => canReachTerminal.add(nodeId));
+  });
   const executableIds = new Set(
     sourceGraph.nodes
-      .filter(node => node.id !== sourceGraph.bridgeNodeId && reachableFromBridge.has(node.id) && canReachBridge.has(node.id))
+      .filter(node => node.id !== sourceGraph.bridgeNodeId && node.id !== sourceGraph.builderNodeId && reachableFromBridge.has(node.id) && canReachTerminal.has(node.id))
       .map(node => node.id)
   );
 
@@ -443,6 +449,7 @@ export const compileWorkflowToArtifact = (
     compilerVersion: WORKFLOW_COMPILER_VERSION,
     runtimeVersion: WORKFLOW_RUNTIME_VERSION,
     entryBridgeId: sourceGraph.bridgeNodeId,
+    builderNodeId: sourceGraph.builderNodeId,
     interfaceSchema: cloneJson(sourceGraph.interfaceSchema),
     controlPorts: cloneJson(sourceGraph.controlPorts || []),
     elementBindings: cloneJson(sourceGraph.elementBindings || []),
@@ -623,7 +630,15 @@ export const runCompiledArtifact = async (
     artifact.interfaceSchema.outputs.map(port => [port.id, finalInputs[port.id] || ''])
   );
   const controlValues = Object.fromEntries(
-    (artifact.controlPorts || []).map(port => [port.id, finalInputs[port.id] || ''])
+    (artifact.controlPorts || []).map(port => {
+      const edgeValue = artifact.builderNodeId
+        ? artifact.edges
+            .filter(edge => edge.target === artifact.builderNodeId && edge.targetHandle === port.id)
+            .map(edge => readSourceValue(valuesByNode, edge.source, edge.sourceHandle))
+            .find(value => value !== undefined)
+        : undefined;
+      return [port.id, edgeValue ?? ''];
+    })
   );
   const templateViewOverrides = resolveTemplateViewOverridesFromBindings(artifact.elementBindings, controlValues);
 

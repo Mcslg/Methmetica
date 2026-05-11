@@ -2,6 +2,19 @@ import { useEffect } from 'react';
 import useStore from '../store/useStore';
 import { onAuthStateChange } from '../integrations/supabase/auth';
 import { isSupabaseConfigured } from '../integrations/supabase/client';
+import type { AppUser } from '../integrations/supabase/types';
+
+const preserveVerifiedRoleOnFallback = (current: AppUser | null, next: AppUser | null) => {
+  if (!current || !next || current.id !== next.id) return next;
+  if (next.roleSource !== 'fallback') return next;
+  if (current.role === 'user' || current.roleSource === 'fallback') return next;
+
+  return {
+    ...next,
+    role: current.role,
+    roleSource: current.roleSource,
+  };
+};
 
 export function AuthBootstrap() {
   const setUser = useStore(state => state.setUser);
@@ -20,7 +33,7 @@ export function AuthBootstrap() {
     setAuthStatus('loading');
     const subscription = onAuthStateChange((appUser) => {
       if (cancelled) return;
-      setUser(appUser);
+      setUser(preserveVerifiedRoleOnFallback(useStore.getState().user, appUser));
       setAuthStatus(appUser ? 'authenticated' : 'anonymous');
     });
 

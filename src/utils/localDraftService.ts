@@ -1,5 +1,6 @@
 import type { Edge } from '@xyflow/react';
 import type { AppNode } from '../store/useStore';
+import type { WorkflowIcon } from '../community/types';
 
 const DRAFT_INDEX_KEY = 'methmatica.localDrafts.index.v1';
 const DRAFT_KEY_PREFIX = 'methmatica.localDraft.';
@@ -8,6 +9,7 @@ const PUBLIC_EDIT_KEY_PREFIX = 'methmatica.publicWorkflowEdit.';
 export type LocalDraftSummary = {
   id: string;
   title: string;
+  icon?: WorkflowIcon;
   createdAt: string;
   updatedAt: string;
 };
@@ -15,6 +17,7 @@ export type LocalDraftSummary = {
 type LocalDraftDoc = {
   id: string;
   title: string;
+  icon?: WorkflowIcon;
   createdAt: string;
   updatedAt: string;
   nodes: AppNode[];
@@ -62,6 +65,11 @@ const getDraftTitle = (nodes: AppNode[]) => {
   return raw || 'Untitled Draft';
 };
 
+const getDraftIcon = (nodes: AppNode[]): WorkflowIcon | undefined => {
+  const root = nodes.find(node => node.type === 'projectNode');
+  return root?.data?.workflowIcon;
+};
+
 const nowIso = () => new Date().toISOString();
 
 export const createLocalDraft = (initial?: { nodes: AppNode[]; edges: Edge[] }) => {
@@ -72,6 +80,7 @@ export const createLocalDraft = (initial?: { nodes: AppNode[]; edges: Edge[] }) 
   const doc: LocalDraftDoc = {
     id,
     title: getDraftTitle(nodes),
+    icon: getDraftIcon(nodes),
     createdAt,
     updatedAt: createdAt,
     nodes,
@@ -79,7 +88,7 @@ export const createLocalDraft = (initial?: { nodes: AppNode[]; edges: Edge[] }) 
   };
   window.localStorage.setItem(keyOf(id), JSON.stringify(doc));
   const index = readIndex();
-  writeIndex([{ id, title: doc.title, createdAt, updatedAt: createdAt }, ...index]);
+  writeIndex([{ id, title: doc.title, icon: doc.icon, createdAt, updatedAt: createdAt }, ...index]);
   return id;
 };
 
@@ -88,9 +97,11 @@ export const saveLocalDraft = (id: string, payload: { nodes: AppNode[]; edges: E
   const createdAt = existing?.createdAt ?? nowIso();
   const updatedAt = nowIso();
   const title = getDraftTitle(payload.nodes);
+  const icon = getDraftIcon(payload.nodes);
   const doc: LocalDraftDoc = {
     id,
     title,
+    icon,
     createdAt,
     updatedAt,
     nodes: payload.nodes,
@@ -100,7 +111,7 @@ export const saveLocalDraft = (id: string, payload: { nodes: AppNode[]; edges: E
 
   const index = readIndex();
   const next = index.filter(item => item.id !== id);
-  writeIndex([{ id, title, createdAt, updatedAt }, ...next]);
+  writeIndex([{ id, title, icon, createdAt, updatedAt }, ...next]);
 };
 
 export const loadLocalDraft = (id: string): LocalDraftDoc | null => {

@@ -140,7 +140,7 @@ const MissingLanguageBadge = ({ language }: { language: SupportedLanguage }) => 
 
 const attachRuntimePlan = (
   draft: CommunityNodeTemplate,
-  params: { nodes: AppNode[]; edges: Edge[]; bridgeNodeId?: string | null; user?: AppUser | null; templates?: CommunityNodeTemplate[] }
+  params: { nodes: AppNode[]; edges: Edge[]; bridgeNodeId?: string | null; builderNodeId?: string; user?: AppUser | null; templates?: CommunityNodeTemplate[] }
 ): CommunityNodeTemplate => {
   if (!params.bridgeNodeId) return draft;
   const interfaceSchema = getTemplateInterfaceSchema(draft);
@@ -148,6 +148,7 @@ const attachRuntimePlan = (
     nodes: params.nodes,
     edges: params.edges,
     bridgeNodeId: params.bridgeNodeId,
+    builderNodeId: params.builderNodeId,
     interfaceSchema,
     controlPorts: draft.controlPorts,
     elementBindings: draft.elementBindings,
@@ -162,6 +163,7 @@ const attachRuntimePlan = (
       sourceNodes: params.nodes,
       sourceEdges: params.edges,
       bridgeNodeId: params.bridgeNodeId,
+      builderNodeId: params.builderNodeId,
       interfaceSchema,
       controlPorts: draft.controlPorts,
       elementBindings: draft.elementBindings,
@@ -576,7 +578,10 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
         nodes,
         edges,
         bridgeNodeId,
+        builderNodeId: id,
         interfaceSchema,
+        controlPorts: packagedBase.controlPorts,
+        elementBindings: packagedBase.elementBindings,
       }, {
         author: effectiveUser,
         templates: useStore.getState().communityTemplates,
@@ -594,6 +599,7 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
           nodes,
           edges,
           bridgeNodeId,
+          builderNodeId: id,
           user: effectiveUser,
           templates: useStore.getState().communityTemplates,
         }),
@@ -681,6 +687,7 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
         author: effectiveUser,
         compiledArtifact: packaged.compiledArtifact,
         publishKind: 'node',
+        workflowIcon: data.workflowIcon,
         ...updateMetadata,
       });
 
@@ -826,6 +833,7 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
         edges: state.edges,
         author: effectiveUser,
         publishKind: 'workflow',
+        workflowIcon: data.workflowIcon,
         ...updateMetadata,
       });
 
@@ -941,11 +949,18 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
   }, [builderDraft, localVisibility, syncDraftWithLocalMetadata, syncLinkedTemplateNode, updateProjectData]);
 
   React.useEffect(() => {
-    const existingHandles = data.handles || [];
-    if (existingHandles.length > 0) {
-      updateNodeData(id, { handles: [] }, { skipGraphEval: true });
+    const controlHandles = (builderDraft?.controlPorts || []).map((port, index) => ({
+      id: port.id,
+      type: 'input' as const,
+      position: 'left' as const,
+      offset: Math.max(16, Math.min(84, 24 + index * 18)),
+      label: getLocalizedText(port.labelI18n, language, port.label),
+    }));
+
+    if (JSON.stringify(data.handles || []) !== JSON.stringify(controlHandles)) {
+      updateNodeData(id, { handles: controlHandles }, { skipGraphEval: true });
     }
-  }, [data.handles, id, updateNodeData]);
+  }, [builderDraft?.controlPorts, data.handles, id, language, updateNodeData]);
 
   React.useEffect(() => {
     if (data.label !== localName && document.activeElement?.className !== 'project-name-input') {

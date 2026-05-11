@@ -21,6 +21,7 @@ import {
     getWorkflowVersionBlueprintFromSupabase,
     listWorkflowVersions,
     requestExtraWorkflowReviewInSupabase,
+    requestWorkflowReviewInSupabase,
     reviewWorkflowInSupabase,
     type WorkflowVersionSummary,
 } from '../integrations/supabase/workflows';
@@ -123,6 +124,9 @@ export function Sidebar() {
     const expertReviewCount = projectRoot?.data.expertReviewCount ?? 0;
     const requiredContributorReviews = projectRoot?.data.requiredContributorReviews ?? 3;
     const requiredExpertReviews = projectRoot?.data.requiredExpertReviews ?? 0;
+    const reviewRequired = Boolean(projectRoot?.data.reviewRequired);
+    const hasExtraReviewRequest = (projectRoot?.data.extraContributorReviews ?? 0) > 0 || (projectRoot?.data.extraExpertReviews ?? 0) > 0;
+    const isWorkflowReviewRequested = Boolean(reviewRequired || hasExtraReviewRequest);
     const reviewedByMe = Boolean(projectRoot?.data.reviewedByMe);
     const shouldShowReviewedState = Boolean(isContributor && (reviewedByMe || isCurrentUserOwner));
     const isForkablePublicWorkflow = Boolean(projectRoot?.data.readOnlyPreview && !isCurrentUserOwner);
@@ -159,12 +163,22 @@ export function Sidebar() {
         isContributor &&
         !isCurrentUserOwner &&
         reviewStatus === 'unreviewed' &&
+        isWorkflowReviewRequested &&
         (
             isExpertReviewer && requiredExpertReviews > 0
                 ? expertReviewCount < requiredExpertReviews
                 : contributorReviewCount < requiredContributorReviews
         ) &&
         !reviewedByMe
+    );
+    const canRequestWorkflowReview = Boolean(
+        supabaseWorkflowId &&
+        projectRoot &&
+        user &&
+        isCurrentUserOwner &&
+        reviewStatus === 'unreviewed' &&
+        !isWorkflowReviewRequested &&
+        projectRoot.data.visibility !== 'private'
     );
     const reviewDisabledReason = (() => {
         if (!user) return '請先登入後審核。';
@@ -490,6 +504,51 @@ export function Sidebar() {
         }
     };
 
+    const handleRequestWorkflowReview = async () => {
+        if (!supabaseWorkflowId || !projectRoot || !canRequestWorkflowReview) return;
+        const reason = window.prompt('審核需求說明（可留空）：', '希望進入優良列表，請協助審核。') ?? undefined;
+        setIsSyncing(true);
+        try {
+            const result = await requestWorkflowReviewInSupabase(supabaseWorkflowId, reason);
+            updateNodeData(projectRoot.id, {
+                reviewStatus: result.reviewStatus,
+                reviewCount: result.reviewCount,
+                reviewRequired: result.reviewRequired,
+                reviewWarning: result.reviewWarning,
+                requiredContributorReviews: result.requiredContributorReviews,
+                requiredExpertReviews: result.requiredExpertReviews,
+                contributorReviewCount: result.contributorReviewCount,
+                expertReviewCount: result.expertReviewCount,
+                extraContributorReviews: result.extraContributorReviews,
+                extraExpertReviews: result.extraExpertReviews,
+                reviewedByMe: result.reviewedByMe,
+                publishStatus: '已送出審核需求，通過後會進入優良列表。',
+            }, { skipGraphEval: true });
+            setWorkflowVersions((versions) => versions.map(version => (
+                version.id === result.workflowVersionId
+                    ? {
+                        ...version,
+                        reviewStatus: result.reviewStatus,
+                        reviewCount: result.reviewCount,
+                        reviewRequired: result.reviewRequired,
+                        reviewWarning: result.reviewWarning,
+                        requiredContributorReviews: result.requiredContributorReviews,
+                        requiredExpertReviews: result.requiredExpertReviews,
+                        contributorReviewCount: result.contributorReviewCount,
+                        expertReviewCount: result.expertReviewCount,
+                        extraContributorReviews: result.extraContributorReviews,
+                        extraExpertReviews: result.extraExpertReviews,
+                    }
+                    : version
+            )));
+        } catch (error) {
+            console.error('Failed to request workflow review', error);
+            alert(getDisplayErrorMessage(error, '送出審核需求失敗。'));
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
     const applyWorkflowReviewResult = React.useCallback((result: Awaited<ReturnType<typeof reviewWorkflowInSupabase>>) => {
         if (!projectRoot) return;
         updateNodeData(projectRoot.id, {
@@ -587,7 +646,7 @@ export function Sidebar() {
         return () => {
             cancelled = true;
         };
-    }, [setUser, supabaseWorkflowId, user]);
+    }, [setUser, supabaseWorkflowId, user?.id, user?.role]);
 
     const handleOpenVersion = async (version: WorkflowVersionSummary) => {
         setIsSyncing(true);
@@ -784,7 +843,17 @@ export function Sidebar() {
                             <Icons.Heart /> {publicWorkflowLike.liked ? 'Liked' : 'Like'} · {publicWorkflowLike.likeCount}
                         </button>
                     )}
-                    {supabaseWorkflowId && reviewStatus === 'unreviewed' && (
+                    {canRequestWorkflowReview && (
+                        <button
+                            className="sidebar-btn review"
+                            onClick={handleRequestWorkflowReview}
+                            disabled={isSyncing}
+                            title="送出審核需求；通過後會進入優良列表"
+                        >
+                            <Icons.Check /> 要求審核
+                        </button>
+                    )}
+                    {supabaseWorkflowId && reviewStatus === 'unreviewed' && isWorkflowReviewRequested && (
                         <div className="workflow-review-panel">
                             <div className="workflow-review-status">
                                 未審核 <span>{reviewRequirementLabel}</span>

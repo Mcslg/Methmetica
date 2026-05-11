@@ -29,6 +29,46 @@ const withSize = (props?: IconProps): IconProps => {
 };
 
 export const Icons = {
+  Workflow: (props?: IconProps) => (
+    <svg {...iconProps} {...withSize(props)}>
+      <rect x="3" y="4" width="6" height="6" rx="2" />
+      <rect x="15" y="4" width="6" height="6" rx="2" />
+      <rect x="9" y="15" width="6" height="6" rx="2" />
+      <path d="M9 7h6" />
+      <path d="M18 10v2a3 3 0 0 1-3 3" />
+      <path d="M6 10v2a3 3 0 0 0 3 3" />
+    </svg>
+  ),
+  Blocks: (props?: IconProps) => (
+    <svg {...iconProps} {...withSize(props)}>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+    </svg>
+  ),
+  Calculator: (props?: IconProps) => (
+    <svg {...iconProps} {...withSize(props)}>
+      <rect x="4" y="2" width="16" height="20" rx="2" />
+      <line x1="8" y1="6" x2="16" y2="6" />
+      <line x1="8" y1="10" x2="8" y2="10" />
+      <line x1="12" y1="10" x2="12" y2="10" />
+      <line x1="16" y1="10" x2="16" y2="10" />
+      <line x1="8" y1="14" x2="8" y2="14" />
+      <line x1="12" y1="14" x2="12" y2="14" />
+      <line x1="16" y1="14" x2="16" y2="18" />
+      <line x1="8" y1="18" x2="12" y2="18" />
+    </svg>
+  ),
+  Sparkles: (props?: IconProps) => (
+    <svg {...iconProps} {...withSize(props)}>
+      <path d="m12 3-1.9 5.8L4 11l6.1 2.2L12 19l1.9-5.8L20 11l-6.1-2.2L12 3Z" />
+      <path d="M5 3v4" />
+      <path d="M3 5h4" />
+      <path d="M19 17v4" />
+      <path d="M17 19h4" />
+    </svg>
+  ),
   Graph: (props?: IconProps) => (
     <svg {...iconProps} {...withSize(props)}>
       <path d="M3 3v18h18" />
@@ -209,6 +249,11 @@ export const Icons = {
   Bookmark: (props?: IconProps) => (
     <svg {...iconProps} {...withSize(props)}>
       <path d="M19 21 12 17 5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16Z" />
+    </svg>
+  ),
+  Star: (props?: IconProps) => (
+    <svg {...iconProps} {...withSize(props)}>
+      <polygon points="12 2 15 8.5 22 9.3 16.8 14 18.2 21 12 17.4 5.8 21 7.2 14 2 9.3 9 8.5 12 2" />
     </svg>
   ),
   Fork: (props?: IconProps) => (
