@@ -158,11 +158,57 @@ const buildInterfaceSchemaFromBlocks = (draft: CommunityNodeTemplate): TemplateI
   return { inputs, outputs };
 };
 
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const textLength = (...values: Array<string | undefined>) => (
+  values.reduce((max, value) => Math.max(max, (value || '').trim().length), 0)
+);
+
+const localizedTextLength = (value?: Record<string, string>) => (
+  value ? textLength(...Object.values(value)) : 0
+);
+
+const estimateTemplateSize = (
+  draft: CommunityNodeTemplate,
+  interfaceSchema: TemplateInterfaceSchema
+) => {
+  const visibleBlocks = draft.builderBlocks.filter(block => block.kind !== 'input' && block.kind !== 'output');
+  const handleRows = Math.max(interfaceSchema.inputs.length, interfaceSchema.outputs.length);
+  const longestText = visibleBlocks.reduce((max, block) => Math.max(
+    max,
+    textLength(block.label, block.content, block.placeholder),
+    localizedTextLength(block.labelI18n),
+    localizedTextLength(block.contentI18n),
+    localizedTextLength(block.placeholderI18n)
+  ), textLength(draft.title, draft.summary));
+
+  const width = clamp(Math.round(280 + Math.max(0, longestText - 34) * 2.3), 280, 460);
+  const contentHeight = visibleBlocks.reduce((total, block) => {
+    const contentChars = Math.max(
+      textLength(block.content, block.placeholder),
+      localizedTextLength(block.contentI18n),
+      localizedTextLength(block.placeholderI18n)
+    );
+    if (block.kind === 'math') return total + 58 + Math.ceil(contentChars / 42) * 16;
+    if (block.kind === 'toggle') return total + 54 + Math.ceil(contentChars / 58) * 15;
+    return total + 28 + Math.ceil(contentChars / 62) * 18;
+  }, 0);
+
+  const height = clamp(
+    Math.round(92 + contentHeight + Math.max(0, visibleBlocks.length - 1) * 10 + Math.max(0, handleRows - 2) * 22),
+    150,
+    560
+  );
+
+  return { width, height };
+};
+
 export const buildTemplateFromBlocks = (draft: CommunityNodeTemplate): CommunityNodeTemplate => {
   const derivedSchema = buildInterfaceSchemaFromBlocks(draft);
   const interfaceSchema = draft.interfaceSchema ?? derivedSchema;
   const inputs = interfaceSchema.inputs.map(portToHandleSpec);
   const outputs = interfaceSchema.outputs.map(portToHandleSpec);
+  const size = estimateTemplateSize(draft, interfaceSchema);
 
   return {
     ...draft,
@@ -171,6 +217,7 @@ export const buildTemplateFromBlocks = (draft: CommunityNodeTemplate): Community
     fields: [],
     inputs,
     outputs,
+    size,
   };
 };
 

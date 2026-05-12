@@ -438,7 +438,8 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
         type: 'communityTemplateNode',
         position: linkedPosition,
         width: packagedDraft.size.width,
-        style: { width: packagedDraft.size.width },
+        height: packagedDraft.size.height,
+        style: { width: packagedDraft.size.width, height: packagedDraft.size.height },
         selected: true,
         data: linkedNodeData,
       } as AppNode);
@@ -465,6 +466,23 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
 
     if (currentLinkedDataSignature !== linkedDataSignature) {
       updateNodeData(linkedTemplateNode.id, linkedNodeData as Partial<NodeData>, { skipGraphEval: true });
+    }
+
+    const nextWidth = packagedDraft.size.width;
+    const nextHeight = packagedDraft.size.height;
+    if (linkedTemplateNode.width !== nextWidth || linkedTemplateNode.height !== nextHeight) {
+      useStore.setState((current) => ({
+        nodes: current.nodes.map(node => (
+          node.id === linkedTemplateNode.id
+            ? {
+                ...node,
+                width: nextWidth,
+                height: nextHeight,
+                style: { ...node.style, width: nextWidth, height: nextHeight },
+              }
+            : node
+        )),
+      }));
     }
   }, [addNode, id, language, linkedTemplateNodeId, localizedTemplateSummary, localizedTemplateTitle, updateNodeData, updateProjectData]);
 
