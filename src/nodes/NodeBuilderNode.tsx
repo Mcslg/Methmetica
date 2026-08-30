@@ -69,6 +69,9 @@ const CHANGE_TYPE_OPTIONS: Array<{
 const getChangeTypeOption = (changeType?: WorkflowChangeType) => (
   CHANGE_TYPE_OPTIONS.find(option => option.value === changeType) ?? CHANGE_TYPE_OPTIONS[0]
 );
+const getPublishVisibility = (visibility: WorkflowVisibility): WorkflowVisibility => (
+  visibility === 'core' ? 'core' : 'public'
+);
 type PublishUpdateMetadata = {
   changeType?: WorkflowChangeType;
   updatePolicy?: 'none' | 'manual' | 'auto';
@@ -535,6 +538,7 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
 
   const handlePublish = async (draft: CommunityNodeTemplate, publishOptions?: PublishUpdateMetadata) => {
     setIsPublishing(true);
+    const publishVisibility = getPublishVisibility(localVisibility);
     const syncedDraft = syncDraftWithWorkflowMetadata(draft, {
       title: (localName || data.label || draft.title).trim() || draft.title,
       summary: localDesc || data.description || draft.summary,
@@ -544,7 +548,7 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
       ...syncedDraft,
       version: syncedDraft.version || '1.0.0',
       discovery: 'search-only',
-      visibility: localVisibility,
+      visibility: publishVisibility,
     }));
     if (validationError) {
       updateProjectData({
@@ -560,9 +564,9 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
         ...syncedDraft,
         version: syncedDraft.version || '1.0.0',
         discovery: 'search-only',
-        visibility: localVisibility,
+        visibility: publishVisibility,
       });
-      if (localVisibility !== 'private' && !user) {
+      if (!user) {
         updateProjectData({
           publishStatus: '先登入，才能把這條工作流發布到公開社群。',
         });
@@ -577,7 +581,7 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
           setUser(effectiveUser);
         }
 
-        if (localVisibility === 'core' && !['trusted_editor', 'admin'].includes(fetchedRole)) {
+        if (publishVisibility === 'core' && !['trusted_editor', 'admin'].includes(fetchedRole)) {
           updateProjectData({
             publishStatus: '只有 trusted_editor 或 admin 能發布 core workflow。先改成 public，或提升身份後再發布。',
           });
@@ -624,28 +628,6 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
         compiledArtifact: compileResult.artifact,
       };
 
-      if (localVisibility === 'private') {
-        const localTemplate = {
-          ...packaged,
-          relatedWorkflowIds: [...(packaged.relatedWorkflowIds || [])],
-        };
-
-        upsertCommunityTemplate(localTemplate);
-        setLocalBuilderDraft(localTemplate);
-        updateProjectData({
-          label: localTemplate.title,
-          description: localTemplate.summary,
-          tags: localTemplate.tags,
-          visibility: localVisibility,
-          builderDraft: localTemplate,
-          hasPublishedTemplate: true,
-          publishStatus: `已在本機更新 private 節點 "${localTemplate.title}"，不會寫入資料庫。`,
-        });
-        syncLinkedTemplateNode(localTemplate, localVisibility);
-        setTimeout(() => markCurrentGraphSaved(), 0);
-        return;
-      }
-
       if (!effectiveUser) {
         updateProjectData({
           publishStatus: '先登入，才能把這條工作流發布到公開社群。',
@@ -662,16 +644,16 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
                 label: packaged.title,
                 description: packaged.summary,
                 tags: packaged.tags,
-                visibility: localVisibility,
+                visibility: publishVisibility,
                 builderDraft: packaged,
                 hasPublishedTemplate: true,
                 supabaseWorkflowId: data.supabaseWorkflowId,
                 reviewStatus: 'unreviewed' as const,
                 reviewCount: 0,
-                reviewRequired: localVisibility === 'core',
-                reviewWarning: localVisibility !== 'core',
-                requiredContributorReviews: localVisibility === 'core' ? 2 : 3,
-                requiredExpertReviews: localVisibility === 'core' ? 1 : 0,
+                reviewRequired: publishVisibility === 'core',
+                reviewWarning: publishVisibility !== 'core',
+                requiredContributorReviews: publishVisibility === 'core' ? 2 : 3,
+                requiredExpertReviews: publishVisibility === 'core' ? 1 : 0,
                 contributorReviewCount: 0,
                 expertReviewCount: 0,
                 extraContributorReviews: 0,
@@ -699,7 +681,7 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
         title: packaged.title,
         description: packaged.summary,
         tags: packaged.tags,
-        visibility: localVisibility,
+        visibility: publishVisibility,
         nodes: publishedNodes,
         edges,
         author: effectiveUser,
@@ -727,7 +709,7 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
         sourceWorkflowId: blueprint.card.id,
         sourceWorkflowVersionId: blueprint.meta?.workflowVersionId,
         sourceWorkflowSlug: blueprint.card.slug,
-        workflowVisibility: localVisibility,
+        workflowVisibility: publishVisibility,
       });
 
       upsertCommunityTemplate(publishedTemplate);
@@ -736,16 +718,16 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
         label: publishedTemplate.title,
         description: publishedTemplate.summary,
         tags: publishedTemplate.tags,
-        visibility: localVisibility,
+        visibility: publishVisibility,
         builderDraft: publishedTemplate,
         hasPublishedTemplate: true,
         supabaseWorkflowId: blueprint.card.id,
         reviewStatus: blueprint.meta?.reviewStatus ?? 'unreviewed',
         reviewCount: blueprint.meta?.reviewCount ?? 0,
-        reviewRequired: blueprint.meta?.reviewRequired ?? (localVisibility === 'core'),
-        reviewWarning: blueprint.meta?.reviewWarning ?? (localVisibility !== 'core'),
-        requiredContributorReviews: blueprint.meta?.requiredContributorReviews ?? (localVisibility === 'core' ? 2 : 3),
-        requiredExpertReviews: blueprint.meta?.requiredExpertReviews ?? (localVisibility === 'core' ? 1 : 0),
+        reviewRequired: blueprint.meta?.reviewRequired ?? (publishVisibility === 'core'),
+        reviewWarning: blueprint.meta?.reviewWarning ?? (publishVisibility !== 'core'),
+        requiredContributorReviews: blueprint.meta?.requiredContributorReviews ?? (publishVisibility === 'core' ? 2 : 3),
+        requiredExpertReviews: blueprint.meta?.requiredExpertReviews ?? (publishVisibility === 'core' ? 1 : 0),
         contributorReviewCount: blueprint.meta?.contributorReviewCount ?? 0,
         expertReviewCount: blueprint.meta?.expertReviewCount ?? 0,
         extraContributorReviews: blueprint.meta?.extraContributorReviews ?? 0,
@@ -755,12 +737,15 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
         updatePolicy: blueprint.meta?.updatePolicy ?? updateMetadata.updatePolicy,
         warningMessage: blueprint.meta?.warningMessage ?? updateMetadata.warningMessage,
         supersedesVersionId: blueprint.meta?.supersedesVersionId,
-        publishStatus: localVisibility === 'core'
+        publishStatus: publishVisibility === 'core'
           ? `已送出核心節點 "${publishedTemplate.title}"，需要 2 位貢獻者與 1 位專家審核後才會開放。`
           : `已發布節點 "${publishedTemplate.title}"，目前未驗證；3 位貢獻者審核後會標記 verified。`,
       });
+      window.dispatchEvent(new CustomEvent('methmetica:public-workflows-changed', {
+        detail: { workflowId: blueprint.card.id, action: 'published' },
+      }));
       clearPublicWorkflowEdit(blueprint.card.id, effectiveUser.id);
-      syncLinkedTemplateNode(publishedTemplate, localVisibility);
+      syncLinkedTemplateNode(publishedTemplate, publishVisibility);
       setTimeout(() => markCurrentGraphSaved(), 0);
     } catch (error) {
       console.error('Failed to publish workflow', error);
@@ -777,6 +762,7 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
     setIsPublishing(true);
     try {
       const updateMetadata = getPublishUpdateMetadata(publishOptions);
+      const publishVisibility = getPublishVisibility(localVisibility);
       if (!user) {
         updateProjectData({
           publishStatus: '先登入，才能發布 workflow。',
@@ -791,7 +777,7 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
         setUser(effectiveUser);
       }
 
-      if (localVisibility === 'core' && !['trusted_editor', 'admin'].includes(fetchedRole)) {
+      if (publishVisibility === 'core' && !['trusted_editor', 'admin'].includes(fetchedRole)) {
         updateProjectData({
           publishStatus: '只有 trusted_editor 或 admin 能發布 core workflow。先改成 public，或提升身份後再發布。',
         });
@@ -819,14 +805,14 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
                 label: title,
                 description,
                 tags,
-                visibility: localVisibility,
+                visibility: publishVisibility,
                 supabaseWorkflowId: data.supabaseWorkflowId,
                 reviewStatus: 'unreviewed' as const,
                 reviewCount: 0,
-                reviewRequired: localVisibility === 'core',
+                reviewRequired: publishVisibility === 'core',
                 reviewWarning: false,
-                requiredContributorReviews: localVisibility === 'core' ? 1 : 2,
-                requiredExpertReviews: localVisibility === 'core' ? 1 : 0,
+                requiredContributorReviews: publishVisibility === 'core' ? 1 : 2,
+                requiredExpertReviews: publishVisibility === 'core' ? 1 : 0,
                 contributorReviewCount: 0,
                 expertReviewCount: 0,
                 extraContributorReviews: 0,
@@ -846,7 +832,7 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
         title,
         description,
         tags,
-        visibility: localVisibility,
+        visibility: publishVisibility,
         nodes: publishedNodes,
         edges: state.edges,
         author: effectiveUser,
@@ -859,14 +845,14 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
         label: title,
         description,
         tags,
-        visibility: localVisibility,
+        visibility: publishVisibility,
         supabaseWorkflowId: blueprint.card.id,
         reviewStatus: blueprint.meta?.reviewStatus ?? 'unreviewed',
         reviewCount: blueprint.meta?.reviewCount ?? 0,
-        reviewRequired: blueprint.meta?.reviewRequired ?? (localVisibility === 'core'),
+        reviewRequired: blueprint.meta?.reviewRequired ?? (publishVisibility === 'core'),
         reviewWarning: blueprint.meta?.reviewWarning ?? false,
-        requiredContributorReviews: blueprint.meta?.requiredContributorReviews ?? (localVisibility === 'core' ? 1 : 2),
-        requiredExpertReviews: blueprint.meta?.requiredExpertReviews ?? (localVisibility === 'core' ? 1 : 0),
+        requiredContributorReviews: blueprint.meta?.requiredContributorReviews ?? (publishVisibility === 'core' ? 1 : 2),
+        requiredExpertReviews: blueprint.meta?.requiredExpertReviews ?? (publishVisibility === 'core' ? 1 : 0),
         contributorReviewCount: blueprint.meta?.contributorReviewCount ?? 0,
         expertReviewCount: blueprint.meta?.expertReviewCount ?? 0,
         extraContributorReviews: blueprint.meta?.extraContributorReviews ?? 0,
@@ -877,10 +863,13 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
         updateSummary: blueprint.meta?.updateSummary ?? updateMetadata.updateSummary,
         warningMessage: blueprint.meta?.warningMessage ?? updateMetadata.warningMessage,
         supersedesVersionId: blueprint.meta?.supersedesVersionId,
-        publishStatus: localVisibility === 'core'
+        publishStatus: publishVisibility === 'core'
           ? `已送出 workflow "${title}"，核心 workflow 需要 1 位貢獻者與 1 位專家審核後才會開放。`
           : `已發布 workflow "${title}"，目前未驗證；2 位貢獻者審核後會標記 verified。`,
       });
+      window.dispatchEvent(new CustomEvent('methmetica:public-workflows-changed', {
+        detail: { workflowId: blueprint.card.id, action: 'published' },
+      }));
       clearPublicWorkflowEdit(blueprint.card.id, effectiveUser.id);
       setTimeout(() => markCurrentGraphSaved(), 0);
     } catch (error) {

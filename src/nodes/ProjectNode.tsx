@@ -4,9 +4,12 @@ import { Icons } from '../components/Icons';
 import { NodeFrame } from '../components/NodeFrame';
 import useStore, { type AppNode } from '../store/useStore';
 import { useLanguage } from '../contexts/LanguageContext';
-import type { CommunityNodeTemplate, WorkflowIcon } from '../community/types';
+import type { CommunityNodeTemplate, WorkflowChangeType, WorkflowIcon, WorkflowVisibility } from '../community/types';
 import { makeInitialDraft } from '../community/templateDraft';
 import { DEFAULT_WORKFLOW_ICON, WORKFLOW_ICON_OPTIONS, normalizeWorkflowIcon, renderWorkflowIconVisual } from '../utils/workflowIcons';
+import { publishWorkflowToSupabase } from '../integrations/supabase/workflows';
+import { getUserRole } from '../integrations/supabase/auth';
+import { clearPublicWorkflowEdit } from '../utils/localDraftService';
 
 const parseTags = (value: string) => value
   .split(',')
@@ -14,6 +17,14 @@ const parseTags = (value: string) => value
   .filter(Boolean);
 
 const INVISIBLE_HANDLE_STYLE = { opacity: 0 };
+const getPublishVisibility = (visibility: unknown): WorkflowVisibility => (visibility === 'core' ? 'core' : 'public');
+
+type PublishUpdateMetadata = {
+  changeType?: WorkflowChangeType;
+  updatePolicy?: 'none' | 'manual' | 'auto';
+  updateSummary?: string;
+  warningMessage?: string;
+};
 
 export const ProjectNode = React.memo(function ProjectNode({ id, data, selected }: NodeProps<AppNode>) {
   const { setViewport, getNodes } = useReactFlow();
@@ -21,6 +32,9 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
   const updateNodeData = useStore(state => state.updateNodeData);
   const addNode = useStore(state => state.addNode);
   const activeFileId = useStore(state => state.activeFileId);
+  const user = useStore(state => state.user);
+  const setUser = useStore(state => state.setUser);
+  const markCurrentGraphSaved = useStore(state => state.markCurrentGraphSaved);
 
   const [localName, setLocalName] = React.useState(data.label || '');
   const [localDesc, setLocalDesc] = React.useState(data.description || '');
@@ -28,6 +42,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
   const [localWorkflowIcon, setLocalWorkflowIcon] = React.useState(normalizeWorkflowIcon(data.workflowIcon));
   const [isIconPickerOpen, setIsIconPickerOpen] = React.useState(false);
   const [isExpanded, setIsExpanded] = React.useState(true);
+  const [isPublishing, setIsPublishing] = React.useState(false);
 
   React.useEffect(() => {
     if (data.label !== localName && document.activeElement?.className !== 'project-name-input') {
@@ -143,6 +158,161 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     }, { skipGraphEval: true });
     setTimeout(() => focusNodeById(builderNodeId), 0);
   };
+
+  const handlePublishWorkflowOnly = React.useCallback(async (publishOptions?: PublishUpdateMetadata) => {
+    setIsPublishing(true);
+    try {
+      if (!user) {
+        updateNodeData(id, { publishStatus: '先登入，才能發布 workflow。' }, { skipGraphEval: true });
+        return;
+      }
+
+      let effectiveUser = user;
+      const fetchedRole = await getUserRole(user.id);
+      if (fetchedRole !== user.role) {
+        effectiveUser = { ...user, role: fetchedRole };
+        setUser(effectiveUser);
+      }
+
+      const visibility = getPublishVisibility(data.visibility);
+      if (visibility === 'core' && !['trusted_editor', 'admin'].includes(fetchedRole)) {
+        updateNodeData(id, {
+          publishStatus: '只有 trusted_editor 或 admin 能發布 core workflow。先改成 public，或提升身份後再發布。',
+        }, { skipGraphEval: true });
+        return;
+      }
+
+      const state = useStore.getState();
+      const hasCodeNode = state.nodes.some(node => node.type === 'codeNode');
+      if (hasCodeNode && fetchedRole !== 'admin') {
+        updateNodeData(id, { publishStatus: '只有 admin 可發布含 CodeNode 的 workflow。' }, { skipGraphEval: true });
+        return;
+      }
+
+      const title = (localName || data.label || 'Untitled Workflow').trim() || 'Untitled Workflow';
+      const description = localDesc || data.description || '';
+      const tags = parseTags(localTags);
+      const updateMetadata = {
+        changeType: publishOptions?.changeType ?? 'feature',
+        updatePolicy: publishOptions?.updatePolicy ?? 'manual',
+        updateSummary: publishOptions?.updateSummary,
+        warningMessage: publishOptions?.warningMessage,
+      };
+
+      const publishedNodes = state.nodes.map(node => (
+        node.id === id
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                label: title,
+                description,
+                tags,
+                visibility,
+                workflowIcon: localWorkflowIcon,
+                supabaseWorkflowId: data.supabaseWorkflowId,
+                reviewStatus: 'unreviewed' as const,
+                reviewCount: 0,
+                reviewRequired: visibility === 'core',
+                reviewWarning: false,
+                requiredContributorReviews: visibility === 'core' ? 1 : 2,
+                requiredExpertReviews: visibility === 'core' ? 1 : 0,
+                contributorReviewCount: 0,
+                expertReviewCount: 0,
+                extraContributorReviews: 0,
+                extraExpertReviews: 0,
+                reviewedByMe: false,
+                changeType: updateMetadata.changeType,
+                updatePolicy: updateMetadata.updatePolicy,
+                updateSummary: updateMetadata.updateSummary,
+                warningMessage: updateMetadata.warningMessage,
+              },
+            }
+          : node
+      ));
+
+      const blueprint = await publishWorkflowToSupabase({
+        id: typeof data.supabaseWorkflowId === 'string' ? data.supabaseWorkflowId : undefined,
+        title,
+        description,
+        tags,
+        visibility,
+        nodes: publishedNodes,
+        edges: state.edges,
+        author: effectiveUser,
+        publishKind: 'workflow',
+        workflowIcon: localWorkflowIcon,
+        ...updateMetadata,
+      });
+
+      updateNodeData(id, {
+        label: title,
+        description,
+        tags,
+        visibility,
+        workflowIcon: localWorkflowIcon,
+        supabaseWorkflowId: blueprint.card.id,
+        hasPublishedTemplate: false,
+        reviewStatus: blueprint.meta?.reviewStatus ?? 'unreviewed',
+        reviewCount: blueprint.meta?.reviewCount ?? 0,
+        reviewRequired: blueprint.meta?.reviewRequired ?? (visibility === 'core'),
+        reviewWarning: blueprint.meta?.reviewWarning ?? false,
+        requiredContributorReviews: blueprint.meta?.requiredContributorReviews ?? (visibility === 'core' ? 1 : 2),
+        requiredExpertReviews: blueprint.meta?.requiredExpertReviews ?? (visibility === 'core' ? 1 : 0),
+        contributorReviewCount: blueprint.meta?.contributorReviewCount ?? 0,
+        expertReviewCount: blueprint.meta?.expertReviewCount ?? 0,
+        extraContributorReviews: blueprint.meta?.extraContributorReviews ?? 0,
+        extraExpertReviews: blueprint.meta?.extraExpertReviews ?? 0,
+        reviewedByMe: false,
+        changeType: blueprint.meta?.changeType ?? updateMetadata.changeType,
+        updatePolicy: blueprint.meta?.updatePolicy ?? updateMetadata.updatePolicy,
+        updateSummary: blueprint.meta?.updateSummary ?? updateMetadata.updateSummary,
+        warningMessage: blueprint.meta?.warningMessage ?? updateMetadata.warningMessage,
+        supersedesVersionId: blueprint.meta?.supersedesVersionId,
+        publishStatus: visibility === 'core'
+          ? `已送出 workflow "${title}"，核心 workflow 需要 1 位貢獻者與 1 位專家審核後才會開放。`
+          : `已發布 workflow "${title}"，目前未驗證；2 位貢獻者審核後會標記 verified。`,
+      }, { skipGraphEval: true });
+      window.dispatchEvent(new CustomEvent('methmetica:public-workflows-changed', {
+        detail: { workflowId: blueprint.card.id, action: 'published' },
+      }));
+      clearPublicWorkflowEdit(blueprint.card.id, effectiveUser.id);
+      setTimeout(() => markCurrentGraphSaved(), 0);
+    } catch (error) {
+      console.error('Failed to publish workflow only from ProjectNode', error);
+      updateNodeData(id, {
+        publishStatus: `發布失敗：${error instanceof Error ? error.message : '發布失敗'}`,
+      }, { skipGraphEval: true });
+    } finally {
+      setIsPublishing(false);
+    }
+  }, [
+    data.description,
+    data.label,
+    data.supabaseWorkflowId,
+    data.visibility,
+    id,
+    localDesc,
+    localName,
+    localTags,
+    localWorkflowIcon,
+    markCurrentGraphSaved,
+    setUser,
+    updateNodeData,
+    user,
+  ]);
+
+  React.useEffect(() => {
+    const handleSidebarPublishWorkflow = (event: Event) => {
+      const detail = (event as CustomEvent<PublishUpdateMetadata & { projectNodeId?: string }>).detail;
+      if (detail?.projectNodeId && detail.projectNodeId !== id) return;
+      if (isPublishing || data.builderDraft) return;
+      void handlePublishWorkflowOnly(detail);
+    };
+
+    window.addEventListener('publish-project-workflow', handleSidebarPublishWorkflow);
+    return () => window.removeEventListener('publish-project-workflow', handleSidebarPublishWorkflow);
+  }, [data.builderDraft, handlePublishWorkflowOnly, id, isPublishing]);
 
   const handleFocus = () => {
     const node = getNodes().find(n => n.id === id);

@@ -27,7 +27,7 @@ import {
     type CoreProposalKind,
     type WorkflowVersionSummary,
 } from '../integrations/supabase/workflows';
-import type { WorkflowChangeType, WorkflowVisibility } from '../community/types';
+import type { WorkflowChangeType } from '../community/types';
 
 const getDisplayErrorMessage = (error: unknown, fallback: string) => {
     if (error instanceof Error && error.message) return error.message;
@@ -125,7 +125,6 @@ export function Sidebar() {
     const publishTargetNode = linkedBuilderNode ?? projectRoot;
     const hasBuilderDraft = Boolean((linkedBuilderNode ?? projectRoot)?.data.builderDraft);
     const hasPublishedTemplate = Boolean(projectRoot?.data.hasPublishedTemplate || projectRoot?.data.supabaseWorkflowId);
-    const projectVisibility = (projectRoot?.data.visibility as WorkflowVisibility | undefined) ?? 'private';
     const isCurrentUserOwner = Boolean(projectRoot?.data.ownerId && user?.id === projectRoot.data.ownerId);
     const isContributor = Boolean(user && ['contributor', 'expert', 'trusted_editor', 'admin'].includes(user.role));
     const isExpertReviewer = Boolean(user && ['expert', 'trusted_editor', 'admin'].includes(user.role));
@@ -184,13 +183,6 @@ export function Sidebar() {
     const supabaseWorkflowId = typeof projectRoot?.data.supabaseWorkflowId === 'string'
         ? projectRoot.data.supabaseWorkflowId
         : null;
-    const handleWorkflowVisibilityChange = React.useCallback((nextVisibility: WorkflowVisibility) => {
-        if (!projectRoot) return;
-        updateNodeData(projectRoot.id, { visibility: nextVisibility }, { skipGraphEval: true });
-        if (linkedBuilderNode) {
-            updateNodeData(linkedBuilderNode.id, { visibility: nextVisibility }, { skipGraphEval: true });
-        }
-    }, [linkedBuilderNode, projectRoot, updateNodeData]);
     const canReviewWorkflow = Boolean(
         supabaseWorkflowId &&
         projectRoot &&
@@ -903,25 +895,6 @@ export function Sidebar() {
                             }
                         </button>
                     )}
-                    {projectRoot && !isForkablePublicWorkflow && (
-                        <label className="sidebar-visibility-field">
-                            <span>Visibility</span>
-                            <select
-                                name="workflow-visibility"
-                                value={projectVisibility}
-                                onChange={(event) => handleWorkflowVisibilityChange(event.target.value as WorkflowVisibility)}
-                            >
-                                <option value="private">Private</option>
-                                <option value="public">Public</option>
-                                <option value="core">Core</option>
-                            </select>
-                            <small>
-                                {projectVisibility === 'private' && 'Private 不會出現在公開社群。'}
-                                {projectVisibility === 'public' && 'Public 會出現在公開社群，任何人都可讀。'}
-                                {projectVisibility === 'core' && 'Core 只允許 trusted_editor / admin 發布與更新。'}
-                            </small>
-                        </label>
-                    )}
                     <div className="publish-action-row">
                         <button
                             className={publishButtonClassName}
@@ -1395,36 +1368,6 @@ export function Sidebar() {
                     align-items: stretch;
                     gap: 8px;
                     width: 100%;
-                }
-                .sidebar-visibility-field {
-                    display: grid;
-                    gap: 7px;
-                    padding: 10px;
-                    border: 1px solid rgba(255, 255, 255, 0.08);
-                    border-radius: 10px;
-                    background: rgba(255, 255, 255, 0.03);
-                }
-                .sidebar-visibility-field span {
-                    color: var(--text-sub);
-                    font-size: 0.66rem;
-                    font-weight: 800;
-                    letter-spacing: 0.04em;
-                    text-transform: uppercase;
-                }
-                .sidebar-visibility-field select {
-                    width: 100%;
-                    min-height: 34px;
-                    border: 1px solid rgba(255, 255, 255, 0.1);
-                    border-radius: 8px;
-                    background: rgba(0, 0, 0, 0.24);
-                    color: var(--text-main);
-                    padding: 0 9px;
-                    outline: none;
-                }
-                .sidebar-visibility-field small {
-                    color: var(--text-sub);
-                    font-size: 0.68rem;
-                    line-height: 1.45;
                 }
                 .sidebar-btn.publish {
                     flex: 1;
