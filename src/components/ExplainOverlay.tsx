@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useReactFlow, useViewport } from '@xyflow/react';
-import useStore from '../store/useStore';
+import useStore, { type AppNode } from '../store/useStore';
 import { getNodeDefinition } from '../nodes/registry';
 import { Icons } from './Icons';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -17,8 +17,15 @@ const EXPLAIN_SIDE_ARROWS: Record<string, string> = {
   left: '←', right: '→', top: '↑', bottom: '↓',
 };
 
-function getExplainPluginOpportunities(explainNode: any, language: string) {
-  const result: any[] = [];
+type PluginOpportunity = {
+  side: string;
+  sourceType: string;
+  title: string;
+  detail: string;
+};
+
+function getExplainPluginOpportunities(explainNode: AppNode, language: string) {
+  const result: PluginOpportunity[] = [];
   const type = explainNode.type;
   const slots = explainNode.data?.slots || {};
 
@@ -40,7 +47,7 @@ interface ExplainOverlayProps {
   isOpen: boolean;
   targetNodeId: string | null;
   isDataTooltipActive: boolean;
-  onAddNode: (type: string, data?: any, screenPos?: { x: number, y: number }) => void;
+  onAddNode: (type: string, variant?: string, screenPos?: { x: number, y: number }) => void;
 }
 
 export const ExplainOverlay: React.FC<ExplainOverlayProps> = ({

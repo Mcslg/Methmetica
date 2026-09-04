@@ -4,7 +4,7 @@ import { resources, type Language, type TranslationData } from '../translations'
 interface LanguageContextType {
   language: Language;
   setLanguage: (lang: Language) => void;
-  t: (path: string) => any;
+  t: (path: string) => string;
   translations: TranslationData;
 }
 
@@ -26,17 +26,17 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const translations = resources[language];
 
   // Helper function to get nested objects via string path 'common.save'
-  const t = (path: string) => {
+  const t = (path: string): string => {
     const keys = path.split('.');
-    let result: any = translations;
+    let result: unknown = translations;
     for (const key of keys) {
-      if (result && result[key] !== undefined) {
-        result = result[key];
+      if (result && typeof result === 'object' && key in (result as Record<string, unknown>)) {
+        result = (result as Record<string, unknown>)[key];
       } else {
         return path; // Fallback to key itself
       }
     }
-    return result;
+    return typeof result === 'string' ? result : path;
   };
 
   return (
@@ -46,6 +46,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   );
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useLanguage = () => {
   const context = useContext(LanguageContext);
   if (!context) {

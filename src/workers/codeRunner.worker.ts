@@ -7,25 +7,25 @@ self.onmessage = async (e: MessageEvent) => {
     const { requestId, code, inputs, typedInputs, globals, outputDeclarations } = e.data;
 
     // 模擬 helpers
-    const customOutputs: Record<string, any> = {};
+    const customOutputs: Record<string, unknown> = {};
     const globalUpdates: Record<string, string> = {};
 
     // [NEW] 自動拆箱 (Unboxing): 如果輸入是 {type, value} 格式，自動提取 value
-    const unboxedInputs: Record<string, any> = {};
+    const unboxedInputs: Record<string, unknown> = {};
     Object.entries(inputs || {}).forEach(([key, val]) => {
         if (val && typeof val === 'object' && 'type' in val && 'value' in val) {
-            unboxedInputs[key] = val.value;
+            unboxedInputs[key] = (val as { value: unknown }).value;
         } else {
             unboxedInputs[key] = val;
         }
     });
     Object.entries(typedInputs || {}).forEach(([key, val]) => {
         if (val && typeof val === 'object' && 'type' in val && 'value' in val) {
-            unboxedInputs[key] = val.value;
+            unboxedInputs[key] = (val as { value: unknown }).value;
         }
     });
 
-    const stringifyOutput = (value: any): string => {
+    const stringifyOutput = (value: unknown): string => {
         if (value === undefined) return '';
         // 如果已經是字串，直接回傳
         if (typeof value === 'string') return value;
@@ -37,7 +37,7 @@ self.onmessage = async (e: MessageEvent) => {
     };
 
     const helpers = {
-        setGlobal: (name: string, value: any) => {
+        setGlobal: (name: string, value: unknown) => {
             const normalizedName = name.startsWith('$') ? name : `$${name}`;
             const storedValue = stringifyOutput(value);
             globalUpdates[normalizedName] = storedValue;
@@ -75,7 +75,7 @@ self.onmessage = async (e: MessageEvent) => {
         }
 
         // [NEW] 自動裝箱 (Boxing): 根據宣告將結果包裝回 MathValue
-        const boxValue = (val: any, name: string) => {
+        const boxValue = (val: unknown, name: string) => {
             const declaredTypes = outputDeclarations?.[name];
             const type = Array.isArray(declaredTypes) ? (declaredTypes[0] || 'unknown') : (declaredTypes || 'unknown');
             return {
@@ -86,7 +86,7 @@ self.onmessage = async (e: MessageEvent) => {
         };
 
         const boxedResult = boxValue(rawResult, 'return');
-        const boxedOutputs: Record<string, any> = {};
+        const boxedOutputs: Record<string, unknown> = {};
         Object.keys(customOutputs).forEach(key => {
             boxedOutputs[key] = boxValue(customOutputs[key], key);
         });

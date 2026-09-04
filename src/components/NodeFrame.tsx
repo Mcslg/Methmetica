@@ -1,6 +1,6 @@
 import React from 'react';
 import { NodeResizer, useReactFlow } from '@xyflow/react';
-import useStore, { type AppState } from '../store/useStore';
+import useStore, { type AppState, type CustomHandle, type NodeData } from '../store/useStore';
 import { DynamicHandles } from '../nodes/DynamicHandles';
 import { CommentArea } from './CommentArea';
 import { Icons } from './Icons';
@@ -10,7 +10,7 @@ import { CalculusStepsArea } from './deprecated/CalculusStepsArea';
 
 interface NodeFrameProps {
     id: string;
-    data: any;
+    data: NodeData;
     selected?: boolean;
     icon: React.ReactNode;
     defaultLabel: string;
@@ -64,9 +64,9 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
 
     const slotKeys = Object.keys(data.slots || {});
     const augmentedHandles = (data.handles || [])
-        .filter((h: any) => {
+        .filter((h: CustomHandle) => {
             // 1. Hide handles that match plugged slots (generic)
-            if (h.type === 'target' || h.type === 'input') {
+            if (h.type === 'gate-in' || h.type === 'input') {
                 if (h.label && slotKeys.includes(h.label)) return false;
             }
             // 2. Hide f(x) input if formula sidebar is active
@@ -75,13 +75,13 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
             return true;
         });
 
-    if (data.slots?.gateNode && !augmentedHandles.some((h: any) => h.id === 'h-gate-in')) {
+    if (data.slots?.gateNode && !augmentedHandles.some((h: CustomHandle) => h.id === 'h-gate-in')) {
         augmentedHandles.push({ id: 'h-gate-in', type: 'gate-in', position: 'left', offset: 20, label: 'Gate' });
     }
 
     const touchingClasses = data.touchingEdges
         ? Object.entries(data.touchingEdges)
-            .filter(([_, touching]) => touching)
+            .filter(([, touching]) => touching)
             .map(([edge]) => `edge-touch-${edge}`)
             .join(' ')
         : '';
@@ -367,7 +367,7 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
                 flexGrow: 1,
                 padding: '4px 8px',
                 overflowY: 'auto',
-                overflowX: resolvedOverflowX as any,
+                overflowX: resolvedOverflowX,
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '4px',

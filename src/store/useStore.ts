@@ -35,7 +35,9 @@ export const createGraphSignature = (nodes: AppNode[], edges: Edge[]) => {
     }));
 
     const essentialEdges = edges.map(e => {
-        const { selected, type, ...rest } = e as any;
+        const rest = { ...(e as Record<string, unknown>) };
+        delete rest.selected;
+        delete rest.type;
         return rest;
     });
 
@@ -492,7 +494,8 @@ const useStore = create<AppState>()(
                 const edgesToRemove: string[] = [];
 
                 // Helper: Line-Line intersection
-                const intersect = (p1: any, p2: any, p3: any, p4: any) => {
+                type Point2D = { x: number; y: number };
+                const intersect = (p1: Point2D, p2: Point2D, p3: Point2D, p4: Point2D) => {
                     const det = (p2.x - p1.x) * (p4.y - p3.y) - (p2.y - p1.y) * (p4.x - p3.x);
                     if (det === 0) return false;
                     const lambda = ((p4.y - p3.y) * (p4.x - p1.x) + (p3.x - p4.x) * (p4.y - p1.y)) / det;
@@ -501,7 +504,7 @@ const useStore = create<AppState>()(
                 };
 
                 // Simple Bézier sampler
-                const getBezierPoint = (t: number, p0: any, p1: any, p2: any, p3: any) => {
+                const getBezierPoint = (t: number, p0: Point2D, p1: Point2D, p2: Point2D, p3: Point2D) => {
                     const cx = 3 * (p1.x - p0.x);
                     const bx = 3 * (p2.x - p1.x) - cx;
                     const ax = p3.x - p0.x - cx - bx;

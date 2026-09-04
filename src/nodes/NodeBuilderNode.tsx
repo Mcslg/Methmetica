@@ -20,7 +20,7 @@ import { publishWorkflowToSupabase } from '../integrations/supabase/workflows';
 import { publishNodeTemplateToSupabase } from '../integrations/supabase/nodeTemplates';
 import { getUserRole } from '../integrations/supabase/auth';
 import type { AppUser } from '../integrations/supabase/types';
-import { mathTypeCatalog, getAllCapabilities, getTypesByCapability } from '../config/mathTypeCatalog';
+import { mathTypeCatalog, getAllCapabilities, getTypesByCapability, type MathCapability } from '../config/mathTypeCatalog';
 import { buildWorkflowNode } from '../utils/workflowTestRunner';
 import { compileWorkflowToArtifact, formatCompileDiagnostics } from '../utils/workflowCompiler';
 import { clearPublicWorkflowEdit } from '../utils/localDraftService';
@@ -1120,7 +1120,7 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
                             />
                             {port.typeConstraint?.startsWith('cap:') && (
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
-                                {getTypesByCapability(port.typeConstraint.split(':')[1] as any).map(t => (
+                                {getTypesByCapability(port.typeConstraint.split(':')[1] as MathCapability).map(t => (
                                   <span key={t} style={{ fontSize: '0.62rem', background: 'rgba(59, 130, 246, 0.15)', color: '#93c5fd', padding: '1px 5px', borderRadius: '4px', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
                                     {t}
                                   </span>
@@ -1218,7 +1218,7 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
                             />
                             {port.typeConstraint?.startsWith('cap:') && (
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
-                                {getTypesByCapability(port.typeConstraint.split(':')[1] as any).map(t => (
+                                {getTypesByCapability(port.typeConstraint.split(':')[1] as MathCapability).map(t => (
                                   <span key={t} style={{ fontSize: '0.62rem', background: 'rgba(59, 130, 246, 0.15)', color: '#93c5fd', padding: '1px 5px', borderRadius: '4px', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
                                     {t}
                                   </span>

@@ -1,4 +1,5 @@
 import type { MathTypeDescriptor, MathTypeId, MathCapability } from '../types/mathTypes';
+export type { MathTypeDescriptor, MathTypeId, MathCapability };
 
 export const mathTypeCatalog: MathTypeDescriptor[] = [
   {

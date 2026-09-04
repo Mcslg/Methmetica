@@ -8,13 +8,16 @@ import { useEffect, useRef, useState } from 'react';
 import useStore from '../store/useStore';
 
 // ── Global render counters (module-level, no React overhead) ─────────────────
+// eslint-disable-next-line react-refresh/only-export-components
 export const RenderCounters: Record<string, number> = {};
+// eslint-disable-next-line react-refresh/only-export-components
 export function countRender(name: string) {
     RenderCounters[name] = (RenderCounters[name] || 0) + 1;
 }
 
 // ── Global evaluateGraph call counter ────────────────────────────────────────
 export let evalGraphCallCount = 0;
+// eslint-disable-next-line react-refresh/only-export-components
 export function incrementEvalGraph() { evalGraphCallCount++; }
 
 // ── FPS meter ────────────────────────────────────────────────────────────────
@@ -55,7 +58,7 @@ export function DebugOverlay() {
         });
     }, []);
 
-    const timerRef = useRef<any>(null);
+    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // Poll render counters and eval count every 500ms
     useEffect(() => {
@@ -63,7 +66,11 @@ export function DebugOverlay() {
             setCounters({ ...RenderCounters });
             setEvalCount(evalGraphCallCount);
         }, 500);
-        return () => clearInterval(timerRef.current);
+        return () => {
+            if (timerRef.current !== null) {
+                clearInterval(timerRef.current);
+            }
+        };
     }, []);
 
     const nodes = useStore(s => s.nodes);

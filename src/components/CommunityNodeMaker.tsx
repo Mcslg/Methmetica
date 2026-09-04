@@ -203,6 +203,7 @@ const estimateTemplateSize = (
   return { width, height };
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const buildTemplateFromBlocks = (draft: CommunityNodeTemplate): CommunityNodeTemplate => {
   const derivedSchema = buildInterfaceSchemaFromBlocks(draft);
   const interfaceSchema = draft.interfaceSchema ?? derivedSchema;
@@ -223,6 +224,7 @@ export const buildTemplateFromBlocks = (draft: CommunityNodeTemplate): Community
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const validateDraft = (draft: CommunityNodeTemplate): string | null => {
   const missingTitleLanguages = missingTemplateLanguages(draft.titleI18n, draft.title);
   if (missingTitleLanguages.length > 0) return `Title 還沒填寫：${missingTitleLanguages.map(languageLabel).join('、')}。`;

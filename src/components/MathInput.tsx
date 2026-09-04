@@ -13,7 +13,10 @@ interface MathInputProps {
     name?: string;
 }
 
-type MathfieldElement = HTMLElement & { value: string };
+export type MathfieldElement = HTMLElement & {
+    value: string;
+    executeCommand?: (command: string | string[]) => void;
+};
 
 export const MathInput = forwardRef<MathfieldElement, MathInputProps>(({ value, onChange, onKeyDown, onBlur, className, style, readOnly, id, name }, ref) => {
     const mfRef = useRef<MathfieldElement | null>(null);

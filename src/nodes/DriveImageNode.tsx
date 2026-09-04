@@ -49,6 +49,7 @@ const buildOutputPatch = (data: NodeData): Pick<NodeData, 'value' | 'outputs' | 
   };
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const executeDriveImageNode = (node: Node<NodeData>, state: AppState) => {
   state.updateNodeData(node.id, buildOutputPatch(node.data), { skipGraphEval: true });
   state.evaluateGraph();

@@ -13,7 +13,8 @@ const getTextFromJSON = (jsonStr: string): string => {
     try {
         const obj = JSON.parse(jsonStr);
         if (obj.type === 'doc') {
-            const extract = (node: any): string => {
+            type JsonNode = { type?: string; text?: string; content?: JsonNode[] };
+            const extract = (node: JsonNode): string => {
                 if (node.type === 'text') return node.text || '';
                 if (node.type === 'paragraph') return node.content ? node.content.map(extract).join('') + '\n' : '\n';
                 if (node.content) return node.content.map(extract).join('');
@@ -53,7 +54,7 @@ export const CommentArea: React.FC<CommentAreaProps> = ({ containerId, commentSi
 
     if (!textNode) return null;
 
-    let previewText = getTextFromJSON(textNode.data.text || '');
+    const previewText = getTextFromJSON(textNode.data.text || '');
 
     const onPointerDown = (e: React.PointerEvent) => {
         if (!isEditing && isCtrlPressed) {
@@ -136,7 +137,7 @@ export const CommentArea: React.FC<CommentAreaProps> = ({ containerId, commentSi
                         onKeyDown={(e) => {
                             e.stopPropagation();
                             if (e.key === 'Enter') {
-                                (e.target as any).blur();
+                                e.currentTarget.blur();
                             }
                         }}
                         style={{

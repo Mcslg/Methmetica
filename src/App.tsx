@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { ReactFlow, Background, Controls, ReactFlowProvider, useReactFlow, BackgroundVariant, type Edge } from '@xyflow/react';
+import { ReactFlow, Background, Controls, ReactFlowProvider, useReactFlow, BackgroundVariant, type Edge, type OnConnectEnd } from '@xyflow/react';
 import { useShallow } from 'zustand/react/shallow';
 import '@xyflow/react/dist/style.css';
 
@@ -705,7 +705,7 @@ function Flow() {
     connectingNodeRef.current = { nodeId, handleId, handleType };
   }, []);
 
-  const onConnectEnd = useCallback((event: MouseEvent | TouchEvent, connectionState: any) => {
+  const onConnectEnd: OnConnectEnd = useCallback((event, connectionState) => {
     const connectStart = connectingNodeRef.current;
     connectingNodeRef.current = null;
     if (!connectStart) return;
@@ -772,7 +772,7 @@ function Flow() {
     const newHandleId = `h-drop-scope-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     addHandle(toNodeId, {
       id: newHandleId,
-      type: 'scope' as any,
+      type: 'scope',
       position: side,
       offset,
     });

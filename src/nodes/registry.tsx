@@ -1,4 +1,6 @@
+/* eslint-disable react-refresh/only-export-components */
 import React from 'react';
+import type { NodeProps } from '@xyflow/react';
 import { Icons } from '../components/Icons';
 import { NumberNode } from './deprecated/NumberNode';
 import { DecimalNode } from './deprecated/DecimalNode';
@@ -50,7 +52,7 @@ export interface NodeMetadata {
 
 export interface NodeDefinition {
     type: string;
-    component: React.ComponentType<any>;
+    component: React.ComponentType<NodeProps<AppNode>>;
     metadata: NodeMetadata;
     defaultSize: { width: number; height: number };
     defaultHandles: CustomHandle[];
@@ -65,8 +67,8 @@ const LazyBalanceNode = React.lazy(() => import('./deprecated/BalanceNode').then
 const LazySolveNode = React.lazy(() => import('./deprecated/SolveNode').then((mod) => ({ default: mod.SolveNode })));
 const LazySoundNode = React.lazy(() => import('./deprecated/SoundNode').then((mod) => ({ default: mod.SoundNode })));
 
-const withNodeSuspense = (Component: React.LazyExoticComponent<React.ComponentType<any>>) => {
-    const WrappedNode = (props: any) => (
+const withNodeSuspense = (Component: React.LazyExoticComponent<React.ComponentType<NodeProps<AppNode>>>): React.ComponentType<NodeProps<AppNode>> => {
+    const WrappedNode = (props: NodeProps<AppNode>) => (
         <React.Suspense fallback={<div style={{ padding: 12, color: 'var(--text-sub)' }}>Loading node...</div>}>
             <Component {...props} />
         </React.Suspense>
@@ -297,7 +299,7 @@ export const nodeRegistry: NodeDefinition[] = [
 export const nodeTypes = nodeRegistry.reduce((acc, def) => {
     acc[def.type] = def.component;
     return acc;
-}, {} as Record<string, React.ComponentType<any>>);
+}, {} as Record<string, React.ComponentType<NodeProps<AppNode>>>);
 
 export const getNodeDefinition = (type: string) => nodeRegistry.find(n => n.type === type);
 

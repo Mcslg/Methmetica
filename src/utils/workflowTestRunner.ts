@@ -1,5 +1,5 @@
 import type { Edge } from '@xyflow/react';
-import type { AppNode } from '../store/useStore';
+import type { AppNode, AppState } from '../store/useStore';
 import type { BuiltWorkflowNode, TemplateControlPort, TemplateElementBinding, TemplateInterfaceSchema } from '../community/types';
 import type { MathValue } from '../types/mathTypes';
 import { executeCodeNode } from '../nodes/CodeNode';
@@ -243,7 +243,7 @@ export const runBuiltWorkflowNode = async (
     syncExplicitInputs(nodes, edges, codeNode.id);
     trace.push(codeNode.data.label || codeNode.id);
     try {
-      await executeCodeNode(nodes.find(node => node.id === codeNode.id)!, memoryState as any);
+      await executeCodeNode(nodes.find(node => node.id === codeNode.id)!, memoryState as unknown as AppState);
     } catch (error) {
       return {
         outputs: {},

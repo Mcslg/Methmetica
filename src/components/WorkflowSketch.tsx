@@ -90,7 +90,7 @@ export function WorkflowSketch({
         })
         .filter(Boolean) as Array<{ id: string; x1: number; y1: number; x2: number; y2: number; wireless?: boolean; scope?: boolean }>,
     };
-  }, [bounds.graphHeight, bounds.graphWidth, bounds.minX, bounds.minY, edges, height, nodes, padding, width]);
+  }, [bounds.graphHeight, bounds.graphWidth, bounds.minX, bounds.minY, edges, height, nodes, padding, simplified, width]);
 
   const content = (
     <>

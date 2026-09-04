@@ -1,7 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { Icons } from './Icons';
-import { MathInput } from './MathInput';
+import { MathInput, type MathfieldElement } from './MathInput';
 import useStore from '../store/useStore';
 import type { CommunityNodeTemplate, BuiltWorkflowNode } from '../community/types';
 import { getTemplateInterfaceSchema } from '../community/types';
@@ -53,7 +53,7 @@ export function TemplateBehaviorTester({
     screenX: number;
     screenY: number;
   } | null>(null);
-  const inputMathRef = React.useRef<any>(null);
+  const inputMathRef = React.useRef<MathfieldElement | null>(null);
 
   React.useEffect(() => {
     if (!inputEditor) return;
@@ -116,7 +116,7 @@ export function TemplateBehaviorTester({
         templateViewOverrides: result.templateViewOverrides,
       }, { skipGraphEval: true });
     }
-  }, [activeInterfaceSchema, linkedTemplateNodeId, onRuntimePlanBuilt, projectNodeId, testInputs]);
+  }, [activeInterfaceSchema, builderDraft.controlPorts, builderDraft.elementBindings, linkedTemplateNodeId, onRuntimePlanBuilt, projectNodeId, testInputs]);
 
   const renderPortButton = (port: typeof activeInterfaceSchema.inputs[number], kind: 'input' | 'output') => {
     const isInput = kind === 'input';

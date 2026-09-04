@@ -12,18 +12,23 @@ import { TaskList } from '@tiptap/extension-task-list';
 import { TaskItem } from '@tiptap/extension-task-item';
 import { TextAlign } from '@tiptap/extension-text-align';
 import { Placeholder } from '@tiptap/extension-placeholder';
-import { Node as TiptapNode, mergeAttributes, type ExtendedRegExpMatchArray, type Range } from '@tiptap/core';
-import { type EditorState } from '@tiptap/pm/state';
+import { Node as TiptapNode, mergeAttributes, InputRule } from '@tiptap/core';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
-// @ts-ignore
+// @ts-expect-error nerdamer is an untyped commonjs library
 import nerdamer from 'nerdamer/all.min';
 import { getMathEngine } from '../utils/MathEngine';
+
+type NerdamerFn = {
+    (val: unknown): { toTeX: () => string };
+    solveEquations: (eqs: string | string[], vars: string | string[]) => unknown;
+};
+const nerdamerEngine = nerdamer as unknown as NerdamerFn;
 import useStore, { type AppState, type NodeData, type CustomHandle, type HandleType, type TextNodePage } from '../store/useStore';
 import { useShallow } from 'zustand/react/shallow';
 import { DynamicHandles } from './DynamicHandles';
 import { Icons } from '../components/Icons';
-import { MathInput } from '../components/MathInput';
+import { MathInput, type MathfieldElement } from '../components/MathInput';
 import { NodeComments } from '../components/NodeComments';
 import { classifyMathPillValue } from '../utils/mathPillClassifier';
 import type { MathValue } from '../types/mathTypes';
@@ -60,7 +65,7 @@ const deriveTextPages = (data: NodeData): { pages: TextNodePage[]; activePageId:
 
 export const TextNodeContext = React.createContext<{
     nodeId: string;
-    slots?: Record<string, any>;
+    slots?: Record<string, unknown>;
     isHandleActive: (id: string) => boolean;
     toggleHandle: (id: string) => void;
     editMath: (val: string, pos?: { x: number, y: number }) => void;
@@ -141,8 +146,10 @@ const SliderPill = TiptapNode.create({
             const sliderSource = ctx.slots?.[name];
             const globalVars = useStore(state => state.globalVars);
 
+            type SliderNodeData = { value?: string; min?: number; max?: number; step?: number };
+            type LegacySlider = { id?: string; data?: SliderNodeData };
             const sliderId = typeof sliderSource === 'string' ? sliderSource : null;
-            const legacySliderNode = typeof sliderSource === 'object' ? sliderSource : null;
+            const legacySliderNode = (typeof sliderSource === 'object' ? sliderSource : null) as LegacySlider | null;
 
             // [PERF] Extremely granular subscription.
             const nodeData = useStore(useShallow(state => {
@@ -160,7 +167,7 @@ const SliderPill = TiptapNode.create({
             let exists = false;
 
             if (nodeData || legacySliderNode) {
-                const data = nodeData || (legacySliderNode as any).data;
+                const data = nodeData || legacySliderNode?.data || {};
                 finalValue = data.value || "0";
                 finalMin = data.min ?? 0;
                 finalMax = data.max ?? 100;
@@ -215,15 +222,15 @@ const SliderPill = TiptapNode.create({
                                     setGlobalVar(name, nextVal);
                                 }
                                 
-                                const targetId = sliderId || (legacySliderNode as any)?.id;
+                                const targetId = sliderId || legacySliderNode?.id;
                                 if (targetId) {
                                     updateNodeData(targetId, { value: nextVal });
                                 } else {
                                     const nextSlots = {
                                         ...ctx.slots,
                                         [name]: {
-                                            ...(legacySliderNode as any),
-                                            data: { ...(legacySliderNode as any).data, value: nextVal }
+                                            ...legacySliderNode,
+                                            data: { ...legacySliderNode?.data, value: nextVal }
                                         }
                                     };
                                     updateNodeData(ctx.nodeId, { slots: nextSlots });
@@ -270,14 +277,14 @@ const SliderPill = TiptapNode.create({
 
     addInputRules() {
         return [
-            {
+            new InputRule({
                 find: /\[([a-zA-Z\d\s]+):slider\]\s$/,
-                handler: ({ state, range, match }: { state: any, range: any, match: any }) => {
+                handler: ({ state, range, match }) => {
                     const { tr } = state;
                     const name = match[1];
                     tr.replaceWith(range.from, range.to, this.type.create({ name }));
                 },
-            } as any,
+            }),
         ];
     },
 });
@@ -335,7 +342,7 @@ const ButtonPill = TiptapNode.create({
                             }
                         }}
                         onClick={() => {
-                            const targetId = sid || (source as any)?.id;
+                            const targetId = sid || (typeof source === 'object' && source !== null ? (source as { id?: string }).id : undefined);
                             if (targetId) {
                                 useStore.getState().edges.filter(e => e.source === targetId).forEach(e => {
                                     useStore.getState().executeNode(e.target);
@@ -355,12 +362,14 @@ const ButtonPill = TiptapNode.create({
         });
     },
     addInputRules() {
-        return [{
-            find: /\[trigger\]\s$/,
-            handler: ({ state, range }: any) => {
-                state.tr.replaceWith(range.from, range.to, this.type.create({ name: 'buttonNode' }));
-            }
-        } as any];
+        return [
+            new InputRule({
+                find: /\[trigger\]\s$/,
+                handler: ({ state, range }) => {
+                    state.tr.replaceWith(range.from, range.to, this.type.create({ name: 'buttonNode' }));
+                }
+            })
+        ];
     }
 });
 
@@ -385,7 +394,7 @@ const GatePill = TiptapNode.create({
             const sid = typeof source === 'string' ? source : null;
             // [PERF] Granular subscription for gate value
             const gateValue = useStore(state => {
-                const targetId = sid || (source as any)?.id;
+                const targetId = sid || (typeof source === 'object' && source !== null ? (source as { id?: string }).id : undefined);
                 if (!targetId) return null;
                 return state.nodes.find(n => n.id === targetId)?.data.value;
             });
@@ -426,7 +435,7 @@ const GatePill = TiptapNode.create({
                             }
                         }}
                         onClick={() => {
-                            const targetId = sid || (source as any)?.id;
+                            const targetId = sid || (typeof source === 'object' && source !== null ? (source as { id?: string }).id : undefined);
                             if (targetId) {
                                 updateNodeData(targetId, { value: isOpen ? '0' : '1' });
                             }
@@ -446,12 +455,14 @@ const GatePill = TiptapNode.create({
         });
     },
     addInputRules() {
-        return [{
-            find: /\[gate\]\s$/,
-            handler: ({ state, range }: any) => {
-                state.tr.replaceWith(range.from, range.to, this.type.create({ name: 'gateNode' }));
-            }
-        } as any];
+        return [
+            new InputRule({
+                find: /\[gate\]\s$/,
+                handler: ({ state, range }) => {
+                    state.tr.replaceWith(range.from, range.to, this.type.create({ name: 'gateNode' }));
+                }
+            })
+        ];
     }
 });
 
@@ -556,7 +567,7 @@ const MathPill = TiptapNode.create({
             const [isHovered, setIsHovered] = useState(false);
             const pillRef = useRef<HTMLSpanElement>(null);
             const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
-            const inlineMathFieldRef = useRef<any>(null);
+            const inlineMathFieldRef = useRef<MathfieldElement | null>(null);
             const [isInlineEditing, setIsInlineEditing] = useState(false);
             const [draftVal, setDraftVal] = useState(val);
 
@@ -583,12 +594,12 @@ const MathPill = TiptapNode.create({
                 if (!isCtrlPressed) return null;
                 try {
                     const ce = getMathEngine();
-                    const localVars: Record<string, any> = {};
+                    const localVars: Record<string, unknown> = {};
                     editor.state.doc.descendants((node) => {
                         if (node.type.name === 'mathPill' && node.attrs.name && node.attrs.value) {
                             try {
                                 localVars[node.attrs.name] = ce.parse(node.attrs.value).evaluate();
-                            } catch (e) { }
+                            } catch { /* ignore */ }
                         }
                         return true;
                     });
@@ -596,13 +607,13 @@ const MathPill = TiptapNode.create({
                     // Inject slider variables from slots
                     if (ctx.slots) {
                         for (const slotKey in ctx.slots) {
-                            const absorbedNode: any = ctx.slots[slotKey];
-                            if (absorbedNode.type === 'sliderNode') {
+                            const absorbedNode = ctx.slots[slotKey] as { type?: string; data?: { value?: unknown; nodeName?: string } } | undefined;
+                            if (absorbedNode?.type === 'sliderNode') {
                                 try {
-                                    const sliderVal = absorbedNode.data.value || 0;
-                                    const varName = absorbedNode.data.nodeName || slotKey;
+                                    const sliderVal = absorbedNode.data?.value || 0;
+                                    const varName = absorbedNode.data?.nodeName || slotKey;
                                     localVars[varName] = ce.parse(String(sliderVal)).evaluate();
-                                } catch (e) { }
+                                } catch { /* ignore */ }
                             }
                         }
                     }
@@ -611,54 +622,55 @@ const MathPill = TiptapNode.create({
                     if (ctx.inputs) {
                         for (const [handleId, remoteScopeJSON] of Object.entries(ctx.inputs)) {
                             try {
-                                const h = ctx.handles?.find((h: CustomHandle) => h.id === handleId.replace('-target', '').replace('-source', ''));
+                                const h = ctx.handles?.find((item: CustomHandle) => item.id === handleId.replace('-target', '').replace('-source', ''));
                                 if (h?.type === 'scope') {
-                                    const remoteVars = JSON.parse(remoteScopeJSON);
+                                    const remoteVars = JSON.parse(remoteScopeJSON) as Record<string, unknown>;
                                     for (const [k, v] of Object.entries(remoteVars)) {
                                         localVars[k] = ce.parse(String(v)).evaluate();
                                     }
                                 }
-                            } catch (e) { }
+                            } catch { /* ignore */ }
                         }
                     }
 
                     ce.pushScope();
-                    Object.entries(localVars).forEach(([k, v]) => ce.assign(k, v));
+                    ce.assign(localVars as Parameters<typeof ce.assign>[0]);
 
                     let result;
                     // Check for solve pattern: "x? x^2=4" or "(x,y)? x+y=10, x-y=2"
                     const solveMatch = val.match(/^([a-zA-Z\d\\,()\s]+)\?\s*(.*)$/);
                     if (solveMatch) {
                         try {
-                            const targetVar = solveMatch[1].replace(/[\\\(\)\s]/g, ''); // Clean LaTeX, parentheses and spaces
+                            const targetVar = solveMatch[1].replace(/[\\()\s]/g, ''); // Clean LaTeX, parentheses and spaces
                             let equation = solveMatch[2];
 
                             // Substitute known variables
                             Object.entries(localVars).forEach(([k, v]) => {
                                 if (k !== targetVar) {
-                                    const valToSub = v.numericValue !== undefined ? v.numericValue : (v.value || 0);
+                                    const rawValObj = v as { numericValue?: unknown; value?: unknown } | undefined;
+                                    const valToSub = rawValObj?.numericValue !== undefined ? rawValObj.numericValue : (rawValObj?.value || 0);
                                     equation = equation.replace(new RegExp(`\\b${k}\\b`, 'g'), `(${valToSub})`);
                                 }
                             });
 
                             // Let nerdamer solve it
-                            let eqs: any = equation;
+                            let eqs: string | string[] = equation;
                             if (equation.includes(',') || equation.includes(';')) {
                                 eqs = equation.split(/[;,]/).map((e: string) => e.trim());
                             }
 
-                            let vars: any = targetVar;
+                            let vars: string | string[] = targetVar;
                             if (targetVar.includes(',')) {
                                 vars = targetVar.split(',').map((v: string) => v.trim());
                             }
 
-                            const cleanResult = (nerdamer as any).solveEquations(eqs, vars);
-                            const list = Array.isArray(cleanResult) ? cleanResult.map((sol: any) => {
+                            const cleanResult = nerdamerEngine.solveEquations(eqs, vars);
+                            const list = Array.isArray(cleanResult) ? cleanResult.map((sol: unknown) => {
                                 if (Array.isArray(sol) && sol.length === 2 && typeof sol[0] === 'string') {
-                                    return `${sol[0]}=${(nerdamer as any)(sol[1]).toTeX()}`;
+                                    return `${sol[0]}=${nerdamerEngine(sol[1]).toTeX()}`;
                                 }
-                                return (nerdamer as any)(sol).toTeX();
-                            }) : [(nerdamer as any)(cleanResult).toTeX()];
+                                return nerdamerEngine(sol).toTeX();
+                            }) : [nerdamerEngine(cleanResult).toTeX()];
                             result = JSON.stringify(list);
                         } catch (err) {
                             console.error('Nerdamer solve error:', err);
@@ -712,7 +724,7 @@ const MathPill = TiptapNode.create({
             const displayVal = useMemo(() => (isCtrlPressed && evaluatedVal !== null) ? evaluatedVal : finalBaseVal, [isCtrlPressed, evaluatedVal, finalBaseVal]);
 
             const sequenceData = useMemo(() => {
-                let s = String(displayVal).trim();
+                const s = String(displayVal).trim();
 
                 // Use global regex to clean common LaTeX markers
                 const normalized = s
@@ -790,7 +802,7 @@ const MathPill = TiptapNode.create({
                         }),
                         isSafeHtml: true
                     };
-                } catch (e) {
+                } catch {
                     return {
                         html: textToRender,
                         isSafeHtml: false
@@ -876,7 +888,7 @@ const MathPill = TiptapNode.create({
                         .replace(/\\lbrace/g, '').replace(/\\rbrace/g, '')
                         .replace(/\\left\{/g, '').replace(/\\right\./g, '')
                         .replace(/\\\{/g, '').replace(/\\\}/g, '')
-                        .replace(/[\[\]"]/g, '')
+                        .replace(/[[\]"]/g, '')
                         .trim();
 
                     if ((normalizedStr.includes('=') || normalizedStr.includes(':')) && normalizedStr.includes(',')) {
@@ -885,7 +897,7 @@ const MathPill = TiptapNode.create({
                         try {
                             const parsed = JSON.parse(rawVal);
                             if (Array.isArray(parsed)) equations = parsed.map(String);
-                        } catch (err) { }
+                        } catch { /* ignore */ }
                     }
 
                     if (equations.length >= 2) {
@@ -1173,16 +1185,16 @@ const MathPill = TiptapNode.create({
 
     addInputRules() {
         return [
-            {
+            new InputRule({
                 find: /\$\$(.+)\$\$\s$/,
-                handler: ({ state, range, match }: { state: EditorState, range: Range, match: ExtendedRegExpMatchArray }) => {
+                handler: ({ state, range, match }) => {
                     const { tr } = state;
                     const val = match[1];
                     if (val) {
                         tr.replaceWith(range.from, range.to, this.type.create({ value: val }));
                     }
                 },
-            } as any,
+            }),
         ];
     },
 });
@@ -1203,7 +1215,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
 
     const [mathInputOpen, setMathInputOpen] = useState(false);
     const [popupPos, setPopupPos] = useState<{ x: number, y: number } | null>(null);
-    const mathFieldRef = useRef<any>(null);
+    const mathFieldRef = useRef<MathfieldElement | null>(null);
     const mathNameInputRef = useRef<HTMLInputElement>(null);
     const editingValueRef = useRef<string | null>(null);
     const editingNameRef = useRef<string | null>(null);
@@ -1297,7 +1309,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                         try {
                             const coords = view.coordsAtPos(selection.from - 1);
                             setPopupPos({ x: coords.left, y: coords.bottom + 10 });
-                        } catch (e) {
+                        } catch {
                             const rect = containerRef.current?.getBoundingClientRect();
                             if (rect) setPopupPos({ x: rect.left + 20, y: rect.top + 50 });
                         }
@@ -1340,7 +1352,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                 const { from } = editor.state.selection;
                 const coords = editor.view.coordsAtPos(from);
                 setPopupPos({ x: coords.left, y: coords.bottom + 10 });
-            } catch (e) {
+            } catch {
                 const rect = containerRef.current?.getBoundingClientRect();
                 if (rect) setPopupPos({ x: rect.left + 20, y: rect.top + 50 });
             }
@@ -1350,14 +1362,14 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
         setTimeout(() => {
             if (mathFieldRef.current) {
                 mathFieldRef.current.value = val;
-                mathFieldRef.current.focus();
-                mathFieldRef.current.executeCommand(['selectAll']);
+                mathFieldRef.current.focus?.();
+                mathFieldRef.current.executeCommand?.(['selectAll']);
             }
             if (mathNameInputRef.current) mathNameInputRef.current.value = currentName;
         }, 100);
     }, [editor]);
 
-    const renameTrigger = useCallback((_oldLabel: string, _newLabel: string) => { }, []);
+    const renameTrigger = useCallback(() => { /* no-op */ }, []);
 
     // Sync external changes
     useEffect(() => {
@@ -1408,8 +1420,8 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
             if (typeof nodeSource === 'string') {
                 const realNode = state.nodes.find(n => n.id === nodeSource);
                 type = realNode?.type || null;
-            } else if (typeof nodeSource === 'object') {
-                type = (nodeSource as any).type || null;
+            } else if (typeof nodeSource === 'object' && nodeSource !== null) {
+                type = (nodeSource as { type?: string }).type || null;
             }
 
             if (!type) return;
@@ -1526,7 +1538,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                     }
 
                     if (!newOutputs[hId]) {
-                        let outVal = el.getAttribute('data-value') || '';
+                        const outVal = el.getAttribute('data-value') || '';
                         newOutputs[hId] = outVal;
                         if (outVal !== '') {
                             newTypedOutputs[hId] = classifyMathPillValue(outVal, {
@@ -1560,7 +1572,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                     if (n.type.name === 'mathPill' && n.attrs.name && n.attrs.value) {
                         try {
                             nodeScope[n.attrs.name] = ce.parse(n.attrs.value).evaluate().toString();
-                        } catch(e){}
+                        } catch { /* ignore */ }
                     }
                     return true;
                 });
@@ -1568,12 +1580,12 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                 // Add slider variables
                 if (data.slots) {
                     for (const slotKey in data.slots) {
-                        const absorbedNode: any = data.slots[slotKey];
+                        const absorbedNode = data.slots[slotKey] as { type?: string; data?: { value?: unknown; nodeName?: string } } | undefined;
                         if (absorbedNode?.type === 'sliderNode') {
                             try {
-                                const varName = absorbedNode.data.nodeName || slotKey;
-                                nodeScope[varName] = ce.parse(String(absorbedNode.data.value || 0)).evaluate().toString();
-                            } catch(e){}
+                                const varName = absorbedNode.data?.nodeName || slotKey;
+                                nodeScope[varName] = ce.parse(String(absorbedNode.data?.value || 0)).evaluate().toString();
+                            } catch { /* ignore */ }
                         }
                     }
                 }
@@ -1582,7 +1594,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                 finalHandles.filter(h => h.type === 'scope').forEach(h => {
                     newOutputs[h.id] = scopeStr;
                 });
-            } catch(e){}
+            } catch { /* ignore */ }
         }
 
         const roundOff = (h: CustomHandle) => ({ ...h, offset: Math.round(h.offset * 10) / 10 });
@@ -1709,7 +1721,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
         if (editor) {
             if (editingValueRef.current !== null) {
                 let foundPos = -1;
-                let attrs: any = null;
+                let attrs: Record<string, unknown> | null = null;
                 editor.state.doc.descendants((node, pos) => {
                     if (node.type.name === 'mathPill' &&
                         node.attrs.value === editingValueRef.current &&
@@ -1965,7 +1977,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                                 onChange={() => {
                                     // MathInput handles its own state synchronization with the underlying web component
                                 }}
-                                onKeyDown={(e: any) => {
+                                onKeyDown={(e: React.KeyboardEvent) => {
                                     if (e.key === ':' || e.key === ';') {
                                         e.preventDefault();
                                         mathNameInputRef.current?.focus();

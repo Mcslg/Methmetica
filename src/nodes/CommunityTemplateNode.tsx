@@ -49,22 +49,9 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
   const template =
     draftTemplate ??
     catalogTemplate;
-  if (!template) {
-    return (
-      <div className="community-template-missing">
-        <div className="node-header">
-          <span><Icons.Package />Unknown Template</span>
-        </div>
-        <div className="node-content">
-          <p style={{ margin: 0, color: 'var(--text-sub)' }}>Template not found.</p>
-        </div>
-      </div>
-    );
-  }
-
   const referencedVersionId = typeof data.sourceWorkflowVersionId === 'string'
     ? data.sourceWorkflowVersionId
-    : draftTemplate?.sourceWorkflowVersionId ?? template.sourceWorkflowVersionId;
+    : draftTemplate?.sourceWorkflowVersionId ?? template?.sourceWorkflowVersionId;
   const latestSupersedingVersion = React.useMemo(() => {
     if (!referencedVersionId) return undefined;
 
@@ -92,24 +79,24 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
       ? referencedVersionId
       : catalogTemplate?.latestWorkflowVersionId ??
       data.latestWorkflowVersionId ??
-      template.latestWorkflowVersionId ??
+      template?.latestWorkflowVersionId ??
       catalogTemplate?.sourceWorkflowVersionId ??
-      template.sourceWorkflowVersionId);
+      template?.sourceWorkflowVersionId);
   const hasVersionUpdate = Boolean(referencedVersionId && latestVersionId && referencedVersionId !== latestVersionId);
   const rawUpdateSeverity = hasVersionUpdate
     ? latestSupersedingVersion?.changeType === 'hotfix' || latestSupersedingVersion?.changeType === 'fix' || latestSupersedingVersion?.changeType === 'feature'
       ? latestSupersedingVersion.changeType
-      : catalogTemplate?.updateSeverity ?? catalogTemplate?.changeType ?? data.updateSeverity ?? template.updateSeverity
-    : data.updateSeverity ?? template.updateSeverity;
+      : catalogTemplate?.updateSeverity ?? catalogTemplate?.changeType ?? data.updateSeverity ?? template?.updateSeverity
+    : data.updateSeverity ?? template?.updateSeverity;
   const updateSeverity = toUpdateSeverity(rawUpdateSeverity) ?? 'feature';
   const updateMessage = hasVersionUpdate
     ? latestSupersedingVersion?.warningMessage ??
     catalogTemplate?.updateMessage ??
     data.updateMessage ??
     getUpdateMessage(updateSeverity)
-    : data.updateMessage ?? template.updateMessage;
+    : data.updateMessage ?? template?.updateMessage;
   const updateLabel = getUpdateLabel(updateSeverity);
-  const updateSummaryText = compactUpdateText(latestSupersedingVersion?.updateSummary ?? catalogTemplate?.updateSummary ?? data.updateSummary ?? template.updateSummary);
+  const updateSummaryText = compactUpdateText(latestSupersedingVersion?.updateSummary ?? catalogTemplate?.updateSummary ?? data.updateSummary ?? template?.updateSummary);
   const warningMessage = updateSummaryText ? `${updateLabel}：${updateSummaryText}` : updateMessage;
   const ignoredUpdateVersionId = typeof data.ignoredCommunityUpdateVersionId === 'string'
     ? data.ignoredCommunityUpdateVersionId
@@ -133,9 +120,10 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
   const sourceWorkflowId =
     data.sourceWorkflowId ??
     catalogTemplate?.sourceWorkflowId ??
-    template.sourceWorkflowId ??
-    template.relatedWorkflowIds[0];
+    template?.sourceWorkflowId ??
+    template?.relatedWorkflowIds?.[0];
   const effectiveTemplateViewOverrides = React.useMemo(() => {
+    if (!template) return {};
     const dynamicOverrides = resolveTemplateViewOverrides(template, data.inputs);
     const blockIds = new Set([
       ...Object.keys(data.templateViewOverrides || {}),
@@ -216,7 +204,7 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
     }, 0);
   };
 
-  const loadVersions = async () => {
+  const loadVersions = React.useCallback(async () => {
     if (!sourceWorkflowId) {
       setVersionError('這個節點沒有來源 workflow，暫時不能切換版本。');
       return;
@@ -234,12 +222,12 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
     } finally {
       setLoadingVersions(false);
     }
-  };
+  }, [sourceWorkflowId]);
 
   React.useEffect(() => {
     if (!sourceWorkflowId || hasLoadedVersions || isLoadingVersions) return;
     void loadVersions();
-  }, [sourceWorkflowId, hasLoadedVersions, isLoadingVersions]);
+  }, [sourceWorkflowId, hasLoadedVersions, isLoadingVersions, loadVersions]);
 
   const handleIgnoreUpdate = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
@@ -312,6 +300,19 @@ export const CommunityTemplateNode = React.memo(function CommunityTemplateNode({
     event.stopPropagation();
     await applyWorkflowVersionToNode(version.id);
   };
+
+  if (!template) {
+    return (
+      <div className="community-template-missing">
+        <div className="node-header">
+          <span><Icons.Package />Unknown Template</span>
+        </div>
+        <div className="node-content">
+          <p style={{ margin: 0, color: 'var(--text-sub)' }}>Template not found.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="community-template-node-shell">

@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
-import useStore, { type AppState, type AppNode, type NodeData } from '../store/useStore';
+import useStore, { type AppState, type AppNode, type NodeData, type CustomHandle } from '../store/useStore';
 import { NodeFrame } from '../components/NodeFrame';
 import { Icons } from '../components/Icons';
 import type { MathValue } from '../types/mathTypes';
@@ -230,8 +230,9 @@ const getWorker = () => {
     return workerInstance;
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const executeCodeNode = async (node: AppNode, state: AppState): Promise<void> => {
-    let baseCode = node.data.code?.trim() || defaultCode;
+    const baseCode = node.data.code?.trim() || defaultCode;
     
     // [NEW] Extract input & output declarations
     const INPUT_DECLARATION_REGEX = new RegExp(String.raw`^\s*input\s+([A-Za-z_$][\w$]*)\s+as\s+(${DECLARED_TYPE_PATTERN})\s*$`, 'gm');
@@ -300,8 +301,10 @@ export const executeCodeNode = async (node: AppNode, state: AppState): Promise<v
                 : { result };
 
         // [NEW] Handle unboxing for display, but keep object for output handles
-        const displayValue = (val: any) => {
-            if (val && typeof val === 'object' && 'value' in val) return stringifyOutput(val.value);
+        const displayValue = (val: unknown) => {
+            if (val && typeof val === 'object' && 'value' in val) {
+                return stringifyOutput((val as { value: unknown }).value);
+            }
             return stringifyOutput(val);
         };
 
@@ -424,7 +427,7 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
         const currentHandles = data.handles || [];
         const showErrorOutput = Boolean(data.showCodeErrorOutput);
         
-        let newInputHandles: any[] = [];
+        let newInputHandles: CustomHandle[] = [];
         if (newInputs.length > 0) {
             newInputHandles = newInputs.map((inp, index) => {
                 const spacing = 100 / (newInputs.length + 1);
@@ -443,7 +446,7 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
             newInputHandles = [{ id: 'h-in', type: 'input', position: 'left', offset: 50 }];
         }
 
-        let newOutputHandles: any[] = [];
+        let newOutputHandles: CustomHandle[] = [];
         if (newOutputs.length > 0) {
             newOutputHandles = newOutputs.map((out, index) => {
                 const spacing = 100 / (newOutputs.length + 1);
@@ -459,7 +462,7 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
             });
         }
 
-        const baseOutputHandles: any[] = [];
+        const baseOutputHandles: CustomHandle[] = [];
         if (hasReturn) {
             baseOutputHandles.push({ id: 'h-result', type: 'output', position: 'right', offset: showErrorOutput ? 33 : 50, label: 'result', description: 'The value returned by the code' });
         }
