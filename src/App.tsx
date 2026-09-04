@@ -25,6 +25,8 @@ import * as driveService from './utils/googleDriveService';
 import { loadLocalDraft, loadPublicWorkflowEdit, saveLocalDraft, savePublicWorkflowEdit } from './utils/localDraftService';
 import { type AppRoute, parseRouteFromLocation, readEditorSnapshotFromHistory, replaceRoute } from './utils/navigation';
 import type { MathValue } from './types/mathTypes';
+import { expandDummyNodeWithSubgraph } from './utils/aiWorkflowGenerator';
+import type { WorkflowSpec } from './types/workflowSpec';
 
 type PaneMenuEvent = {
   preventDefault: () => void;
@@ -587,6 +589,218 @@ function Flow() {
     window.addEventListener('add-node-at-center', handleAddAtCenter);
     return () => window.removeEventListener('add-node-at-center', handleAddAtCenter);
   }, [handleAddNode]);
+
+  // 監聽 Dummy 節點遞迴生成與開新頁面編輯子圖事件
+  useEffect(() => {
+    const handleImplementDummy = (e: Event) => {
+      const customEvt = e as CustomEvent<{
+        nodeId: string;
+        label: string;
+        description: string;
+        inputs: any[];
+        outputs: any[];
+      }>;
+      const { nodeId, label, description, inputs, outputs } = customEvt.detail;
+
+      // 建立替換用的子工作流規格
+      const generatedSpec: WorkflowSpec = {
+        schemaVersion: 2,
+        id: `subgraph-${Date.now()}`,
+        name: label,
+        description: description,
+        version: '1.0.0',
+        visibility: 'private',
+        publishKind: 'node',
+        inputs: inputs || [],
+        outputs: outputs || [],
+        nodes: [
+          ...(inputs || []).map((inp, idx) => ({
+            id: `in-${idx}`,
+            type: 'inputNode',
+            name: inp.name || `in_${idx + 1}`,
+            position: { x: 50, y: 50 + idx * 100 },
+          })),
+          ...(outputs || []).map((out, idx) => ({
+            id: `out-${idx}`,
+            type: 'outputNode',
+            name: out.name || `out_${idx + 1}`,
+            position: { x: 450, y: 50 + idx * 100 },
+          })),
+        ],
+        edges: [],
+      };
+
+      const currentNodes = useStore.getState().nodes;
+      const currentEdges = useStore.getState().edges;
+      const { nodes: nextNodes, edges: nextEdges } = expandDummyNodeWithSubgraph(
+        currentNodes,
+        currentEdges,
+        nodeId,
+        generatedSpec
+      );
+
+      useStore.setState({ nodes: nextNodes, edges: nextEdges });
+      useStore.getState().evaluateGraph();
+    };
+
+    const handleOpenSubgraphNewPage = (e: Event) => {
+      const customEvt = e as CustomEvent<{ nodeId: string; workflowSpec?: WorkflowSpec }>;
+      const { nodeId, workflowSpec } = customEvt.detail;
+      const spec = workflowSpec || {
+        schemaVersion: 2,
+        id: `subgraph-${nodeId}`,
+        name: '子工作流',
+        description: '',
+        version: '1.0.0',
+        inputs: [],
+        outputs: [],
+        nodes: [],
+        edges: [],
+      };
+
+      try {
+        localStorage.setItem(`subgraph_draft_${spec.id}`, JSON.stringify(spec));
+      } catch (err) {
+        console.warn('Failed to cache subgraph spec to localStorage', err);
+      }
+
+      window.open(`${window.location.origin}${window.location.pathname}?subgraph=${spec.id}`, '_blank');
+    };
+
+    const handleLoadDemo = () => {
+      const demoInNode: AppNode = {
+        id: 'demo-in-radius',
+        type: 'inputNode',
+        position: { x: 80, y: 150 },
+        width: 200,
+        height: 130,
+        data: {
+          label: 'radius',
+          nodeName: 'radius',
+          value: '5',
+          handles: [{ id: 'out', type: 'output', position: 'right', offset: 50, label: 'radius' }]
+        }
+      };
+
+      const demoCodeNode: AppNode = {
+        id: 'demo-calc-area',
+        type: 'codeNode',
+        position: { x: 360, y: 150 },
+        width: 280,
+        height: 240,
+        data: {
+          label: '圓面積計算',
+          code: `input radius as real\noutput area as real\n\noutputs.area = Math.PI * radius * radius;`,
+          autoRun: true,
+          handles: [
+            { id: 'radius', type: 'input', position: 'left', offset: 35, label: 'radius' },
+            { id: 'area', type: 'output', position: 'right', offset: 35, label: 'area' },
+            { id: 'h-result', type: 'output', position: 'right', offset: 65, label: 'Result' }
+          ]
+        }
+      };
+
+      const demoOutNode: AppNode = {
+        id: 'demo-out-area',
+        type: 'outputNode',
+        position: { x: 720, y: 150 },
+        width: 200,
+        height: 130,
+        data: {
+          label: 'area',
+          nodeName: 'area',
+          handles: [{ id: 'in', type: 'input', position: 'left', offset: 50, label: 'area' }]
+        }
+      };
+
+      const demoDummyNode: AppNode = {
+        id: 'demo-dummy-perimeter',
+        type: 'dummyNode',
+        position: { x: 360, y: 440 },
+        width: 240,
+        height: 160,
+        data: {
+          label: '圓周長計算器',
+          description: 'AI 規劃之佔位節點，可點擊下方按鈕實作。',
+          expectedInputs: [{ id: 'radius', name: 'radius', dataType: 'real' }],
+          expectedOutputs: [{ id: 'perimeter', name: 'perimeter', dataType: 'real' }],
+          handles: [
+            { id: 'radius', type: 'input', position: 'left', offset: 50, label: 'radius' },
+            { id: 'perimeter', type: 'output', position: 'right', offset: 50, label: 'perimeter' }
+          ]
+        }
+      };
+
+      const demoCompositeNode: AppNode = {
+        id: 'demo-composite-circle',
+        type: 'compositeWorkflowNode',
+        position: { x: 720, y: 440 },
+        width: 280,
+        height: 220,
+        data: {
+          label: '圓幾何複合節點',
+          description: '已封裝之子工作流節點，帶有宣告式 Slider。',
+          workflowSpec: {
+            schemaVersion: 2,
+            id: 'circle-subgraph-demo',
+            name: '圓幾何計算器',
+            description: '內建半徑拉桿與周長面積',
+            version: '1.0.0',
+            inputs: [{ id: 'radius', name: 'radius', dataType: 'real', defaultValue: 5 }],
+            outputs: [{ id: 'area', name: 'area', dataType: 'real' }],
+            nodes: [],
+            edges: [],
+            ui: [
+              { type: 'slider', id: 'ui-slider-1', label: '動態半徑 (Radius)', bindInput: 'radius', min: 1, max: 20, defaultValue: 5 },
+              { type: 'text', id: 'ui-text-1', content: '拖曳滑桿可直接測試雙向數值連動。' }
+            ]
+          },
+          handles: [
+            { id: 'radius', type: 'input', position: 'left', offset: 50, label: 'radius' },
+            { id: 'area', type: 'output', position: 'right', offset: 50, label: 'area' }
+          ]
+        }
+      };
+
+      const demoEdges: Edge[] = [
+        {
+          id: 'edge-in-to-code',
+          source: 'demo-in-radius',
+          sourceHandle: 'out',
+          target: 'demo-calc-area',
+          targetHandle: 'radius'
+        },
+        {
+          id: 'edge-code-to-out',
+          source: 'demo-calc-area',
+          sourceHandle: 'area',
+          target: 'demo-out-area',
+          targetHandle: 'in'
+        }
+      ];
+
+      const currentNodes = useStore.getState().nodes;
+      const currentEdges = useStore.getState().edges;
+      const filteredNodes = currentNodes.filter(n => !n.id.startsWith('demo-'));
+      const filteredEdges = currentEdges.filter(e => !e.id.startsWith('edge-'));
+
+      useStore.setState({
+        nodes: [...filteredNodes, demoInNode, demoCodeNode, demoOutNode, demoDummyNode, demoCompositeNode],
+        edges: [...filteredEdges, ...demoEdges]
+      });
+      setTimeout(() => useStore.getState().evaluateGraph(), 100);
+    };
+
+    window.addEventListener('ai-implement-dummy-node', handleImplementDummy);
+    window.addEventListener('open-subgraph-new-page', handleOpenSubgraphNewPage);
+    window.addEventListener('load-ai-workflow-demo', handleLoadDemo);
+
+    return () => {
+      window.removeEventListener('ai-implement-dummy-node', handleImplementDummy);
+      window.removeEventListener('open-subgraph-new-page', handleOpenSubgraphNewPage);
+      window.removeEventListener('load-ai-workflow-demo', handleLoadDemo);
+    };
+  }, []);
 
   // [RECONNECT] Global click interceptor to ensure we don't miss clicks on handles due to event propagation limits
   useEffect(() => {
@@ -1420,6 +1634,8 @@ function Flow() {
         </div>,
         document.body
       )}
+
+      {/* Visual Effects & Animations */}
 
       <style>{`
         @keyframes eject-flow { from { stroke-dashoffset: 28; } to { stroke-dashoffset: 0; } }

@@ -16,6 +16,10 @@ import { CommunityTemplateNode } from './CommunityTemplateNode';
 import { WorkflowLinkNode } from './deprecated/WorkflowLinkNode';
 import { CodeNode, executeCodeNode } from './CodeNode';
 import { DriveImageNode, executeDriveImageNode } from './DriveImageNode';
+import { InputNode } from './core/InputNode';
+import { OutputNode } from './core/OutputNode';
+import { DummyNode } from './core/DummyNode';
+import { CompositeWorkflowNode } from './core/CompositeWorkflowNode';
 import { getTemplateInterfaceSchema, type CommunityNodeTemplate } from '../community/types';
 import { getCommunityTemplateById } from '../community/catalog';
 import { runBuiltWorkflowNode } from '../utils/workflowTestRunner';
@@ -293,6 +297,48 @@ export const nodeRegistry: NodeDefinition[] = [
             { id: 'h-out', type: 'output', position: 'right', offset: 42, label: 'out' },
         ],
         execute: executeCommunityTemplateNode
+    },
+    {
+        type: 'inputNode',
+        component: InputNode,
+        metadata: { label: 'Interface In', desc: '子工作流外部資料輸入端點', category: 'Interface', icon: <Icons.Trigger />, color: '#38bdf8' },
+        defaultSize: { width: 200, height: 130 },
+        defaultHandles: [{ id: 'out', type: 'output', position: 'right', offset: 50, label: 'out' }],
+        execute: (node, state) => {
+            const val = node.data?.value ?? '';
+            state.updateNodeData(node.id, { outputs: { out: String(val) } });
+        }
+    },
+    {
+        type: 'outputNode',
+        component: OutputNode,
+        metadata: { label: 'Interface Out', desc: '子工作流運算結果輸出端點', category: 'Interface', icon: <Icons.Result />, color: '#f59e0b' },
+        defaultSize: { width: 200, height: 130 },
+        defaultHandles: [{ id: 'in', type: 'input', position: 'left', offset: 50, label: 'in' }],
+        execute: (node, state) => {
+            const incomingVal = node.data?.input ?? node.data?.inputs?.in ?? '';
+            state.updateNodeData(node.id, { value: String(incomingVal) });
+        }
+    },
+    {
+        type: 'dummyNode',
+        component: DummyNode,
+        metadata: { label: 'Dummy Node', desc: 'AI 或使用者未實作之佔位節點', category: 'Logic', icon: <Icons.Code />, color: '#ec4899' },
+        defaultSize: { width: 240, height: 160 },
+        defaultHandles: [
+            { id: 'in', type: 'input', position: 'left', offset: 50, label: 'in' },
+            { id: 'out', type: 'output', position: 'right', offset: 50, label: 'out' },
+        ]
+    },
+    {
+        type: 'compositeWorkflowNode',
+        component: CompositeWorkflowNode,
+        metadata: { label: 'Composite Node', desc: '封裝之子工作流節點', category: 'Workflow', icon: <Icons.Package />, color: '#38bdf8' },
+        defaultSize: { width: 280, height: 220 },
+        defaultHandles: [
+            { id: 'in', type: 'input', position: 'left', offset: 50, label: 'in' },
+            { id: 'out', type: 'output', position: 'right', offset: 50, label: 'out' },
+        ]
     }
 ];
 

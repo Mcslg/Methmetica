@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import useStore, { createGraphSignature } from '../store/useStore';
 import { NodeLibrary } from './NodeLibrary';
+import { NodeCreatorPanel } from './workflow/NodeCreatorPanel';
 import { Icons } from './Icons';
 import TitleLogo from '../assets/Title.svg';
 import TitleDarkLogo from '../assets/Title_dark.svg';
@@ -100,6 +101,29 @@ export function Sidebar() {
         isDeletingHover, isPaletteFloating, setPaletteFloating, setCurrentView,
         user, setUser, driveConnected, activeFileId, setActiveFileId, savedGraphSignature, markCurrentGraphSaved, updateNodeData
     } = useStore();
+    const [sidebarTab, setSidebarTab] = React.useState<'library' | 'creator'>('library');
+
+    const hasInterfacesOrCustomNodes = React.useMemo(() => {
+        return nodes.some(n => n.type === 'inputNode' || n.type === 'outputNode' || n.type === 'compositeWorkflowNode');
+    }, [nodes]);
+    const [isCreatorUnlocked, setIsCreatorUnlocked] = React.useState(hasInterfacesOrCustomNodes);
+
+    React.useEffect(() => {
+        if (hasInterfacesOrCustomNodes) {
+            setIsCreatorUnlocked(true);
+        }
+    }, [hasInterfacesOrCustomNodes]);
+
+    React.useEffect(() => {
+        const handleOpenCreator = () => {
+            setIsCreatorUnlocked(true);
+            setSidebarOpen(true);
+            setSidebarTab('creator');
+        };
+        window.addEventListener('open-node-creator-tab', handleOpenCreator);
+        return () => window.removeEventListener('open-node-creator-tab', handleOpenCreator);
+    }, [setSidebarOpen]);
+
     const [holdProgress, setHoldProgress] = React.useState(0);
     const [isSyncing, setIsSyncing] = React.useState(false);
     const [syncStatus, setSyncStatus] = React.useState<'idle' | 'success' | 'error'>('idle');
@@ -841,7 +865,7 @@ export function Sidebar() {
     };
 
     return (
-        <div className={`sidebar-container ${isSidebarOpen ? 'open' : 'closed'}`}>
+        <div className={`sidebar-container ${isSidebarOpen ? 'open' : 'closed'} ${sidebarTab === 'creator' ? 'creator-active' : ''}`}>
             <div className="sidebar-drawer">
                 <div 
                     className="sidebar-header clickable" 
@@ -856,7 +880,13 @@ export function Sidebar() {
                     <p style={{ marginTop: '4px' }}>v0.7.1</p>
                 </div>
 
-                {!isPaletteFloating && (
+                {sidebarTab === 'creator' ? (
+                    <div className="sidebar-section" style={{ minWidth: 0 }}>
+                        <NodeCreatorPanel onNodeCreated={() => setSidebarTab('library')} />
+                    </div>
+                ) : (
+                    <>
+                        {!isPaletteFloating && (
                     <div className="sidebar-section">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                             <label style={{ marginBottom: 0 }}>{t('sidebar.title')} <span>(Drag & Drop)</span></label>
@@ -868,7 +898,7 @@ export function Sidebar() {
                                 <Icons.ExternalLink style={{ width: 14, height: 14 }} />
                             </button>
                         </div>
-                        <NodeLibrary onDragStart={onDragStart} layout="sidebar" />
+                        <NodeLibrary onDragStart={onDragStart} layout="sidebar" showInterfaces={isCreatorUnlocked} />
                     </div>
                 )}
 
@@ -1076,6 +1106,8 @@ export function Sidebar() {
                         <span>{holdProgress > 0 ? (t('sidebar.hold_to_clear') || 'Hold to Clear') : (t('sidebar.clear_all') || 'Clear All')}</span>
                     </button>
                 </div>
+                </>
+                )}
                 <div className="sidebar-footer" style={{ marginTop: 'auto', display: 'flex', gap: '8px' }}>
                     <button 
                         className="sidebar-btn icon-only" 
@@ -1122,9 +1154,38 @@ export function Sidebar() {
 
             {publishUpdateDialog}
 
-            <button className="sidebar-toggle-btn" onClick={() => setSidebarOpen(!isSidebarOpen)}>
-                {isSidebarOpen ? '‹' : '›'}
-            </button>
+            <div className="sidebar-toggle-flaps">
+                <button
+                    className="sidebar-toggle-btn library"
+                    onClick={() => {
+                        if (isSidebarOpen && sidebarTab === 'library') {
+                            setSidebarOpen(false);
+                        } else {
+                            setSidebarTab('library');
+                            setSidebarOpen(true);
+                        }
+                    }}
+                    title={isSidebarOpen && sidebarTab === 'library' ? '收合元件庫' : '開啟元件庫'}
+                >
+                    {isSidebarOpen && sidebarTab === 'library' ? '‹' : '›'}
+                </button>
+                {isCreatorUnlocked && (
+                    <button
+                        className="sidebar-toggle-btn creator"
+                        onClick={() => {
+                            if (isSidebarOpen && sidebarTab === 'creator') {
+                                setSidebarOpen(false);
+                            } else {
+                                setSidebarTab('creator');
+                                setSidebarOpen(true);
+                            }
+                        }}
+                        title={isSidebarOpen && sidebarTab === 'creator' ? '收合節點製造' : '開啟節點製造'}
+                    >
+                        {isSidebarOpen && sidebarTab === 'creator' ? '‹' : '›'}
+                    </button>
+                )}
+            </div>
 
             <style>{`
                 .sidebar-container {
@@ -1140,6 +1201,9 @@ export function Sidebar() {
                 .sidebar-container.closed {
                     transform: translateX(-195px);
                 }
+                .sidebar-container.creator-active.closed {
+                    transform: translateX(-375px);
+                }
                 .sidebar-drawer {
                     position: relative;
                     width: 160px;
@@ -1151,10 +1215,14 @@ export function Sidebar() {
                     padding: 24px 16px;
                     display: flex;
                     flex-direction: column;
-                    gap: 28px;
+                    gap: 20px;
                     box-shadow: 20px 0 50px rgba(0,0,0,0.15);
                     overflow-y: auto;
                     overflow-x: hidden;
+                    transition: width 0.3s cubic-bezier(0.19, 1, 0.22, 1);
+                }
+                .sidebar-container.creator-active .sidebar-drawer {
+                    width: 340px;
                 }
                 .sidebar-drawer::-webkit-scrollbar {
                     width: 4px;
@@ -1684,6 +1752,11 @@ export function Sidebar() {
                     color: var(--text-sub);
                     padding: 4px 2px;
                 }
+                .sidebar-toggle-flaps {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                }
                 .sidebar-toggle-btn {
                     width: 20px;
                     height: 44px;
@@ -1702,6 +1775,17 @@ export function Sidebar() {
                 }
                 .sidebar-toggle-btn:hover {
                     color: var(--text-main);
+                    padding-left: 4px;
+                }
+                .sidebar-toggle-btn.creator {
+                    background: #0b1e36;
+                    border: 1px solid rgba(56, 189, 248, 0.45);
+                    border-left: none;
+                    color: #38bdf8;
+                }
+                .sidebar-toggle-btn.creator:hover {
+                    background: #0284c7;
+                    color: #ffffff;
                     padding-left: 4px;
                 }
                 .delete-overlay {

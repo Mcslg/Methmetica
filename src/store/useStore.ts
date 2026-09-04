@@ -7,6 +7,7 @@ import { defaultCommunityTemplates } from '../community/catalog';
 import { getTemplateHandles, getTemplateInternalHandles, getTemplateInterfaceSchema, type CommunityNodeTemplate, type TemplateHandleSpec, type TemplateViewOverrides, type WorkflowIcon, type WorkflowVisibility } from '../community/types';
 import type { AppUser, AuthStatus } from '../integrations/supabase/types';
 import type { MathValue } from '../types/mathTypes';
+import type { WorkflowSpec, WorkflowPortSpec } from '../types/workflowSpec';
 import {
     type Connection,
     type EdgeChange,
@@ -137,6 +138,10 @@ export type NodeData = {
     templateRelatedWorkflowIds?: string[];
     targetWorkflowId?: string;
     targetWorkflowTitle?: string;
+    workflowSpec?: WorkflowSpec;
+    subgraphId?: string;
+    expectedInputs?: WorkflowPortSpec[];
+    expectedOutputs?: WorkflowPortSpec[];
     callout?: string;
     builderDraft?: CommunityNodeTemplate;
     builderNode?: boolean;

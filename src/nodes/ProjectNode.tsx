@@ -4,8 +4,7 @@ import { Icons } from '../components/Icons';
 import { NodeFrame } from '../components/NodeFrame';
 import useStore, { type AppNode } from '../store/useStore';
 import { useLanguage } from '../contexts/LanguageContext';
-import type { CommunityNodeTemplate, WorkflowChangeType, WorkflowIcon, WorkflowVisibility } from '../community/types';
-import { makeInitialDraft } from '../community/templateDraft';
+import type { WorkflowChangeType, WorkflowIcon, WorkflowVisibility } from '../community/types';
 import { DEFAULT_WORKFLOW_ICON, WORKFLOW_ICON_OPTIONS, normalizeWorkflowIcon, renderWorkflowIconVisual } from '../utils/workflowIcons';
 import { publishWorkflowToSupabase } from '../integrations/supabase/workflows';
 import { getUserRole } from '../integrations/supabase/auth';
@@ -30,7 +29,6 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
   const { setViewport, getNodes } = useReactFlow();
   const { t } = useLanguage();
   const updateNodeData = useStore(state => state.updateNodeData);
-  const addNode = useStore(state => state.addNode);
   const activeFileId = useStore(state => state.activeFileId);
   const user = useStore(state => state.user);
   const setUser = useStore(state => state.setUser);
@@ -96,68 +94,6 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
       }, { skipGraphEval: true });
     }
   }, [data.builderNodeId, data.visibility, id, localDesc, localName, localTags, localWorkflowIcon, updateNodeData]);
-
-  const focusNodeById = React.useCallback((nodeId: string) => {
-    const node = getNodes().find(n => n.id === nodeId);
-    if (!node) return;
-    useStore.setState((current) => ({
-      nodes: current.nodes.map(item => ({ ...item, selected: item.id === nodeId })),
-    }));
-    setViewport({ x: window.innerWidth / 2 - node.position.x - 420, y: window.innerHeight / 2 - node.position.y - 260, zoom: 0.72 }, { duration: 800 });
-  }, [getNodes, setViewport]);
-
-  const handleCreateBuilder = () => {
-    const existingBuilder = getNodes().find(node =>
-      node.type === 'nodeBuilderNode' &&
-      (node.data?.projectNodeId === id || node.id === data.builderNodeId)
-    );
-    if (existingBuilder) {
-      focusNodeById(existingBuilder.id);
-      return;
-    }
-
-    const draft = (data.builderDraft as CommunityNodeTemplate | undefined) || makeInitialDraft({
-      title: (localName || data.label || 'Untitled Workflow').trim(),
-      summary: localDesc || data.description || '',
-      tags: parseTags(localTags),
-    });
-    const builderNodeId = `node-builder-${id}`;
-    const projectNode = getNodes().find(node => node.id === id);
-
-    addNode({
-      id: builderNodeId,
-      type: 'nodeBuilderNode',
-      position: {
-        x: (projectNode?.position.x ?? 0) + 360,
-        y: projectNode?.position.y ?? 0,
-      },
-      width: 900,
-      style: { width: 900 },
-      selected: true,
-      data: {
-        projectNodeId: id,
-        label: draft.title,
-        description: draft.summary,
-        tags: draft.tags,
-        visibility: data.visibility || 'private',
-        workflowIcon: localWorkflowIcon,
-        builderDraft: draft,
-        publishStatus: 'Node Builder 已獨立成節點，發布時仍會同步到 Project Root。',
-      },
-    } as AppNode);
-
-    updateNodeData(id, {
-      builderNodeId,
-      label: draft.title,
-      description: draft.summary,
-      tags: draft.tags,
-      visibility: data.visibility || 'private',
-      workflowIcon: localWorkflowIcon,
-      builderDraft: draft,
-      publishStatus: '這條工作流已連到獨立 Node Builder。',
-    }, { skipGraphEval: true });
-    setTimeout(() => focusNodeById(builderNodeId), 0);
-  };
 
   const handlePublishWorkflowOnly = React.useCallback(async (publishOptions?: PublishUpdateMetadata) => {
     setIsPublishing(true);
@@ -465,15 +401,18 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
 
             <div className="builder-cta">
               <div>
-                <strong>{data.builderDraft ? '開啟 Node Builder' : '把這條工作流建立成節點'}</strong>
+                <strong>把這條工作流建立成自訂節點</strong>
                 <p>
-                  {data.builderDraft
-                    ? 'Builder 已獨立成節點；ProjectNode 只保留 workflow metadata 和發布狀態。'
-                    : '建立後會新增一個獨立 Node Builder 節點，用來設計 input、output 和 template UI。'}
+                  開啟側邊欄節點製造工具箱，透過拖曳輕鬆客製卡片外觀並一鍵封裝。
                 </p>
               </div>
-              <button className="builder-create-btn" onClick={handleCreateBuilder}>
-                <Icons.Package /> {data.builderDraft ? 'Open Builder' : '建立 Builder Node'}
+              <button
+                className="builder-create-btn"
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('open-node-creator-tab'));
+                }}
+              >
+                <Icons.Package /> 設計與建立節點
               </button>
             </div>
           </div>
