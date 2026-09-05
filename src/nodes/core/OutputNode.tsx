@@ -39,7 +39,7 @@ export const OutputNode = memo(function OutputNode({ id, data, selected }: NodeP
   };
 
   const handleTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    updateNodeData(id, { variant: e.target.value as any });
+    updateNodeData(id, { variant: e.target.value as NodeData['variant'] });
   };
 
   return (

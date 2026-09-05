@@ -40,7 +40,7 @@ export const InputNode = memo(function InputNode({ id, data, selected }: NodePro
   };
 
   const handleTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    updateNodeData(id, { variant: e.target.value as any });
+    updateNodeData(id, { variant: e.target.value as NodeData['variant'] });
   };
 
   const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {

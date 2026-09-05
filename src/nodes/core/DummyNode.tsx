@@ -12,12 +12,13 @@ export const DummyNode = memo(function DummyNode({ id, data, selected }: NodePro
   const description = data.description || 'AI 生成之抽象節點，尚未實作內部邏輯。';
   
   // 取得預期的輸入與輸出合約
-  const expectedInputs: WorkflowPortSpec[] = useMemo(() => (data as any).expectedInputs || [
+  const rawData = data as unknown as Record<string, unknown>;
+  const expectedInputs: WorkflowPortSpec[] = useMemo(() => (rawData.expectedInputs as WorkflowPortSpec[] | undefined) || [
     { id: 'in', name: 'in', dataType: 'any' }
-  ], [data]);
-  const expectedOutputs: WorkflowPortSpec[] = useMemo(() => (data as any).expectedOutputs || [
+  ], [rawData]);
+  const expectedOutputs: WorkflowPortSpec[] = useMemo(() => (rawData.expectedOutputs as WorkflowPortSpec[] | undefined) || [
     { id: 'out', name: 'out', dataType: 'any' }
-  ], [data]);
+  ], [rawData]);
 
   // 動態同步 handles 到 data.handles，以便 NodeFrame 和 DynamicHandles 渲染
   useEffect(() => {

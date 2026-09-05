@@ -1,10 +1,10 @@
 import { useEffect, memo } from 'react';
 import { type NodeProps, type Node, useUpdateNodeInternals } from '@xyflow/react';
-import useStore, { type NodeData, type AppState, type CustomHandle } from '../../store/useStore';
-import { getMathEngine } from '../../utils/MathEngine';
-import { Icons } from '../../components/Icons';
-import { NodeFrame } from '../../components/NodeFrame';
-import { MathInput } from '../../components/MathInput';
+import useStore, { type NodeData, type AppState, type CustomHandle } from '../store/useStore';
+import { getMathEngine } from '../utils/MathEngine';
+import { Icons } from '../components/Icons';
+import { NodeFrame } from '../components/NodeFrame';
+import { MathInput } from '../components/MathInput';
 
 export const CalculateNode = memo(function CalculateNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
@@ -52,7 +52,7 @@ export const CalculateNode = memo(function CalculateNode({ id, data, selected }:
                         newInputHandles = currentHandles.filter(h => h.type === 'input');
                     } else {
                         newInputHandles = tempVariables.map((v: string, index: number) => {
-                            const existing = currentHandles.find((h: any) => h.label === v || h.id === `h-in-${v}`);
+                            const existing = currentHandles.find((h: CustomHandle) => h.label === v || h.id === `h-in-${v}`);
                             if (existing) return existing;
 
                             const spacing = 100 / (tempVariables.length + 1);
@@ -62,10 +62,10 @@ export const CalculateNode = memo(function CalculateNode({ id, data, selected }:
                                 position: 'left',
                                 offset: (index + 1) * spacing,
                                 label: v
-                            } as any;
+                            } as CustomHandle;
                         });
                     }
-                } catch (e) {
+                } catch {
                     // Formula might be incomplete mid-typing.
                     // IMPORTANT: Keep existing input handles so connections don't break!
                     newInputHandles = currentHandles.filter(h => h.type === 'input');
@@ -76,7 +76,7 @@ export const CalculateNode = memo(function CalculateNode({ id, data, selected }:
             // 2. Add special handle for external formula if enabled
             const specialHandles: CustomHandle[] = [];
             if (useExternalFormula) {
-                specialHandles.push({ id: 'h-fn-in', type: 'input', position: 'left', offset: 15, label: 'f(x)' } as any);
+                specialHandles.push({ id: 'h-fn-in', type: 'input', position: 'left', offset: 15, label: 'f(x)' });
             }
 
             // 3. Keep output and other non-variable input handles

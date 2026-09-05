@@ -1,4 +1,6 @@
 import type { WorkflowSpec, WorkflowNodeSpec, WorkflowEdgeSpec } from '../types/workflowSpec';
+import type { CommunityNodeTemplate } from '../community/types';
+import { defaultCommunityTemplates } from '../community/catalog';
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 const GEMINI_FALLBACK_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
@@ -8,7 +10,7 @@ export function getStoredApiKey(): string {
   if (typeof window === 'undefined') return '';
   const stored = localStorage.getItem(STORAGE_KEY);
   if (stored && stored.trim()) return stored.trim();
-  const envKey = (import.meta as any).env?.VITE_GEMINI_API_KEY;
+  const envKey = (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_GEMINI_API_KEY;
   if (typeof envKey === 'string' && envKey.trim()) return envKey.trim();
   return '';
 }
@@ -23,35 +25,119 @@ export function setStoredApiKey(key: string): void {
 }
 
 /**
- * 系統提示詞：向 LLM 注入 Methmetica 的節點合約與 WorkflowSpec 規範
+ * 將社群節點目錄精簡格式化為 LLM 理解的 Schema
  */
-const SYSTEM_INSTRUCTION = `You are Methmetica AI, an expert mathematical workflow compiler.
+export function formatCommunityCatalogForPrompt(templates: CommunityNodeTemplate[]): string {
+  if (!templates || templates.length === 0) return '';
+
+  const lines = templates.map(t => {
+    const inPorts = (t.inputs || []).map(i => `"${i.id}" (${i.label || i.id})`).join(', ') || 'none';
+    const outPorts = (t.outputs || []).map(o => `"${o.id}" (${o.label || o.id})`).join(', ') || 'none';
+    const fieldLines = (t.fields || []).map(f => {
+      const defaultStr = f.defaultValue ? `, default: "${f.defaultValue}"` : '';
+      const placeholderStr = f.placeholder ? `, e.g. "${f.placeholder}"` : '';
+      return `      - "${f.id}": ${f.label} (${f.kind}${defaultStr}${placeholderStr})`;
+    }).join('\n');
+
+    return `- Template ID: "${t.id}"
+  - Title: "${t.title}"
+  - Category: "${t.category || 'Community'}"
+  - Summary: "${t.summary || ''}"
+  - Target Handles (Inputs): [${inPorts}]
+  - Source Handles (Outputs): [${outPorts}]
+  - Configurable Surface Fields (in "config": { "templateFields": { ... } }):
+${fieldLines || '      (none)'}`;
+  });
+
+  return `### 2. AVAILABLE COMMUNITY TEMPLATE NODES:
+You can instantiate community templates by specifying "type": "communityTemplateNode" and in "config" provide:
+{
+  "templateId": "<templateId>",
+  "label": "<title>",
+  "templateFields": {
+    "<fieldId>": "<fill content according to the problem context>"
+  }
+}
+Whenever the user's request involves theorem definitions, structured problem-solving methods, or concepts covered by a community template, PRIORITIZE using these community nodes:
+${lines.join('\n\n')}`;
+}
+
+/**
+ * 動態系統提示詞：向 LLM 注入 Methmetica 的原生節點、社群節點與 WorkflowSpec 規範
+ */
+export function buildSystemInstruction(communityTemplates?: CommunityNodeTemplate[]): string {
+  const templates = communityTemplates && communityTemplates.length > 0
+    ? communityTemplates
+    : defaultCommunityTemplates;
+
+  const communitySection = formatCommunityCatalogForPrompt(templates);
+
+  return `You are Methmetica AI, an expert mathematical workflow compiler.
 Your task is to convert user's mathematical or algorithmic requests into a strictly valid, runnable Directed Acyclic Graph (DAG) specified in Methmetica WorkflowSpec (schemaVersion: 2).
 
-### 1. AVAILABLE PRIMITIVE NODES:
-- "inputNode": Sources an input variable or parameter.
-  - Source handles: "out"
-  - Config: { "label": "<varName>", "nodeName": "<varName>", "value": "<defaultVal>" }
-- "outputNode": Sinks the final result to display.
-  - Target handles: "in"
-  - Config: { "label": "<resName>", "nodeName": "<resName>" }
+### 1. AVAILABLE PRIMITIVE NODES (AND THEIR SURFACE EDITABLE FIELDS):
+Every node has surface fields that you MUST fill in "config":
+
 - "calculateNode": Mathematical expression evaluator.
-  - Target handles: "h-fn-in" (formula or primary input), or variable names like "x", "y", "a", "b", "c".
-  - Source handles: "value" (or "out")
-  - Config: { "label": "<desc>", "formulaInput": "<expression e.g. b^2 - 4*a*c>" }
-- "sliderNode": Dynamic numeric slider controller.
-  - Source handles: "out" (or "value")
-  - Config: { "label": "<name>", "min": 0, "max": 100, "step": 1, "value": 10 }
-- "graphNode": 2D function plotter.
-  - Target handles: "h-fn-in"
-  - Config: { "label": "函數圖表" }
-- "textNode": Markdown note or annotation.
-  - Config: { "label": "說明", "text": "Markdown content" }
-- "codeNode": JavaScript/Python multi-line code executor.
-  - Target handles: custom input names
-  - Source handles: "h-result" or custom output names
-  - Config: { "label": "Code", "code": "..." }
-- "dummyNode": MUST be used when the user requires an algorithm/sub-procedure that does not exist in the primitives (e.g. "求質數表", "傅立葉變換", "矩陣求逆").
+  - Surface Fields in config:
+    - "formula": (string, REQUIRED) The mathematical expression (e.g. "b^2 - 4*a*c", "x^2 + 2*x + 1", "\\sqrt{a^2 + b^2}", "A*\\sin(2*\\pi*f*t)").
+    - "label": (string) Header title (e.g. "判別式計算").
+  - Handles:
+    - Target (Input) Handles: Automatically derived from variables in "formula" with format "h-in-<var>" (e.g. "h-in-a", "h-in-b", "h-in-c"). You may specify "toPort": "h-in-a" or simply "toPort": "a".
+    - External Formula Target Handle: "h-fn-in" (used when formula itself is wired dynamically from upstream).
+    - Source (Output) Handle: "h-out" (emits the evaluated result).
+  - Config example: { "label": "判別式運算", "formula": "b^2 - 4*a*c" }
+
+- "sliderNode": Dynamic numeric slider controller for parameters.
+  - Surface Fields in config:
+    - "nodeName": (string, REQUIRED) Variable symbol displayed on slider (e.g. "a", "b", "x", "radius").
+    - "value": (number, REQUIRED) Default initial value (e.g. 5, 2.5).
+    - "min": (number) Minimum slider limit (e.g. 0 or -10).
+    - "max": (number) Maximum slider limit (e.g. 10 or 100).
+    - "step": (number) Step increment (e.g. 1 or 0.1).
+    - "label": (string) Optional title.
+  - Handles:
+    - Source (Output) Handle: "h-out" (emits the slider numeric value).
+  - Config example: { "nodeName": "a", "value": 3, "min": 0, "max": 10, "step": 0.5, "label": "參數 a" }
+
+- "graphNode": 2D/3D function plotter.
+  - Surface Fields in config:
+    - "formula": (string) Fallback or direct function to plot (e.g. "x^2 - 4", "\\sin(x)").
+    - "label": (string) Graph title (e.g. "拋物線函數圖").
+  - Handles:
+    - Target (Input) Handle: "h-fn-in" (receives formula or value from upstream calculateNode).
+  - Config example: { "label": "函數圖表", "formula": "x^2" }
+
+- "textNode": Rich Markdown & LaTeX note card.
+  - Surface Fields in config:
+    - "text": (string, REQUIRED) Explanatory markdown or LaTeX notes for the user.
+    - "label": (string) Card title (e.g. "步驟說明").
+  - Handles: Target "h-in", Source "h-out" (optional).
+  - Config example: { "label": "說明筆記", "text": "### 二次方程式判別式\\n若 $\\Delta > 0$，方程式有兩相異實根。" }
+
+- "codeNode": JavaScript/Python multi-line execution script.
+  - Surface Fields in config:
+    - "code": (string, REQUIRED) The script code (e.g. "return inputs.a * inputs.b;").
+    - "label": (string) Node title.
+  - Handles: Target custom inputs, Source "h-result".
+  - Config example: { "label": "自訂邏輯", "code": "return inputs.a * inputs.b;" }
+
+- "inputNode": Sources an input variable or parameter for the whole workflow.
+  - Surface Fields in config:
+    - "nodeName": (string, REQUIRED) Parameter port name (e.g. "radius", "x").
+    - "variant": (string) Data type: "real" | "integer" | "boolean" | "string" | "matrix" | "vector" | "latex".
+    - "value": (string) Default initial value.
+  - Handles: Source "out".
+  - Config example: { "nodeName": "radius", "variant": "real", "value": "5" }
+
+- "outputNode": Sinks the final result to display as the workflow output.
+  - Surface Fields in config:
+    - "nodeName": (string, REQUIRED) Result port name (e.g. "area", "discriminant").
+    - "variant": (string) Data type.
+  - Handles: Target "in".
+  - Config example: { "nodeName": "area", "variant": "real" }
+
+- "dummyNode": MUST be used when the user requires an algorithm/sub-procedure that does not exist in primitives or community nodes (e.g. "求質數表", "傅立葉變換", "矩陣求逆").
   - Config: {
       "label": "<Algorithm Name>",
       "description": "<Goal of this missing block>",
@@ -59,13 +145,20 @@ Your task is to convert user's mathematical or algorithmic requests into a stric
       "expectedOutputs": [{ "id": "<id>", "name": "<name>" }]
     }
 
-### 2. GRAPH RULES:
+${communitySection ? communitySection + '\n\n' : ''}### ${communitySection ? '3' : '2'}. GRAPH & CONNECTION RULES:
 - The graph MUST be a valid DAG (Directed Acyclic Graph). NEVER create cycles.
-- Signal flows strictly from left to right: Inputs/Sliders -> Calculations/Dummies -> Outputs/Graphs.
+- Signal flows strictly from left to right: Inputs/Sliders -> Calculations/Dummies/CommunityNodes -> Outputs/Graphs.
 - All edge 'from' and 'to' must reference valid node ids defined in 'nodes'.
-- 'fromPort' and 'toPort' must match valid handles (e.g. 'out', 'in', 'value', 'h-fn-in').
+- Port Handle Rules:
+  - From sliderNode: "fromPort": "h-out"
+  - From calculateNode: "fromPort": "h-out"
+  - From inputNode: "fromPort": "out"
+  - To calculateNode: "toPort": "h-in-<var>" (e.g. "h-in-a", "h-in-b") or simply "<var>" (e.g. "a", "b"). Or "h-fn-in" for external function.
+  - To graphNode: "toPort": "h-fn-in"
+  - To outputNode: "toPort": "in"
+  - Community nodes: use the declared handles in the template catalog (e.g. "in-context", "out-summary", "in-data", "out-method").
 
-### 3. OUTPUT FORMAT:
+### ${communitySection ? '4' : '3'}. OUTPUT FORMAT:
 You MUST reply ONLY with a single valid JSON object strictly matching this schema:
 {
   "schemaVersion": 2,
@@ -79,65 +172,78 @@ You MUST reply ONLY with a single valid JSON object strictly matching this schem
   "nodes": [
     {
       "id": "node-1",
-      "type": "inputNode",
-      "name": "...",
-      "description": "...",
-      "config": { ... }
+      "type": "sliderNode",
+      "name": "a",
+      "description": "參數 a",
+      "config": { "nodeName": "a", "value": 1, "min": -10, "max": 10, "step": 0.5 }
+    },
+    {
+      "id": "node-2",
+      "type": "calculateNode",
+      "name": "判別式",
+      "description": "計算二次方程式判別式",
+      "config": { "formula": "b^2 - 4*a*c", "label": "判別式運算" }
     }
   ],
   "edges": [
     {
       "id": "edge-1",
       "from": "node-1",
-      "fromPort": "out",
+      "fromPort": "h-out",
       "to": "node-2",
-      "toPort": "h-fn-in"
+      "toPort": "h-in-a"
     }
   ]
 }
 Do NOT wrap with markdown backticks or explanation. Just raw JSON.`;
+}
 
 /**
  * 嚴格驗證與修復中繼器：修復 Handle 不匹配、孤兒連線與環路
  */
-export function sanitizeWorkflowSpec(raw: any): WorkflowSpec {
+export function sanitizeWorkflowSpec(raw: unknown): WorkflowSpec {
   if (!raw || typeof raw !== 'object') {
     throw new Error('LLM 回傳的資料不是有效的 JSON 物件');
   }
 
+  const rawObj = raw as Record<string, unknown>;
+
   const spec: WorkflowSpec = {
     schemaVersion: 2,
-    id: typeof raw.id === 'string' ? raw.id : `workflow-${Date.now()}`,
-    name: typeof raw.name === 'string' ? raw.name : 'AI 生成工作流',
-    description: typeof raw.description === 'string' ? raw.description : '',
+    id: typeof rawObj.id === 'string' ? rawObj.id : `workflow-${Date.now()}`,
+    name: typeof rawObj.name === 'string' ? rawObj.name : 'AI 生成工作流',
+    description: typeof rawObj.description === 'string' ? rawObj.description : '',
     version: '1.0.0',
     visibility: 'private',
     publishKind: 'workflow',
-    inputs: Array.isArray(raw.inputs) ? raw.inputs : [],
-    outputs: Array.isArray(raw.outputs) ? raw.outputs : [],
+    inputs: Array.isArray(rawObj.inputs) ? (rawObj.inputs as WorkflowSpec['inputs']) : [],
+    outputs: Array.isArray(rawObj.outputs) ? (rawObj.outputs as WorkflowSpec['outputs']) : [],
     nodes: [],
     edges: [],
   };
 
   const nodeMap = new Map<string, WorkflowNodeSpec>();
 
-  if (Array.isArray(raw.nodes)) {
-    raw.nodes.forEach((n: any, idx: number) => {
-      if (!n || typeof n !== 'object') return;
+  if (Array.isArray(rawObj.nodes)) {
+    rawObj.nodes.forEach((nItem: unknown, idx: number) => {
+      if (!nItem || typeof nItem !== 'object') return;
+      const n = nItem as Record<string, unknown>;
       const id = String(n.id || `node-${idx + 1}`);
       const type = String(n.type || 'calculateNode');
       const validTypes = [
         'inputNode', 'outputNode', 'calculateNode', 'sliderNode',
-        'graphNode', 'textNode', 'codeNode', 'dummyNode', 'compositeWorkflowNode'
+        'graphNode', 'textNode', 'codeNode', 'dummyNode', 'compositeWorkflowNode',
+        'communityTemplateNode'
       ];
       const safeType = validTypes.includes(type) ? type : 'calculateNode';
+      const configObj = (n.config && typeof n.config === 'object') ? (n.config as Record<string, unknown>) : {};
 
       const nodeSpec: WorkflowNodeSpec = {
         id,
         type: safeType,
-        name: String(n.name || n.config?.label || id),
+        name: String(n.name || configObj.label || id),
         description: n.description ? String(n.description) : undefined,
-        config: typeof n.config === 'object' && n.config !== null ? n.config : {},
+        config: configObj,
       };
 
       nodeMap.set(id, nodeSpec);
@@ -154,9 +260,10 @@ export function sanitizeWorkflowSpec(raw: any): WorkflowSpec {
   const adjacency = new Map<string, string[]>();
   spec.nodes.forEach(n => adjacency.set(n.id, []));
 
-  if (Array.isArray(raw.edges)) {
-    raw.edges.forEach((e: any, idx: number) => {
-      if (!e || typeof e !== 'object') return;
+  if (Array.isArray(rawObj.edges)) {
+    rawObj.edges.forEach((eItem: unknown, idx: number) => {
+      if (!eItem || typeof eItem !== 'object') return;
+      const e = eItem as Record<string, unknown>;
       const from = String(e.from);
       const to = String(e.to);
 
@@ -167,17 +274,38 @@ export function sanitizeWorkflowSpec(raw: any): WorkflowSpec {
       const fromNode = nodeMap.get(from)!;
       const toNode = nodeMap.get(to)!;
 
-      // 自動修復合法 Handle
-      let fromPort = e.fromPort;
-      let toPort = e.toPort;
+      // 自動修復與正規化合法 Handle
+      let fromPort = typeof e.fromPort === 'string' ? e.fromPort : undefined;
+      let toPort = typeof e.toPort === 'string' ? e.toPort : undefined;
 
-      if (fromNode.type === 'inputNode') fromPort = 'out';
-      if (toNode.type === 'outputNode') toPort = 'in';
-      if (fromNode.type === 'calculateNode' && !fromPort) fromPort = 'value';
-      if (toNode.type === 'calculateNode' && !toPort) toPort = 'h-fn-in';
+      // 來源端點正規化 (Source Handle Normalization)
+      if (fromNode.type === 'sliderNode') {
+        fromPort = 'h-out';
+      } else if (fromNode.type === 'calculateNode') {
+        fromPort = 'h-out';
+      } else if (fromNode.type === 'inputNode') {
+        if (!fromPort || fromPort === 'value') fromPort = 'out';
+      } else if (fromNode.type === 'codeNode') {
+        if (!fromPort || fromPort === 'value' || fromPort === 'out') fromPort = 'h-result';
+      }
+
+      // 目標端點正規化 (Target Handle Normalization)
+      if (toNode.type === 'outputNode') {
+        if (!toPort || toPort === 'value') toPort = 'in';
+      } else if (toNode.type === 'graphNode') {
+        if (!toPort || toPort === 'value' || toPort === 'fn' || toPort === 'in') toPort = 'h-fn-in';
+      } else if (toNode.type === 'calculateNode') {
+        if (!toPort || toPort === 'value' || toPort === 'in' || toPort === 'fn') {
+          toPort = 'h-fn-in';
+        } else if (!toPort.startsWith('h-in-') && toPort !== 'h-fn-in') {
+          toPort = `h-in-${toPort}`;
+        }
+      } else if (toNode.type === 'codeNode') {
+        if (!toPort || toPort === 'value') toPort = 'h-in';
+      }
 
       sanitizedEdges.push({
-        id: e.id || `edge-${from}-${to}-${idx}`,
+        id: typeof e.id === 'string' ? e.id : `edge-${from}-${to}-${idx}`,
         from,
         to,
         fromPort,
@@ -195,12 +323,15 @@ export function sanitizeWorkflowSpec(raw: any): WorkflowSpec {
  */
 export async function callGeminiGenerateWorkflow(
   userPrompt: string,
-  apiKeyOverride?: string
+  apiKeyOverride?: string,
+  availableCommunityTemplates?: CommunityNodeTemplate[]
 ): Promise<WorkflowSpec> {
   const apiKey = (apiKeyOverride || getStoredApiKey()).trim();
   if (!apiKey) {
     throw new Error('未提供 Google Gemini API Key。請先在輸入視窗中填寫您的 API Key。');
   }
+
+  const systemPrompt = buildSystemInstruction(availableCommunityTemplates);
 
   const payload = {
     contents: [
@@ -210,7 +341,7 @@ export async function callGeminiGenerateWorkflow(
       },
     ],
     systemInstruction: {
-      parts: [{ text: SYSTEM_INSTRUCTION }],
+      parts: [{ text: systemPrompt }],
     },
     generationConfig: {
       responseMimeType: 'application/json',
@@ -232,7 +363,9 @@ export async function callGeminiGenerateWorkflow(
       try {
         const errJson = JSON.parse(errText);
         parsedMsg = errJson.error?.message || errText;
-      } catch {}
+      } catch {
+        // ignore parse error
+      }
       throw new Error(`Gemini API 請求失敗 (${response.status}): ${parsedMsg}`);
     }
 
@@ -242,7 +375,7 @@ export async function callGeminiGenerateWorkflow(
       throw new Error('Gemini API 未回傳有效的內容');
     }
 
-    let parsedSpec: any;
+    let parsedSpec: unknown;
     try {
       parsedSpec = JSON.parse(candidateText.trim());
     } catch {
@@ -271,7 +404,8 @@ export async function callGeminiImplementDummyNode(
     expectedInputs?: Array<{ id: string; name: string }>;
     expectedOutputs?: Array<{ id: string; name: string }>;
   },
-  apiKeyOverride?: string
+  apiKeyOverride?: string,
+  availableCommunityTemplates?: CommunityNodeTemplate[]
 ): Promise<WorkflowSpec> {
   const inputsDesc = (dummyNode.expectedInputs || [])
     .map(i => `${i.name} (id: ${i.id})`)
@@ -288,5 +422,5 @@ export async function callGeminiImplementDummyNode(
 
 請產生一個完整的子工作流（包含 inputNode, calculateNode 或 codeNode, outputNode），確保端點 id 完全對齊上述要求。`;
 
-  return await callGeminiGenerateWorkflow(prompt, apiKeyOverride);
+  return await callGeminiGenerateWorkflow(prompt, apiKeyOverride, availableCommunityTemplates);
 }

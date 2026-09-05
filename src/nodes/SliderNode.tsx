@@ -1,10 +1,10 @@
 import React, { useEffect, memo } from 'react';
-import { NodeResizer } from '@xyflow/react';
-import useStore, { type AppState } from '../../store/useStore';
-import { DynamicHandles } from '../DynamicHandles';
-import { Icons } from '../../components/Icons';
+import { NodeResizer, type NodeProps, type Node } from '@xyflow/react';
+import useStore, { type AppState, type NodeData } from '../store/useStore';
+import { DynamicHandles } from './DynamicHandles';
+import { Icons } from '../components/Icons';
 
-export const SliderNode = memo(function SliderNode({ id, data, className }: any) {
+export const SliderNode = memo(function SliderNode({ id, data, className }: NodeProps<Node<NodeData>> & { className?: string }) {
     const updateNodeData = useStore((state: AppState) => state.updateNodeData);
     const executeNode = useStore((state: AppState) => state.executeNode);
     const setGlobalVar = useStore((state: AppState) => state.setGlobalVar);

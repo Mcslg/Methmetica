@@ -1,13 +1,21 @@
 import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
 
-import useStore, { type NodeData, type AppState } from '../../store/useStore';
-import { getMathEngine } from '../../utils/MathEngine';
-import { Icons } from '../../components/Icons';
-import { NodeFrame } from '../../components/NodeFrame';
-import { FormulaSidebarArea } from '../../components/FormulaSidebarArea';
-import { countRender } from '../../components/DebugOverlay';
-import { MathInput } from '../../components/MathInput';
+import useStore, { type NodeData, type AppState } from '../store/useStore';
+import { getMathEngine } from '../utils/MathEngine';
+import { Icons } from '../components/Icons';
+import { NodeFrame } from '../components/NodeFrame';
+import { FormulaSidebarArea } from '../components/FormulaSidebarArea';
+import { countRender } from '../components/DebugOverlay';
+import { MathInput } from '../components/MathInput';
+
+interface CriticalPoint {
+    x: number;
+    y: number;
+    label?: string;
+    colorIdx?: number;
+    type?: string;
+}
 
 export const GraphNode = memo(function GraphNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     countRender('GraphNode');
@@ -38,7 +46,7 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
 
     // States
     const [isShiftPressed, setIsShiftPressed] = useState(false);
-    const [criticalPoints, setCriticalPoints] = useState<any[]>([]);
+    const [criticalPoints, setCriticalPoints] = useState<CriticalPoint[]>([]);
     const [view, setView] = useState({ x: 0, y: 0, scale: 40 });
     const [view3D, setView3D] = useState({ rotX: Math.PI / 6, rotZ: Math.PI / 4 });
     const [isDragging, setIsDragging] = useState(false);
@@ -106,27 +114,31 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
     const evalFn = useCallback((formula: string): ((x: number) => number) | null => {
         try {
             const ce = getMathEngine();
-            let expr: any = ce.parse(formula);
-            if (expr.head === 'Equal') expr = expr.op2;
+            const rawExpr = ce.parse(formula) as { head?: string; op2?: unknown; compile?: () => { run?: (scope: Record<string, unknown>) => unknown } };
+            const expr = rawExpr.head === 'Equal' && rawExpr.op2 ? (rawExpr.op2 as typeof rawExpr) : rawExpr;
 
             const pluggedParams = getPluggedParams();
             const combinedVars = { ...globalVars, ...pluggedParams };
 
             try {
-                const compiled: any = expr.compile?.();
+                const compiled = expr.compile?.();
                 if (compiled && typeof compiled.run === 'function') {
-                    const ctx: any = { x: 1, ...combinedVars };
+                    const ctx: Record<string, unknown> = { x: 1, ...combinedVars };
                     Object.keys(ctx).forEach(k => { if (k !== 'x') ctx[k] = Number(ctx[k]) || 0; });
                     const testVal = compiled.run(ctx);
                     if (typeof testVal === 'number' && !isNaN(testVal)) {
                         return (x: number) => {
-                            const v = compiled.run({ ...ctx, x });
+                            const v = compiled.run!({ ...ctx, x });
                             return typeof v === 'number' ? v : Number(v);
                         };
                     }
                 }
-            } catch (e) { }
-        } catch (e) { }
+            } catch {
+                // ignore compile failure, fallback to JS eval
+            }
+        } catch {
+            // ignore parse failure
+        }
 
         try {
             const pluggedParams = getPluggedParams();
@@ -171,11 +183,12 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
                 .replace(/(\d)\s*\(/g, '$1*(')
                 .replace(/\)\s*(x\b)/g, ')*$1');
 
-            // eslint-disable-next-line no-new-func
             const fn = new Function('x', ...varNames, `'use strict'; try { return +(${jsExpr}); } catch(e) { return NaN; }`);
             const r = fn(1, ...varValues);
             if (typeof r === 'number') return (x: number) => fn(x, ...varValues);
-        } catch (e) { }
+        } catch {
+            // ignore
+        }
         return null;
     }, [globalVars, getPluggedParams]);
 
@@ -191,24 +204,26 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
         // --- Tier 1: CortexJS compile (works well with plain math, e.g. x^2+y^2) ---
         try {
             const ce = getMathEngine();
-            let expr: any = ce.parse(stripped);
-            if (expr.head === 'Equal') expr = expr.op2;
-            const compiled: any = expr.compile?.();
+            const rawExpr = ce.parse(stripped) as { head?: string; op2?: unknown; compile?: () => { run?: (scope: Record<string, unknown>) => unknown } };
+            const expr = rawExpr.head === 'Equal' && rawExpr.op2 ? (rawExpr.op2 as typeof rawExpr) : rawExpr;
+            const compiled = expr.compile?.();
             if (compiled && typeof compiled.run === 'function') {
-                const baseCtx: any = { ...combinedVars };
+                const baseCtx: Record<string, unknown> = { ...combinedVars };
                 const t = compiled.run({ ...baseCtx, x: 1, y: 2 });
                 if (typeof t === 'number' && isFinite(t) && !isNaN(t)) {
                     return (x: number, y: number) => {
-                        const v = compiled.run({ ...baseCtx, x, y });
+                        const v = compiled.run!({ ...baseCtx, x, y });
                         return typeof v === 'number' ? v : Number(v);
                     };
                 }
             }
-        } catch (e) { }
+        } catch {
+            // ignore
+        }
 
         // --- Tier 2: JS eval (handles LaTeX-adjacent input) ---
         try {
-            let jsExpr = stripped
+            const jsExpr = stripped
                 .replace(/\\cdot\s*/g, '*').replace(/\\times\s*/g, '*')
                 .replace(/\\sin\b\s*/g, 'Math.sin').replace(/\\cos\b\s*/g, 'Math.cos')
                 .replace(/\\tan\b\s*/g, 'Math.tan').replace(/\\ln\b\s*/g, 'Math.log')
@@ -229,14 +244,15 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
             const varNames = Object.keys(combinedVars).sort((a, b) => b.length - a.length);
             const varValues = varNames.map(n => combinedVars[n]);
 
-            // eslint-disable-next-line no-new-func
             const fn = new Function('x', 'y', ...varNames,
                 `'use strict'; try { return +(${jsExpr}); } catch(e) { return NaN; }`);
             const r = fn(1, 2, ...varValues);
             if (typeof r === 'number' && isFinite(r)) {
                 return (x: number, y: number) => fn(x, y, ...varValues);
             }
-        } catch (e) { }
+        } catch {
+            // ignore
+        }
 
         return null;
     }, [globalVars, getPluggedParams]);
@@ -460,7 +476,7 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
         criticalPoints.forEach((p) => {
             const px = cx + p.x * scale, py = cy - p.y * scale;
             if (px < 0 || px > clientWidth || py < 0 || py > clientHeight) return;
-            const color = colors[p.colorIdx % colors.length];
+            const color = colors[(p.colorIdx ?? 0) % colors.length];
             ctx.fillStyle = color; ctx.strokeStyle = isLight ? '#000' : '#fff'; ctx.lineWidth = 2;
             ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
             ctx.font = 'bold 10px Outfit, sans-serif'; ctx.fillStyle = tooltipColor; ctx.textAlign = 'left';
@@ -471,14 +487,17 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
     }, [view, view3D, is3D, formulaToParse, criticalPoints, isShiftPressed, evalFn, evalFn3D, theme]);
 
     useEffect(() => {
-        if (!formulaToParse || is3D) { setCriticalPoints([]); return; }
-        const findPoints = async () => {
+        const findPoints = () => {
+            if (!formulaToParse || is3D) {
+                setCriticalPoints([]);
+                return;
+            }
             try {
                 const formulas = formulaToParse.split(/[,;]/).map((s: string) => s.trim()).filter(Boolean);
-                const points: any[] = [];
+                const points: CriticalPoint[] = [];
                 const xMin = -20, xMax = 20, steps = 800, dx = (xMax - xMin) / steps;
                 const DEDUP_DIST = 0.1;
-                const dedupe = (pt: any, existing: any[]) => existing.some(p => Math.abs(p.x - pt.x) < DEDUP_DIST && Math.abs(p.y - pt.y) < DEDUP_DIST);
+                const dedupe = (pt: CriticalPoint, existing: CriticalPoint[]) => existing.some(p => Math.abs(p.x - pt.x) < DEDUP_DIST && Math.abs(p.y - pt.y) < DEDUP_DIST);
 
                 formulas.forEach((f, idx) => {
                     const fn = evalFn(f);
@@ -489,20 +508,22 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
                         if (!isFinite(y) || isNaN(y)) { prevY = y; prevSlope = NaN; continue; }
                         if (isFinite(prevY) && prevY * y <= 0 && Math.abs(y - prevY) < 5) {
                             const xRoot = x - dx * (y / ((y - prevY) || 1));
-                            const pt = { x: xRoot, y: 0, label: `(${xRoot.toFixed(4)}, 0)`, colorIdx: idx };
+                            const pt: CriticalPoint = { x: xRoot, y: 0, label: `(${xRoot.toFixed(4)}, 0)`, colorIdx: idx };
                             if (!dedupe(pt, points)) points.push(pt);
                         }
                         const slope = y - prevY;
                         if (isFinite(prevSlope) && prevSlope * slope < 0) {
                             const xEx = x - dx, yEx = fn(xEx);
-                            const pt = { x: xEx, y: yEx, label: `(${xEx.toFixed(3)}, ${yEx.toFixed(3)})`, colorIdx: idx };
+                            const pt: CriticalPoint = { x: xEx, y: yEx, label: `(${xEx.toFixed(3)}, ${yEx.toFixed(3)})`, colorIdx: idx };
                             if (!dedupe(pt, points)) points.push(pt);
                         }
                         prevY = y; prevSlope = slope;
                     }
                 });
                 setCriticalPoints(points);
-            } catch (e) { }
+            } catch {
+                // ignore calculation error
+            }
         };
         const timer = setTimeout(findPoints, 300);
         return () => clearTimeout(timer);

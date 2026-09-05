@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Icons } from '../Icons';
 import {
   callGeminiGenerateWorkflow,
@@ -7,7 +7,8 @@ import {
 } from '../../utils/aiClient';
 import { convertSpecToCanvasGraph } from '../../utils/aiWorkflowGenerator';
 import type { WorkflowSpec } from '../../types/workflowSpec';
-import type { AppNode } from '../../store/useStore';
+import useStore, { type AppNode } from '../../store/useStore';
+import { defaultCommunityTemplates } from '../../community/catalog';
 import type { Edge } from '@xyflow/react';
 
 interface AIWorkflowModalProps {
@@ -20,6 +21,10 @@ const PRESET_PROMPTS = [
   {
     title: '二次方程式判別式與根',
     prompt: '製作一個一元二次方程式 ax^2 + bx + c = 0 的工作流，輸入 a, b, c 三個參數，計算判別式 d = b^2 - 4ac，並同時輸出兩根。',
+  },
+  {
+    title: '社群節點整合：定理定義與判別',
+    prompt: '製作一個數學定理探究流程：開頭引用社群的「定義卡片 (Definition Card)」做前置陳述，接著輸入題目參數 a, b, c，經由 calculateNode 運算判別式，最後將摘要輸出至結果節點。',
   },
   {
     title: '幾何圓面積與周長聯動',
@@ -46,6 +51,13 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedSpec, setGeneratedSpec] = useState<WorkflowSpec | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const customCommunityTemplates = useStore(state => state.communityTemplates);
+  const allTemplates = useMemo(() => {
+    const customIds = new Set(customCommunityTemplates.map(t => t.id));
+    const filteredDefaults = defaultCommunityTemplates.filter(t => !customIds.has(t.id));
+    return [...filteredDefaults, ...customCommunityTemplates];
+  }, [customCommunityTemplates]);
 
   useEffect(() => {
     if (isOpen) {
@@ -74,10 +86,11 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
     setGeneratedSpec(null);
 
     try {
-      const spec = await callGeminiGenerateWorkflow(textToRun, apiKey);
+      const spec = await callGeminiGenerateWorkflow(textToRun, apiKey, allTemplates);
       setGeneratedSpec(spec);
-    } catch (err: any) {
-      setError(err?.message || '生成失敗，請檢查 API Key 或網路連線。');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err || '生成失敗，請檢查 API Key 或網路連線。');
+      setError(msg);
     } finally {
       setIsGenerating(false);
     }
@@ -85,7 +98,7 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
 
   const handleApply = (mode: 'replace' | 'append') => {
     if (!generatedSpec) return;
-    const { nodes, edges } = convertSpecToCanvasGraph(generatedSpec);
+    const { nodes, edges } = convertSpecToCanvasGraph(generatedSpec, { x: 120, y: 120 }, allTemplates);
     onApplyGraph(nodes, edges, mode);
     onClose();
   };

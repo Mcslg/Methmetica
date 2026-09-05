@@ -9,7 +9,7 @@ import { ButtonNode } from './deprecated/ButtonNode';
 import { GateNode } from './deprecated/GateNode';
 import { RangeNode, executeRangeNode } from './deprecated/RangeNode';
 import { ForEachNode, executeForEachNode } from './deprecated/ForEachNode';
-import { SliderNode } from './deprecated/SliderNode';
+import { SliderNode } from './SliderNode';
 import { ProjectNode } from './ProjectNode';
 import { NodeBuilderNode } from './NodeBuilderNode';
 import { CommunityTemplateNode } from './CommunityTemplateNode';
@@ -64,9 +64,9 @@ export interface NodeDefinition {
 }
 
 const LazyTextNode = React.lazy(() => import('./TextNode').then((mod) => ({ default: mod.TextNode })));
-const LazyCalculateNode = React.lazy(() => import('./deprecated/CalculateNode').then((mod) => ({ default: mod.CalculateNode })));
+const LazyCalculateNode = React.lazy(() => import('./CalculateNode').then((mod) => ({ default: mod.CalculateNode })));
 const LazyCalculusNode = React.lazy(() => import('./deprecated/CalculusNode').then((mod) => ({ default: mod.CalculusNode })));
-const LazyGraphNode = React.lazy(() => import('./deprecated/GraphNode').then((mod) => ({ default: mod.GraphNode })));
+const LazyGraphNode = React.lazy(() => import('./GraphNode').then((mod) => ({ default: mod.GraphNode })));
 const LazyBalanceNode = React.lazy(() => import('./deprecated/BalanceNode').then((mod) => ({ default: mod.BalanceNode })));
 const LazySolveNode = React.lazy(() => import('./deprecated/SolveNode').then((mod) => ({ default: mod.SolveNode })));
 const LazySoundNode = React.lazy(() => import('./deprecated/SoundNode').then((mod) => ({ default: mod.SoundNode })));

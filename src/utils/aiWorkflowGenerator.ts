@@ -1,12 +1,17 @@
 import type { Edge } from '@xyflow/react';
-import type { AppNode } from '../store/useStore';
+import type { AppNode, CustomHandle } from '../store/useStore';
 import type {
   WorkflowSpec,
   WorkflowNodeSpec,
   WorkflowEdgeSpec,
   WorkflowPortSpec,
+  WorkflowPortDataType,
 } from '../types/workflowSpec';
 import { nodeRegistry } from '../nodes/registry';
+import type { CommunityNodeTemplate } from '../community/types';
+import { getCommunityTemplateById, defaultCommunityTemplates } from '../community/catalog';
+import { getTemplateHandles } from '../community/types';
+import { getMathEngine } from './MathEngine';
 
 export interface CatalogSearchItem {
   id: string;
@@ -126,11 +131,36 @@ function computeNodeLayers(
 export { callGeminiGenerateWorkflow, callGeminiImplementDummyNode } from './aiClient';
 
 /**
+ * 從數學公式提取未知變數，供 calculateNode 自動生成輸入端點
+ */
+function extractFormulaVariables(formula: string): string[] {
+  if (!formula || !formula.trim()) return [];
+  try {
+    const ce = getMathEngine();
+    const expr = ce.parse(formula);
+    if (expr.unknowns && expr.unknowns.length > 0) {
+      return [...expr.unknowns];
+    }
+  } catch {
+    // 忽略 parse 例外，改用 regex 容錯解析
+  }
+  const matches = formula.match(/[a-zA-Z]+/g) || [];
+  const mathKeywords = new Set([
+    'sin', 'cos', 'tan', 'cot', 'sec', 'csc',
+    'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh',
+    'sqrt', 'log', 'ln', 'exp', 'pi', 'PI', 'e', 'E',
+    'abs', 'frac', 'sum', 'prod', 'int', 'diff'
+  ]);
+  return Array.from(new Set(matches.filter(m => !mathKeywords.has(m))));
+}
+
+/**
  * 將 AI 產出的宣告式 WorkflowSpec 轉換為畫布上的 AppNode[] 與 Edge[]
  */
 export function convertSpecToCanvasGraph(
   spec: WorkflowSpec,
-  originOffset: { x: number; y: number } = { x: 120, y: 120 }
+  originOffset: { x: number; y: number } = { x: 120, y: 120 },
+  availableCommunityTemplates?: CommunityNodeTemplate[]
 ): {
   nodes: AppNode[];
   edges: Edge[];
@@ -145,8 +175,12 @@ export function convertSpecToCanvasGraph(
   });
 
   const maxLayerCount = Math.max(...Array.from(layerBuckets.values()).map(b => b.length), 1);
-  const rowHeight = 200;
-  const colWidth = 330;
+  const rowHeight = 220;
+  const colWidth = 350;
+
+  const templatesPool = availableCommunityTemplates && availableCommunityTemplates.length > 0
+    ? availableCommunityTemplates
+    : defaultCommunityTemplates;
 
   const nodes: AppNode[] = spec.nodes.map(nodeSpec => {
     const layer = layers.get(nodeSpec.id) || 0;
@@ -163,30 +197,238 @@ export function convertSpecToCanvasGraph(
       y: originOffset.y + verticalOffset + indexInLayer * rowHeight,
     };
 
+    const cfg = (nodeSpec.config || {}) as Record<string, unknown>;
+    let extraData: Record<string, unknown> = {};
+    let customStyle: React.CSSProperties | undefined = undefined;
+
+    // 1. calculateNode 表層欄位與 Handles 預初始化
+    if (nodeSpec.type === 'calculateNode') {
+      const formula = String(cfg.formula || cfg.formulaInput || '');
+      const vars = extractFormulaVariables(formula);
+      const spacing = 100 / (vars.length + 1);
+      const inputHandles: CustomHandle[] = vars.map((v, index) => ({
+        id: `h-in-${v}`,
+        type: 'input',
+        position: 'left',
+        offset: (index + 1) * spacing,
+        label: v,
+      }));
+      const specialHandles: CustomHandle[] = cfg.useExternalFormula ? [
+        { id: 'h-fn-in', type: 'input', position: 'left', offset: 15, label: 'f(x)' }
+      ] : [];
+      const outputHandle: CustomHandle = { id: 'h-out', type: 'output', position: 'right', offset: 50 };
+      extraData = {
+        formula,
+        formulaInput: cfg.formulaInput || formula,
+        handles: [...specialHandles, ...inputHandles, outputHandle],
+        label: String(cfg.label || nodeSpec.name || 'Calculate'),
+        nodeName: String(cfg.nodeName || cfg.label || nodeSpec.name || 'Calculate'),
+      };
+    }
+    // 2. sliderNode 表層欄位與 Handles 預初始化
+    else if (nodeSpec.type === 'sliderNode') {
+      const nodeName = String(cfg.nodeName || cfg.label || nodeSpec.name || 'x');
+      const value = String(cfg.value ?? 5);
+      const min = Number(cfg.min ?? 0);
+      const max = Number(cfg.max ?? 10);
+      const step = Number(cfg.step ?? 1);
+      extraData = {
+        nodeName,
+        label: String(cfg.label || nodeName),
+        value,
+        min,
+        max,
+        step,
+        handles: [{ id: 'h-out', type: 'output', position: 'right', offset: 50, label: nodeName }],
+        outputs: { 'h-out': value },
+      };
+    }
+    // 3. graphNode 表層欄位與 Handles 預初始化
+    else if (nodeSpec.type === 'graphNode') {
+      const formula = String(cfg.formula || '');
+      extraData = {
+        formula,
+        label: String(cfg.label || nodeSpec.name || 'Graph'),
+        nodeName: String(cfg.label || nodeSpec.name || 'Graph'),
+        handles: [{ id: 'h-fn-in', type: 'input', position: 'left', offset: 50, label: 'f(x)' }],
+      };
+    }
+    // 4. textNode 表層欄位預初始化
+    else if (nodeSpec.type === 'textNode') {
+      const text = String(cfg.text || '');
+      extraData = {
+        text,
+        label: String(cfg.label || nodeSpec.name || 'Notebook'),
+        nodeName: String(cfg.label || nodeSpec.name || 'Notebook'),
+        handles: [],
+      };
+    }
+    // 5. inputNode 介面輸入節點
+    else if (nodeSpec.type === 'inputNode') {
+      const nodeName = String(cfg.nodeName || cfg.label || nodeSpec.name || 'input_1');
+      const variant = (cfg.variant as WorkflowPortDataType) || 'real';
+      const value = String(cfg.value ?? '');
+      extraData = {
+        nodeName,
+        label: nodeName,
+        variant,
+        value,
+        handles: [{ id: 'out', type: 'output', position: 'right', offset: 50, label: nodeName }],
+        outputs: { out: value },
+      };
+    }
+    // 6. outputNode 介面輸出節點
+    else if (nodeSpec.type === 'outputNode') {
+      const nodeName = String(cfg.nodeName || cfg.label || nodeSpec.name || 'output_1');
+      const variant = (cfg.variant as WorkflowPortDataType) || 'real';
+      extraData = {
+        nodeName,
+        label: nodeName,
+        variant,
+        handles: [{ id: 'in', type: 'input', position: 'left', offset: 50, label: nodeName }],
+      };
+    }
+    // 7. codeNode 程式碼節點
+    else if (nodeSpec.type === 'codeNode') {
+      const code = String(cfg.code || 'return inputs.input;');
+      extraData = {
+        code,
+        label: String(cfg.label || nodeSpec.name || 'Code'),
+        nodeName: String(cfg.label || nodeSpec.name || 'Code'),
+        handles: [
+          { id: 'h-in', type: 'input', position: 'left', offset: 50, label: 'input' },
+          { id: 'h-result', type: 'output', position: 'right', offset: 35, label: 'result' }
+        ],
+      };
+    }
+    // 8. communityTemplateNode 社群範本節點
+    else if (nodeSpec.type === 'communityTemplateNode') {
+      const templateId = typeof cfg.templateId === 'string' ? cfg.templateId : nodeSpec.id;
+      const template = templatesPool.find(t => t.id === templateId) || getCommunityTemplateById(templateId);
+
+      if (template) {
+        const defaultFields = Object.fromEntries(
+          template.fields.map(f => [f.id, f.defaultValue ?? ''])
+        );
+        const userFields = (cfg.templateFields && typeof cfg.templateFields === 'object')
+          ? (cfg.templateFields as Record<string, string>)
+          : {};
+        const mergedFields = { ...defaultFields, ...userFields };
+
+        // 將表層欄位文字同步回 builderBlocks，讓卡片即時顯示 AI 生成的文句
+        const updatedBlocks = template.builderBlocks.map(block => {
+          if (block.kind === 'text' || block.kind === 'math') {
+            const matchingVal = mergedFields[block.id] ||
+              (block.id === 'def-text' ? mergedFields.statement : undefined) ||
+              (block.id === 'method-text' ? mergedFields.problem : undefined);
+            if (matchingVal) {
+              return { ...block, content: matchingVal, contentI18n: undefined };
+            }
+          }
+          return block;
+        });
+
+        const updatedTemplate: CommunityNodeTemplate = {
+          ...template,
+          builderBlocks: updatedBlocks,
+        };
+
+        extraData = {
+          templateId: template.id,
+          templateDraft: updatedTemplate,
+          templateFields: mergedFields,
+          templateSummary: template.summary,
+          templateBestAlgorithm: template.bestAlgorithm,
+          templateAlternatives: template.alternativeAlgorithms,
+          templateRelatedWorkflowIds: template.relatedWorkflowIds,
+          sourceWorkflowId: template.sourceWorkflowId,
+          sourceWorkflowVersionId: template.sourceWorkflowVersionId,
+          sourceWorkflowSlug: template.sourceWorkflowSlug,
+          handles: getTemplateHandles(template).map(handle => ({
+            id: handle.id,
+            type: handle.type,
+            position: handle.position,
+            offset: handle.offset,
+            label: handle.label,
+          })),
+        };
+        customStyle = {
+          width: template.size.width,
+          height: template.size.height,
+        };
+      }
+    }
+
     return {
       id: nodeSpec.id,
       type: nodeSpec.type,
       position,
+      style: customStyle,
       data: {
-        label: nodeSpec.name,
-        nodeName: nodeSpec.name,
+        label: (extraData.templateDraft as CommunityNodeTemplate | undefined)?.title || (cfg.label as string | undefined) || nodeSpec.name,
+        nodeName: (extraData.templateDraft as CommunityNodeTemplate | undefined)?.title || (cfg.nodeName as string | undefined) || (cfg.label as string | undefined) || nodeSpec.name,
         description: nodeSpec.description,
-        ...(nodeSpec.config || {}),
+        ...cfg,
+        ...extraData,
         // 若為 dummyNode，帶入預期合約
-        expectedInputs: (nodeSpec.config as any)?.expectedInputs,
-        expectedOutputs: (nodeSpec.config as any)?.expectedOutputs,
+        expectedInputs: Array.isArray(cfg.expectedInputs)
+          ? (cfg.expectedInputs as Array<{ id?: string; name?: string }>).map((i, idx) => ({
+              id: String(i.id || `in_${idx}`),
+              name: String(i.name || i.id || `in_${idx}`),
+              dataType: 'any' as const,
+            }))
+          : undefined,
+        expectedOutputs: Array.isArray(cfg.expectedOutputs)
+          ? (cfg.expectedOutputs as Array<{ id?: string; name?: string }>).map((o, idx) => ({
+              id: String(o.id || `out_${idx}`),
+              name: String(o.name || o.id || `out_${idx}`),
+              dataType: 'any' as const,
+            }))
+          : undefined,
       },
     };
   });
 
+  const nodeSpecMap = new Map(spec.nodes.map(n => [n.id, n]));
+
   const edges: Edge[] = spec.edges.map((edgeSpec, idx) => {
     const edgeId = edgeSpec.id || `edge-${edgeSpec.from}-${edgeSpec.to}-${idx}`;
+    const fromNode = nodeSpecMap.get(edgeSpec.from);
+    const toNode = nodeSpecMap.get(edgeSpec.to);
+
+    let fromPort = edgeSpec.fromPort;
+    let toPort = edgeSpec.toPort;
+
+    // 來源端點正規化 (Source Handle Normalization)
+    if (fromNode?.type === 'sliderNode' || fromNode?.type === 'calculateNode') {
+      fromPort = 'h-out';
+    } else if (fromNode?.type === 'inputNode') {
+      if (!fromPort || fromPort === 'value') fromPort = 'out';
+    } else if (fromNode?.type === 'codeNode') {
+      if (!fromPort || fromPort === 'value' || fromPort === 'out') fromPort = 'h-result';
+    }
+
+    // 目標端點正規化 (Target Handle Normalization)
+    if (toNode?.type === 'outputNode') {
+      if (!toPort || toPort === 'value') toPort = 'in';
+    } else if (toNode?.type === 'graphNode') {
+      if (!toPort || toPort === 'value' || toPort === 'fn' || toPort === 'in') toPort = 'h-fn-in';
+    } else if (toNode?.type === 'calculateNode') {
+      if (!toPort || toPort === 'value' || toPort === 'in' || toPort === 'fn') {
+        toPort = 'h-fn-in';
+      } else if (!toPort.startsWith('h-in-') && toPort !== 'h-fn-in') {
+        toPort = `h-in-${toPort}`;
+      }
+    } else if (toNode?.type === 'codeNode') {
+      if (!toPort || toPort === 'value') toPort = 'h-in';
+    }
+
     return {
       id: edgeId,
       source: edgeSpec.from,
       target: edgeSpec.to,
-      sourceHandle: edgeSpec.fromPort || 'value',
-      targetHandle: edgeSpec.toPort || 'value',
+      sourceHandle: fromPort || 'value',
+      targetHandle: toPort || 'value',
     };
   });
 

@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import useStore from '../../store/useStore';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
+import useStore, { type NodeData } from '../../store/useStore';
 import { Icons } from '../Icons';
 import { NodeFrame } from '../NodeFrame';
 import { WorkflowUIComponentRenderer } from './NodeUIComponents';
@@ -24,13 +24,14 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
   const { inputs, outputs } = useMemo(() => deriveInterfaceFromNodes(nodes), [nodes]);
 
   // 卡片內部的宣告式 UI 元件狀態
+  const nextIdRef = useRef(1);
   const [uiComponents, setUiComponents] = useState<WorkflowUIComponentSpec[]>([]);
-  const [componentValues, setComponentValues] = useState<Record<string, any>>({});
+  const [componentValues, setComponentValues] = useState<Record<string, unknown>>({});
   const [isDragOverCard, setIsDragOverCard] = useState(false);
 
   // 新增 UI 元件
-  const handleAddUIComponent = (type: 'slider' | 'latexInput' | 'svgPicture' | 'text') => {
-    const id = `comp-${type}-${Date.now()}`;
+  const handleAddUIComponent = useCallback((type: 'slider' | 'latexInput' | 'svgPicture' | 'text') => {
+    const id = `comp-${type}-${nextIdRef.current++}`;
     let newComp: WorkflowUIComponentSpec;
 
     if (type === 'slider') {
@@ -50,34 +51,36 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
       newComp = {
         type: 'latexInput',
         id,
-        label: '公式輸入',
+        label: `公式輸入 (${defaultBind})`,
         bindInput: defaultBind,
-        defaultValue: 'x^2',
+        defaultValue: 'x^2 + 1',
+        placeholder: '輸入 LaTeX 數學式...',
       };
     } else if (type === 'svgPicture') {
       const defaultBind = outputs[0]?.id || 'output_1';
       newComp = {
         type: 'svgPicture',
         id,
-        label: '幾何圖形預覽',
+        label: `圖表渲染 (${defaultBind})`,
         bindOutput: defaultBind,
-        height: 120,
+        width: 240,
+        height: 140,
       };
     } else {
       newComp = {
         type: 'text',
         id,
-        content: '在此填寫節點的簡短使用說明與備註。',
-        isMarkdown: false,
+        content: '### 節點說明\n請在此處填寫本節點的用途與操作指引。',
+        isMarkdown: true,
       };
     }
 
     setUiComponents(prev => [...prev, newComp]);
-  };
+  }, [inputs, outputs]);
 
   // 移除 UI 元件
-  const handleRemoveComponent = (id: string) => {
-    setUiComponents(prev => prev.filter(c => c.id !== id));
+  const handleRemoveComponent = (compId: string) => {
+    setUiComponents(prev => prev.filter(c => c.id !== compId));
   };
 
   // 移動順序
@@ -99,28 +102,28 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
   const handleDropOnCard = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOverCard(false);
-    const compType = e.dataTransfer.getData('text/component-type') as any;
-    if (['slider', 'latexInput', 'svgPicture', 'text'].includes(compType)) {
+    const compType = e.dataTransfer.getData('text/component-type');
+    if (compType === 'slider' || compType === 'latexInput' || compType === 'svgPicture' || compType === 'text') {
       handleAddUIComponent(compType);
     }
   };
 
   // 預覽卡片的虛擬 NodeData
-  const previewData: any = {
+  const previewData: Partial<NodeData> = {
     label: defaultTitle,
     description: defaultDesc,
     handles: [
       ...inputs.map((p, idx) => ({
         id: p.id,
-        type: 'input',
-        position: 'left',
+        type: 'input' as const,
+        position: 'left' as const,
         offset: inputs.length === 1 ? 50 : Math.round(25 + (idx * 50) / (inputs.length - 1)),
         label: p.name,
       })),
       ...outputs.map((p, idx) => ({
         id: p.id,
-        type: 'output',
-        position: 'right',
+        type: 'output' as const,
+        position: 'right' as const,
         offset: outputs.length === 1 ? 50 : Math.round(25 + (idx * 50) / (outputs.length - 1)),
         label: p.name,
       })),
@@ -401,7 +404,7 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
                         <WorkflowUIComponentRenderer
                           spec={spec}
                           values={componentValues}
-                          onValueChange={(k: string, v: any) => setComponentValues(prev => ({ ...prev, [k]: v }))}
+                          onValueChange={(k: string, v: unknown) => setComponentValues(prev => ({ ...prev, [k]: v }))}
                         />
                       </div>
                     ))}

@@ -7,8 +7,8 @@ import type { WorkflowUIComponentSpec } from '../../types/workflowSpec';
 
 interface UIComponentProps {
   spec: WorkflowUIComponentSpec;
-  values: Record<string, any>;
-  onValueChange: (bindKey: string, nextValue: any) => void;
+  values: Record<string, unknown>;
+  onValueChange: (bindKey: string, nextValue: unknown) => void;
 }
 
 export const SliderComponent: React.FC<{
@@ -177,7 +177,7 @@ export const WorkflowUIComponentRenderer: React.FC<UIComponentProps> = ({
       return (
         <SliderComponent
           spec={spec}
-          currentValue={values[spec.bindInput]}
+          currentValue={typeof values[spec.bindInput] === 'number' ? (values[spec.bindInput] as number) : Number(values[spec.bindInput]) || 0}
           onChange={(val) => onValueChange(spec.bindInput, val)}
         />
       );
@@ -185,7 +185,7 @@ export const WorkflowUIComponentRenderer: React.FC<UIComponentProps> = ({
       return (
         <LatexInputComponent
           spec={spec}
-          currentValue={values[spec.bindInput]}
+          currentValue={typeof values[spec.bindInput] === 'string' ? (values[spec.bindInput] as string) : String(values[spec.bindInput] ?? '')}
           onChange={(val) => onValueChange(spec.bindInput, val)}
         />
       );
@@ -193,7 +193,7 @@ export const WorkflowUIComponentRenderer: React.FC<UIComponentProps> = ({
       return (
         <SvgPictureComponent
           spec={spec}
-          svgContent={values[spec.bindOutput]}
+          svgContent={typeof values[spec.bindOutput] === 'string' ? (values[spec.bindOutput] as string) : undefined}
         />
       );
     case 'text':

@@ -14,7 +14,7 @@ export interface WorkflowPortSpec {
   id: string; // 內部 Handle ID 或 Port 鍵名，例如 "x", "radius"
   name: string; // 顯示名稱
   dataType: WorkflowPortDataType;
-  defaultValue?: any;
+  defaultValue?: unknown;
   description?: string;
   required?: boolean;
 }
@@ -61,7 +61,7 @@ export interface WorkflowNodeSpec {
   type: string; // 'input' | 'output' | 'dummy' | 'math' | 'code' | 'textNode' | 'sliderNode' | 自訂 workflow id
   name: string;
   description?: string;
-  config?: Record<string, any>;
+  config?: Record<string, unknown>;
   position?: { x: number; y: number };
 }
 
@@ -104,7 +104,7 @@ export interface WorkflowSpec {
 /**
  * 依據工作流內部的節點陣列，自動推導對外的介面合約 (Inputs & Outputs)
  */
-export function deriveInterfaceFromNodes(nodes: Array<{ id: string; type?: string; data?: any }>): {
+export function deriveInterfaceFromNodes(nodes: Array<{ id: string; type?: string; data?: Record<string, unknown> }>): {
   inputs: WorkflowPortSpec[];
   outputs: WorkflowPortSpec[];
 } {
@@ -113,22 +113,22 @@ export function deriveInterfaceFromNodes(nodes: Array<{ id: string; type?: strin
 
   nodes.forEach(node => {
     if (node.type === 'inputNode' || node.type === 'input') {
-      const portName = node.data?.portName || node.data?.label || node.id;
+      const portName = String(node.data?.portName || node.data?.label || node.id);
       inputs.push({
         id: node.id,
         name: portName,
-        dataType: node.data?.dataType || 'real',
+        dataType: (node.data?.dataType as WorkflowPortDataType) || 'real',
         defaultValue: node.data?.defaultValue ?? node.data?.value,
-        description: node.data?.description || '',
-        required: node.data?.required ?? true,
+        description: String(node.data?.description || ''),
+        required: typeof node.data?.required === 'boolean' ? node.data.required : true,
       });
     } else if (node.type === 'outputNode' || node.type === 'output') {
-      const portName = node.data?.portName || node.data?.label || node.id;
+      const portName = String(node.data?.portName || node.data?.label || node.id);
       outputs.push({
         id: node.id,
         name: portName,
-        dataType: node.data?.dataType || 'real',
-        description: node.data?.description || '',
+        dataType: (node.data?.dataType as WorkflowPortDataType) || 'real',
+        description: String(node.data?.description || ''),
       });
     }
   });

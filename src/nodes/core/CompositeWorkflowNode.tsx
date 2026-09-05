@@ -15,7 +15,8 @@ export const CompositeWorkflowNode = memo(function CompositeWorkflowNode({
   const evaluateGraph = useStore((state: AppState) => state.evaluateGraph);
 
   // 取得封裝的工作流規格
-  const workflowSpec = (data as any).workflowSpec as WorkflowSpec | undefined;
+  const rawData = data as unknown as Record<string, unknown>;
+  const workflowSpec = rawData.workflowSpec as WorkflowSpec | undefined;
   const label = workflowSpec?.name || data.label || '複合工作流節點';
   const description = workflowSpec?.description || data.description || '';
 
@@ -57,8 +58,8 @@ export const CompositeWorkflowNode = memo(function CompositeWorkflowNode({
   }, [id, data.handles, inputs, outputs, updateNodeData]);
 
   // 元件狀態管理（雙向連動）
-  const [componentValues, setComponentValues] = useState<Record<string, any>>(() => {
-    const initial: Record<string, any> = { ...data.inputs, ...data.outputs };
+  const [componentValues, setComponentValues] = useState<Record<string, unknown>>(() => {
+    const initial: Record<string, unknown> = { ...(data.inputs || {}), ...(data.outputs || {}) };
     inputs.forEach(p => {
       if (initial[p.id] === undefined && p.defaultValue !== undefined) {
         initial[p.id] = p.defaultValue;
@@ -67,7 +68,7 @@ export const CompositeWorkflowNode = memo(function CompositeWorkflowNode({
     return initial;
   });
 
-  const handleComponentValueChange = (bindKey: string, nextValue: any) => {
+  const handleComponentValueChange = (bindKey: string, nextValue: unknown) => {
     const nextValues = { ...componentValues, [bindKey]: nextValue };
     setComponentValues(nextValues);
 
@@ -80,7 +81,7 @@ export const CompositeWorkflowNode = memo(function CompositeWorkflowNode({
   // 在新頁面開啟內部工作流
   const handleOpenInNewPage = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const targetWorkflowId = (data as any).workflowSpec?.id || (data as any).subgraphId;
+    const targetWorkflowId = (rawData.workflowSpec as WorkflowSpec | undefined)?.id || (rawData.subgraphId as string | undefined);
     if (targetWorkflowId) {
       window.open(`/?subgraph=${targetWorkflowId}`, '_blank');
     } else {

@@ -623,8 +623,8 @@ function Flow() {
         nodeId: string;
         label: string;
         description: string;
-        inputs: any[];
-        outputs: any[];
+        inputs: Array<{ id: string; name: string }>;
+        outputs: Array<{ id: string; name: string }>;
       }>;
       const { nodeId, label, description, inputs, outputs } = customEvt.detail;
 
@@ -633,12 +633,13 @@ function Flow() {
 
       if (apiKey) {
         try {
+          const customTemplates = useStore.getState().communityTemplates;
           generatedSpec = await callGeminiImplementDummyNode({
             label,
             description,
             expectedInputs: inputs,
             expectedOutputs: outputs,
-          }, apiKey);
+          }, apiKey, customTemplates);
         } catch (err) {
           console.warn('[AI] Gemini 實作 Dummy 節點失敗，使用基礎骨架替代', err);
         }
@@ -654,8 +655,8 @@ function Flow() {
           version: '1.0.0',
           visibility: 'private',
           publishKind: 'node',
-          inputs: inputs || [],
-          outputs: outputs || [],
+          inputs: (inputs || []).map(i => ({ id: i.id, name: i.name, dataType: 'any' as const })),
+          outputs: (outputs || []).map(o => ({ id: o.id, name: o.name, dataType: 'any' as const })),
           nodes: [
             ...(inputs || []).map((inp, idx) => ({
               id: `in-${idx}`,
@@ -673,6 +674,8 @@ function Flow() {
           edges: [],
         };
       }
+
+      if (!generatedSpec) return;
 
       const currentNodes = useStore.getState().nodes;
       const currentEdges = useStore.getState().edges;

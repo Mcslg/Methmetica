@@ -28,6 +28,26 @@
 
 ## 🧪 待測試 (Pending Test)
 
+- [ ] **AI 節點表層欄位感知與連線端口自動正規化 (Node Surface Config & Port Normalization)**：
+  - **表層欄位對齊**：在 `aiClient.ts` 明確定義 `calculateNode`（`formula`）、`sliderNode`（`nodeName`/`value`/`min`/`max`/`step`）、`graphNode`（`formula`）、`textNode`（`text`）、`inputNode`/`outputNode`（`nodeName`/`variant`/`value`）的表層可編輯欄位與預設範例。
+  - **社群卡片欄位注入與同步**：在提示詞動態列出各社群節點表層欄位，生成時將 `templateFields` 合併並同步至 `templateDraft.builderBlocks`，使卡片直接顯示 AI 填寫的定義與步驟。
+  - **首幀 Handles 預初始化**：在 `aiWorkflowGenerator.ts` 實作 `extractFormulaVariables`，直接由算式解析未知數變數預填 `h-in-<var>` 與 `h-out`，使 React Flow 掛載首幀即可精準吸附連線。
+  - **連線 Handle 雙重容錯正規化**：自動將來源端點（`sliderNode`/`calculateNode`）之 `out`/`value` 映射為 `h-out`；目標變數（`a`, `b`, `x`）自動補齊為 `h-in-a`, `h-in-b`；圖表對齊為 `h-fn-in`。
+  - `npx eslint src` (0 errors) 與 `npm run build` 打包通過。
+
+- [ ] **核心常用節點移出 deprecated 與全專案 ESLint 零錯誤規範 (Migrate Core Nodes from Deprecated & ESLint Clean)**：
+  - **移出核心三節點**：將 AI 工作流核心所依賴的 [CalculateNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/CalculateNode.tsx)、[SliderNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/SliderNode.tsx)、[GraphNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/GraphNode.tsx) 從 `src/nodes/deprecated/` 移至 `src/nodes/` 標準目錄。
+  - **同步重構依賴參照**：全面更新 `registry.tsx` 與三個節點的內部 import 相對路徑，徹底移除對 deprecated 節點的參照。
+  - **全面修復 ESLint 規範**：修復移出之三個節點及相關元件中 62 處 `no-explicit-any`、`no-empty`、`react-hooks/purity` 與 `set-state-in-effect` 違規。
+  - `npx eslint src` 與 `npm run build` (`tsc -b && vite build`) 均達 **0 errors**。
+
+- [ ] **社群節點庫動態注入至 AI 工作流生成機制 (Dynamic Community Catalog Ingestion for AI Workflow)**：
+  - **動態提示詞目錄編譯**：在 [aiClient.ts](file:///Users/mac/Documents/methmatica/src/utils/aiClient.ts) 實作 `formatCommunityCatalogForPrompt` 與 `buildSystemInstruction`，將 `defaultCommunityTemplates` 與使用者自訂社群節點動態格式化為 Schema 注入 Gemini。
+  - **節點類型與端口對齊**：支援 `communityTemplateNode` 語法，規範 `in-context`, `out-summary`, `in-data`, `out-method` 等 Handles 對接。
+  - **畫布實體完整綁定**：在 [aiWorkflowGenerator.ts](file:///Users/mac/Documents/methmatica/src/utils/aiWorkflowGenerator.ts) 中轉換時自動補齊 `templateDraft`、`templateFields`、寬高樣式與 `DynamicHandles`。
+  - **示範案例與乾淨體驗**：在 [AIWorkflowModal.tsx](file:///Users/mac/Documents/methmatica/src/components/workflow/AIWorkflowModal.tsx) 新增「社群節點整合：定理定義與判別」預設 Prompt，介面維持原生簡約，無多餘之假動畫。
+  - 0 errors 通過 `tsc -b` 與 `vite build`。
+
 - [ ] **AI 工作流生成機制 (AI Workflow Generator: Prompt UI, LLM API, Catalog-Aware & Recursive Dummy Expansion)**：
   - **AI 自然語言輸入介面**：在畫布頂部右側 (`AI 生成工作流` 按鈕) 與側邊欄提供彈窗對話面板 [AIWorkflowModal.tsx](file:///Users/mac/Documents/methmatica/src/components/workflow/AIWorkflowModal.tsx)，支援輸入自訂 Prompt 與點選 4 組常用範例。
   - **LLM API 連線與金鑰配置**：支援 Gemini 2.5 Flash / 1.5 Flash（優先讀取 `VITE_GEMINI_API_KEY` 或本機 `localStorage` 使用者填寫），具備 Loading 動畫、防禦性 JSON 格式化與錯誤提示。
