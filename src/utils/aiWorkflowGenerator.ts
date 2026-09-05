@@ -123,10 +123,15 @@ function computeNodeLayers(
   return layers;
 }
 
+export { callGeminiGenerateWorkflow, callGeminiImplementDummyNode } from './aiClient';
+
 /**
  * 將 AI 產出的宣告式 WorkflowSpec 轉換為畫布上的 AppNode[] 與 Edge[]
  */
-export function convertSpecToCanvasGraph(spec: WorkflowSpec): {
+export function convertSpecToCanvasGraph(
+  spec: WorkflowSpec,
+  originOffset: { x: number; y: number } = { x: 120, y: 120 }
+): {
   nodes: AppNode[];
   edges: Edge[];
 } {
@@ -139,15 +144,23 @@ export function convertSpecToCanvasGraph(spec: WorkflowSpec): {
     layerBuckets.set(layer, bucket);
   });
 
+  const maxLayerCount = Math.max(...Array.from(layerBuckets.values()).map(b => b.length), 1);
+  const rowHeight = 200;
+  const colWidth = 330;
+
   const nodes: AppNode[] = spec.nodes.map(nodeSpec => {
     const layer = layers.get(nodeSpec.id) || 0;
     const bucket = layerBuckets.get(layer) || [nodeSpec.id];
     const indexInLayer = bucket.indexOf(nodeSpec.id);
 
-    // 自動計算排版座標
+    // 垂直居中對齊：計算該層與最大高度的垂直差值，讓少節點的層級自然置中
+    const layerHeight = bucket.length * rowHeight;
+    const maxHeight = maxLayerCount * rowHeight;
+    const verticalOffset = (maxHeight - layerHeight) / 2;
+
     const position = nodeSpec.position || {
-      x: 100 + layer * 320,
-      y: 100 + indexInLayer * 180,
+      x: originOffset.x + layer * colWidth,
+      y: originOffset.y + verticalOffset + indexInLayer * rowHeight,
     };
 
     return {

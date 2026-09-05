@@ -27,6 +27,8 @@ import { type AppRoute, parseRouteFromLocation, readEditorSnapshotFromHistory, r
 import type { MathValue } from './types/mathTypes';
 import { expandDummyNodeWithSubgraph } from './utils/aiWorkflowGenerator';
 import type { WorkflowSpec } from './types/workflowSpec';
+import { AIWorkflowModal } from './components/workflow/AIWorkflowModal';
+import { callGeminiImplementDummyNode, getStoredApiKey } from './utils/aiClient';
 
 type PaneMenuEvent = {
   preventDefault: () => void;
@@ -212,11 +214,35 @@ function Flow() {
   const [dataTooltip, setDataTooltip] = useState<DataTooltipState | null>(null);
   const [isExplainMode, setIsExplainMode] = useState(false);
   const [isQuickNavOpen, setIsQuickNavOpen] = useState(false);
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [quickNavQuery, setQuickNavQuery] = useState('');
   const [quickNavActiveIndex, setQuickNavActiveIndex] = useState(0);
   const quickNavInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const idleTimerRef = useRef<number | null>(null);
+
+  const handleApplyAIGraph = useCallback((newNodes: AppNode[], newEdges: Edge[], mode: 'replace' | 'append') => {
+    if (mode === 'replace') {
+      useStore.getState().setGraph(newNodes, newEdges);
+    } else {
+      const currentNodes = useStore.getState().nodes;
+      const currentEdges = useStore.getState().edges;
+      const maxX = currentNodes.length > 0
+        ? Math.max(...currentNodes.map(n => n.position.x + (n.width || 200))) + 120
+        : 120;
+      const offsetNodes = newNodes.map(n => ({
+        ...n,
+        position: { x: n.position.x + maxX, y: n.position.y },
+      }));
+      useStore.setState({
+        nodes: [...currentNodes, ...offsetNodes],
+        edges: [...currentEdges, ...newEdges],
+      });
+    }
+    setTimeout(() => {
+      useStore.getState().evaluateGraph();
+    }, 50);
+  }, []);
 
   const filteredQuickNavNodes = useMemo(() => {
     const q = quickNavQuery.trim().toLowerCase();
@@ -592,7 +618,7 @@ function Flow() {
 
   // 監聽 Dummy 節點遞迴生成與開新頁面編輯子圖事件
   useEffect(() => {
-    const handleImplementDummy = (e: Event) => {
+    const handleImplementDummy = async (e: Event) => {
       const customEvt = e as CustomEvent<{
         nodeId: string;
         label: string;
@@ -602,33 +628,51 @@ function Flow() {
       }>;
       const { nodeId, label, description, inputs, outputs } = customEvt.detail;
 
-      // 建立替換用的子工作流規格
-      const generatedSpec: WorkflowSpec = {
-        schemaVersion: 2,
-        id: `subgraph-${Date.now()}`,
-        name: label,
-        description: description,
-        version: '1.0.0',
-        visibility: 'private',
-        publishKind: 'node',
-        inputs: inputs || [],
-        outputs: outputs || [],
-        nodes: [
-          ...(inputs || []).map((inp, idx) => ({
-            id: `in-${idx}`,
-            type: 'inputNode',
-            name: inp.name || `in_${idx + 1}`,
-            position: { x: 50, y: 50 + idx * 100 },
-          })),
-          ...(outputs || []).map((out, idx) => ({
-            id: `out-${idx}`,
-            type: 'outputNode',
-            name: out.name || `out_${idx + 1}`,
-            position: { x: 450, y: 50 + idx * 100 },
-          })),
-        ],
-        edges: [],
-      };
+      const apiKey = getStoredApiKey();
+      let generatedSpec: WorkflowSpec | null = null;
+
+      if (apiKey) {
+        try {
+          generatedSpec = await callGeminiImplementDummyNode({
+            label,
+            description,
+            expectedInputs: inputs,
+            expectedOutputs: outputs,
+          }, apiKey);
+        } catch (err) {
+          console.warn('[AI] Gemini 實作 Dummy 節點失敗，使用基礎骨架替代', err);
+        }
+      }
+
+      // 若未提供 API Key 或生成失敗，回退至基礎端點子圖
+      if (!generatedSpec) {
+        generatedSpec = {
+          schemaVersion: 2,
+          id: `subgraph-${Date.now()}`,
+          name: label,
+          description: description,
+          version: '1.0.0',
+          visibility: 'private',
+          publishKind: 'node',
+          inputs: inputs || [],
+          outputs: outputs || [],
+          nodes: [
+            ...(inputs || []).map((inp, idx) => ({
+              id: `in-${idx}`,
+              type: 'inputNode',
+              name: inp.name || `in_${idx + 1}`,
+              position: { x: 50, y: 50 + idx * 100 },
+            })),
+            ...(outputs || []).map((out, idx) => ({
+              id: `out-${idx}`,
+              type: 'outputNode',
+              name: out.name || `out_${idx + 1}`,
+              position: { x: 450, y: 50 + idx * 100 },
+            })),
+          ],
+          edges: [],
+        };
+      }
 
       const currentNodes = useStore.getState().nodes;
       const currentEdges = useStore.getState().edges;
@@ -791,14 +835,18 @@ function Flow() {
       setTimeout(() => useStore.getState().evaluateGraph(), 100);
     };
 
+    const handleOpenAI = () => setIsAIModalOpen(true);
+
     window.addEventListener('ai-implement-dummy-node', handleImplementDummy);
     window.addEventListener('open-subgraph-new-page', handleOpenSubgraphNewPage);
     window.addEventListener('load-ai-workflow-demo', handleLoadDemo);
+    window.addEventListener('open-ai-workflow-modal', handleOpenAI);
 
     return () => {
       window.removeEventListener('ai-implement-dummy-node', handleImplementDummy);
       window.removeEventListener('open-subgraph-new-page', handleOpenSubgraphNewPage);
       window.removeEventListener('load-ai-workflow-demo', handleLoadDemo);
+      window.removeEventListener('open-ai-workflow-modal', handleOpenAI);
     };
   }, []);
 
@@ -1018,6 +1066,48 @@ function Flow() {
       <Sidebar />
       <FloatingPalette />
       <TemplateBehaviorTesterPanel />
+      <AIWorkflowModal
+        isOpen={isAIModalOpen}
+        onClose={() => setIsAIModalOpen(false)}
+        onApplyGraph={handleApplyAIGraph}
+      />
+      <button
+        className="nodrag"
+        onClick={() => setIsAIModalOpen(true)}
+        style={{
+          position: 'fixed',
+          top: 14,
+          right: 116,
+          zIndex: 1300,
+          border: '1px solid rgba(56, 189, 248, 0.45)',
+          background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.28) 0%, rgba(124, 58, 237, 0.28) 100%)',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)',
+          color: '#38bdf8',
+          borderRadius: '8px',
+          padding: '6px 12px',
+          fontSize: '0.75rem',
+          fontWeight: 600,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          boxShadow: '0 2px 10px rgba(0, 0, 0, 0.25)',
+          transition: 'all 0.15s ease',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.75)';
+          e.currentTarget.style.color = '#ffffff';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.45)';
+          e.currentTarget.style.color = '#38bdf8';
+        }}
+        title="AI 工作流自動生成 (Google Gemini)"
+      >
+        <span style={{ fontSize: '12px' }}>✨</span>
+        <span>AI 生成工作流</span>
+      </button>
       <button
         className="nodrag"
         onClick={() => {

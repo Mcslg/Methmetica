@@ -120,37 +120,74 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
                 </div>
             )}
 
-            <button
-                onClick={() => {
-                    window.dispatchEvent(new CustomEvent('load-ai-workflow-demo'));
-                }}
-                style={{
-                    width: '100%',
-                    marginTop: '8px',
-                    background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)',
-                    border: '1px solid rgba(56, 189, 248, 0.4)',
-                    borderRadius: '6px',
-                    color: '#38bdf8',
-                    padding: '6px 8px',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '5px',
-                    transition: 'all 0.2s',
-                }}
-                onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'linear-gradient(135deg, rgba(56, 189, 248, 0.35) 0%, rgba(139, 92, 246, 0.35) 100%)';
-                }}
-                onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'linear-gradient(135deg, rgba(56, 189, 248, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)';
-                }}
-            >
-                <span>✨</span>
-                <span>載入 AI 工作流演示 (Demo)</span>
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' }}>
+                <button
+                    onClick={() => {
+                        window.dispatchEvent(new CustomEvent('open-ai-workflow-modal'));
+                    }}
+                    style={{
+                        width: '100%',
+                        background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.25) 0%, rgba(139, 92, 246, 0.25) 100%)',
+                        border: '1px solid rgba(56, 189, 248, 0.5)',
+                        borderRadius: '6px',
+                        color: '#38bdf8',
+                        padding: '7px 8px',
+                        fontSize: '11.5px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        transition: 'all 0.2s',
+                        boxShadow: '0 2px 8px rgba(56, 189, 248, 0.15)',
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'linear-gradient(135deg, rgba(56, 189, 248, 0.4) 0%, rgba(139, 92, 246, 0.4) 100%)';
+                        e.currentTarget.style.color = '#ffffff';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'linear-gradient(135deg, rgba(56, 189, 248, 0.25) 0%, rgba(139, 92, 246, 0.25) 100%)';
+                        e.currentTarget.style.color = '#38bdf8';
+                    }}
+                    title="開啟自然語言 AI 工作流生成器"
+                >
+                    <span>✨</span>
+                    <span>AI 生成工作流 (Prompt)</span>
+                </button>
+
+                <button
+                    onClick={() => {
+                        window.dispatchEvent(new CustomEvent('load-ai-workflow-demo'));
+                    }}
+                    style={{
+                        width: '100%',
+                        background: 'rgba(30, 41, 59, 0.6)',
+                        border: '1px solid rgba(148, 163, 184, 0.2)',
+                        borderRadius: '6px',
+                        color: '#94a3b8',
+                        padding: '4px 8px',
+                        fontSize: '10px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '4px',
+                        transition: 'all 0.15s',
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.color = '#e2e8f0';
+                        e.currentTarget.style.borderColor = 'rgba(148, 163, 184, 0.4)';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.color = '#94a3b8';
+                        e.currentTarget.style.borderColor = 'rgba(148, 163, 184, 0.2)';
+                    }}
+                    title="載入靜態架構範例供快速驗證"
+                >
+                    <span>⚡ 載入架構演示 (Demo)</span>
+                </button>
+            </div>
         </div>
     );
 };

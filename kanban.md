@@ -9,6 +9,10 @@
   - 私人自訂工作流自動可用（含有效端點即被視為節點），比照社群節點採 `search-only` 隱藏於左側側欄，僅在右鍵選單/搜尋中可見。
   - 支援私人工作流版本控制與跨工作流引用升級。
   - 公開社群發布強制登入身分驗證。
+- [ ] **拓撲連線草圖生成器 (Topological Schematic Sketch Engine)**：
+  - 升級 `WorkflowSketch`，由依賴隨意物理座標改為依賴 DAG 連線拓撲分層自動繪製。
+  - 標準化為左至右電路式草圖，杜絕遠距節點導致的縮圖過小或大面積空白問題。
+  - 同步套用於 Dashboard 工作流預覽卡片與 AI 生成預覽視窗。
 - [ ] **社群工作流管理專區**：提供使用者專屬的「我的已發布工作流」清單，支援編輯、下架與版本管理。
 - [ ] **Core 工作流審核/管理工具**：完善管理員與受信任編輯者 (trusted_editor) 的審核工作台 UI。
 - [ ] **工作流公開詳情頁與 SEO**：建立公開工作流的預覽頁與分享連結。
@@ -18,15 +22,19 @@
 
 ## 🏗️ 進行中 (In Progress)
 
-- [ ] **AI 工作流生成機制 (AI Workflow Generator: Prompt UI, LLM API, Catalog-Aware & Recursive Dummy Expansion)**：
-  - **AI 自然語言輸入介面**：在畫布頂部/側邊提供「✨ AI 生成工作流」彈窗/對話面板，支援使用者輸入 prompt 與常用模板。
-  - **LLM API 連線與金鑰配置**：支援 Gemini API（支援 `VITE_GEMINI_API_KEY` 或使用者自行填寫 API Key），具備 Loading 動畫與錯誤提示。
-  - **查庫優先與 WorkflowSpec 提示詞工程**：注入系統現有節點目錄，引導 LLM 優先組合現有節點，缺失者產生 `dummyNode` 佔位符。
-  - **真實遞迴 Dummy 展開**：點擊 DummyNode「由 AI 實作」時，呼叫 AI 自動生成該子圖的具體演算法節點與內部連線。
+*(目前無進行中項目，所有規劃功能已實作並移至待測試)*
 
 ---
 
 ## 🧪 待測試 (Pending Test)
+
+- [ ] **AI 工作流生成機制 (AI Workflow Generator: Prompt UI, LLM API, Catalog-Aware & Recursive Dummy Expansion)**：
+  - **AI 自然語言輸入介面**：在畫布頂部右側 (`AI 生成工作流` 按鈕) 與側邊欄提供彈窗對話面板 [AIWorkflowModal.tsx](file:///Users/mac/Documents/methmatica/src/components/workflow/AIWorkflowModal.tsx)，支援輸入自訂 Prompt 與點選 4 組常用範例。
+  - **LLM API 連線與金鑰配置**：支援 Gemini 2.5 Flash / 1.5 Flash（優先讀取 `VITE_GEMINI_API_KEY` 或本機 `localStorage` 使用者填寫），具備 Loading 動畫、防禦性 JSON 格式化與錯誤提示。
+  - **查庫優先與 WorkflowSpec 提示詞工程**：注入系統現有節點庫，引導 LLM 優先使用原生節點，未知算法自動生成 `dummyNode` 佔位符。
+  - **DAG 拓撲垂直居中排版**：優化 [aiWorkflowGenerator.ts](file:///Users/mac/Documents/methmatica/src/utils/aiWorkflowGenerator.ts)，新增各層級垂直居中與間距計算，杜絕倒退線與重疊。
+  - **真實遞迴 Dummy 展開**：點擊 DummyNode「✨ 由 AI 實作」時，自動發起二次 Gemini 請求實作該子圖演算法，並替換為複合節點。
+  - 0 errors 通過 `tsc -b` 與 `vite build`。
 
 - [ ] **側邊欄雙標籤整併與固定色系雙舌片 (Sidebar Dual Tabs & Fixed Flaps Style)**：
   - **頂部切換按鈕移除**：移除抽屜頂部多餘的「元件庫 / 節點製造」Tab 切換按鈕，保持介面乾淨。
