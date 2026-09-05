@@ -1,5 +1,7 @@
 import React, { memo, useEffect } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 import useStore, { type AppState, type NodeData, type CustomHandle } from '../../store/useStore';
 import { NodeFrame } from '../../components/NodeFrame';
 import { Icons } from '../../components/Icons';
@@ -40,6 +42,27 @@ export const OutputNode = memo(function OutputNode({ id, data, selected }: NodeP
 
   const handleTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     updateNodeData(id, { variant: e.target.value as NodeData['variant'] });
+  };
+
+  const renderDisplayValue = () => {
+    if (typeof displayValue === 'object') {
+      return JSON.stringify(displayValue);
+    }
+    const str = String(displayValue);
+    if (str === '(等待連線輸入...)') {
+      return <span style={{ color: 'var(--text-sub, #94a3b8)', fontStyle: 'italic', fontFamily: 'inherit' }}>{str}</span>;
+    }
+    const isLatex = dataType === 'latex' || str.includes('\\') || /[\^_]/.test(str);
+    if (isLatex) {
+      try {
+        const clean = str.startsWith('$$') && str.endsWith('$$') ? str.slice(2, -2) : (str.startsWith('$') && str.endsWith('$') ? str.slice(1, -1) : str);
+        const html = katex.renderToString(clean.trim(), { throwOnError: false, displayMode: false });
+        return <span dangerouslySetInnerHTML={{ __html: html }} />;
+      } catch {
+        return str;
+      }
+    }
+    return str;
   };
 
   return (
@@ -117,7 +140,7 @@ export const OutputNode = memo(function OutputNode({ id, data, selected }: NodeP
               boxSizing: 'border-box',
             }}
           >
-            {typeof displayValue === 'object' ? JSON.stringify(displayValue) : String(displayValue)}
+            {renderDisplayValue()}
           </div>
         </div>
       </div>

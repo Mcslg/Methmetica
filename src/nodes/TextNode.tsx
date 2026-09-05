@@ -12,7 +12,7 @@ import { TaskList } from '@tiptap/extension-task-list';
 import { TaskItem } from '@tiptap/extension-task-item';
 import { TextAlign } from '@tiptap/extension-text-align';
 import { Placeholder } from '@tiptap/extension-placeholder';
-import { Node as TiptapNode, mergeAttributes, InputRule } from '@tiptap/core';
+import { Node as TiptapNode, mergeAttributes, InputRule, nodePasteRule, type Content } from '@tiptap/core';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 // @ts-expect-error nerdamer is an untyped commonjs library
@@ -1186,20 +1186,117 @@ const MathPill = TiptapNode.create({
     addInputRules() {
         return [
             new InputRule({
-                find: /\$\$(.+)\$\$\s$/,
+                find: /\$\$([\s\S]+?)\$\$\s$/,
                 handler: ({ state, range, match }) => {
                     const { tr } = state;
                     const val = match[1];
-                    if (val) {
-                        tr.replaceWith(range.from, range.to, this.type.create({ value: val }));
+                    if (val && val.trim()) {
+                        tr.replaceWith(range.from, range.to, this.type.create({ value: val.trim() }));
+                    }
+                },
+            }),
+            new InputRule({
+                find: /(?<!\\|\$)\$(?!\$)((?:\\\$|[^$\n])+?)(?<!\\)\$\s$/,
+                handler: ({ state, range, match }) => {
+                    const { tr } = state;
+                    const val = match[1];
+                    if (val && val.trim()) {
+                        tr.replaceWith(range.from, range.to, this.type.create({ value: val.trim() }));
                     }
                 },
             }),
         ];
     },
+
+    addPasteRules() {
+        return [
+            nodePasteRule({
+                find: /\$\$([\s\S]+?)\$\$/g,
+                type: this.type,
+                getAttributes: match => ({ value: match[1]?.trim() }),
+            }),
+            nodePasteRule({
+                find: /(?<!\\|\$)\$(?!\$)((?:\\\$|[^$\n])+?)(?<!\\)\$/g,
+                type: this.type,
+                getAttributes: match => ({ value: match[1]?.trim() }),
+            }),
+        ];
+    },
 });
 
+// Helper to escape HTML attributes inside injected custom tags
+const escapeAttr = (str: string) => {
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+};
 
+const parseMarkdownToCustomNodes = (md: string) => {
+    if (!md || typeof md !== 'string') return '';
+    let result = md;
+    // 1. Double dollar $$...$$ (block/display math)
+    result = result.replace(/\$\$([\s\S]*?)\$\$/g, (_, val) => `<math-pill-md value="${escapeAttr(val.trim())}"></math-pill-md>`);
+    // 2. LaTeX block math \[...\]
+    result = result.replace(/\\\[([\s\S]*?)\\\]/g, (_, val) => `<math-pill-md value="${escapeAttr(val.trim())}"></math-pill-md>`);
+    // 3. LaTeX inline math \(...\)
+    result = result.replace(/\\\(([\s\S]*?)\\\)/g, (_, val) => `<math-pill-md value="${escapeAttr(val.trim())}"></math-pill-md>`);
+    // 4. Single dollar $...$ (inline math, avoiding escaped \$)
+    result = result.replace(/(?<!\\|\$)\$(?!\$)((?:\\\$|[^$\n])+?)(?<!\\)\$/g, (_, val) => {
+        const trimmed = val.trim();
+        if (!trimmed) return `$${val}$`;
+        return `<math-pill-md value="${escapeAttr(trimmed)}"></math-pill-md>`;
+    });
+    // 5. Controls & buttons
+    result = result
+        .replace(/\[(.*?):slider\]/g, '<slider-pill-md name="$1"></slider-pill-md>')
+        .replace(/\[trigger\]/g, '<button-pill-md name="buttonNode"></button-pill-md>')
+        .replace(/\[gate\]/g, '<gate-pill-md name="gateNode"></gate-pill-md>');
+
+    return result;
+};
+
+// Helper to migrate already-saved plain-text document trees containing LaTeX into MathPill nodes
+const splitTextIntoMathNodes = (text: string) => {
+    const regex = /(?:\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|(?<!\\|\$)\$(?!\$)((?:\\\$|[^$\n])+?)(?<!\\)\$)/g;
+    const nodes: Array<Record<string, unknown>> = [];
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+            nodes.push({ type: 'text', text: text.slice(lastIndex, match.index) });
+        }
+        const val = (match[1] || match[2] || match[3] || match[4] || '').trim();
+        if (val) {
+            nodes.push({ type: 'mathPill', attrs: { value: val, name: '' } });
+        }
+        lastIndex = regex.lastIndex;
+    }
+    if (lastIndex < text.length) {
+        nodes.push({ type: 'text', text: text.slice(lastIndex) });
+    }
+    return nodes;
+};
+
+const migrateDocWithMath = (docNode: unknown): Content => {
+    if (!docNode || typeof docNode !== 'object') return docNode as Content;
+    const nodeObj = docNode as Record<string, unknown>;
+    if (Array.isArray(nodeObj.content)) {
+        const nextContent: unknown[] = [];
+        for (const child of nodeObj.content) {
+            const childObj = child as Record<string, unknown>;
+            if (childObj?.type === 'text' && typeof childObj.text === 'string' && (childObj.text.includes('$') || childObj.text.includes('\\(') || childObj.text.includes('\\['))) {
+                nextContent.push(...splitTextIntoMathNodes(childObj.text));
+            } else {
+                nextContent.push(migrateDocWithMath(child));
+            }
+        }
+        return { ...nodeObj, content: nextContent } as Content;
+    }
+    return docNode as Content;
+};
 
 // ── MAIN COMPONENT ────────────────────────────────────────────────────────
 
@@ -1246,14 +1343,6 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
     }, [activeHandles]);
 
     // ── TIPTAP EDITOR SETUP ──────────────────────────────────────────────
-    const parseMarkdownToCustomNodes = (md: string) => {
-        return md
-            .replace(/\$\$(.*?)\$\$/g, '<math-pill-md value="$1"></math-pill-md>')
-            .replace(/\[(.*?):slider\]/g, '<slider-pill-md name="$1"></slider-pill-md>')
-            .replace(/\[trigger\]/g, '<button-pill-md name="buttonNode"></button-pill-md>')
-            .replace(/\[gate\]/g, '<gate-pill-md name="gateNode"></gate-pill-md>');
-    };
-
 
     const editor = useEditor({
         extensions: [
@@ -1284,7 +1373,8 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
             const t = activePageText;
             if (t.startsWith('{')) {
                 try {
-                    return JSON.parse(t);
+                    const parsed = JSON.parse(t);
+                    return migrateDocWithMath(parsed);
                 } catch { return t; }
             }
             return parseMarkdownToCustomNodes(t);
@@ -1381,7 +1471,8 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
         if (currentJson !== t) {
             if (t.startsWith('{')) {
                 try {
-                    editor.commands.setContent(JSON.parse(t), undefined);
+                    const parsed = JSON.parse(t);
+                    editor.commands.setContent(migrateDocWithMath(parsed), undefined);
                 } catch { /* ignore */ }
             } else {
                 editor.commands.setContent(parseMarkdownToCustomNodes(t), undefined);

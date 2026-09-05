@@ -30,6 +30,14 @@
 
 ## 🧪 待測試 (Pending Test)
 
+- [ ] **全域 LaTeX 語法解析轉換與即時渲染修復 (LaTeX Parsing, Attribute Escaping & Global KaTeX Rendering)**：
+  - **單雙錢號與標準 LaTeX 語法支援**：修復 [TextNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/TextNode.tsx) 原先僅識別 `$$...$$` 而忽略 `$x$` 行內公式的問題，全面擴充支援 `$$...$$`、`$...$`、`\[...\]` 與 `\(...\)`。
+  - **HTML 屬性安全轉義防穿透**：解決含有 `<`、`>` 符號的公式（如 `\Delta > 0`）因未做屬性轉義導致 HTML 標籤提早閉合中斷的問題。
+  - **舊存檔與 JSON 樹無損自動遷移**：實作 `migrateDocWithMath`，無論新生成之 Markdown 或已被儲存為純文字 JSON 之舊畫布，均能自動將帶有 `$` 的文字節點即時升級為 KaTeX `MathPill` 實體。
+  - **即時輸入與貼上規則完整綁定**：在 Tiptap `MathPill` 擴充套件中加入 `addInputRules`（支援單錢號行內公式）與 `addPasteRules`（貼上含公式 Markdown 即時轉譯）。
+  - **OutputNode 端點 KaTeX 渲染支援**：在 [OutputNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/core/OutputNode.tsx) 新增 KaTeX 渲染機制，當運算結果為 LaTeX 或型態為 `latex` 時直接顯示數學式而非純文字。
+  - 0 errors 通過 `npx eslint src` 與 `npm run build`。
+
 - [ ] **AI 提示詞三區架構與社群節點嚴格調用規範 (Three-Zone Prompt Architecture & Strict Community Node Invocation)**：
   - **說明區收斂至原生 textNode**：在 [aiClient.ts](file:///Users/mac/Documents/methmatica/src/utils/aiClient.ts) 明確規範說明區（Zone 1）必須且僅能使用支援 Markdown 與 LaTeX 公式之原生 `textNode`，嚴禁生成虛構的填空社群卡片。
   - **社群節點嚴格調用規範**：將社群節點庫定位為預先發布之黑盒子依賴（Black-box Component），僅在使用者需求明確精確吻合既有節點 ID 與功能時才允許引用其宣告 Handles，嚴禁現場改寫欄位或隨意捏造實例。若無完全吻合之社群節點，一律回歸原生幾何/數值節點與 `dummyNode`。
