@@ -87,7 +87,7 @@ export const DummyNode = memo(function DummyNode({ id, data, selected }: NodePro
             fontWeight: 600,
           }}
         >
-          DUMMY
+          待實作
         </span>
       }
     >
@@ -120,7 +120,7 @@ export const DummyNode = memo(function DummyNode({ id, data, selected }: NodePro
           onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
         >
           <span>✨</span>
-          <span>由 AI 實作此節點 (Generate)</span>
+          <span>由 AI 實作此節點</span>
         </button>
       </div>
     </NodeFrame>

@@ -1473,7 +1473,7 @@ function Flow() {
             {(() => {
               const items = [
                 { type: 'calculateNode', label: t('nodes.calculate.title'), icon: <Icons.Calculate size={24} />, color: '#ffcc33', start: 2, end: 178 },
-                { type: 'textNode', label: t('categories.text') || 'Text', icon: <Icons.Text size={24} />, color: '#4facfe', start: 182, end: 358 }
+                { type: 'textNode', label: t('categories.text') || '筆記', icon: <Icons.Text size={24} />, color: '#4facfe', start: 182, end: 358 }
               ];
               const center = 160; const outer = 140; const inner = 55;
               const polarToCartesian = (r: number, angle: number) => {
@@ -1497,7 +1497,7 @@ function Flow() {
                     <g className="pie-label-group" transform={`translate(${tx}, ${ty})`}>
                       <g transform="translate(-12, -35)" style={{ color: item.color }}>{item.icon}</g>
                       <text className="pie-item-label" y="5" style={{ fill: 'var(--text-main)', opacity: isActive ? 1 : 0.6 }}>{item.label}</text>
-                      <text className="pie-item-desc" y="20" style={{ fill: 'var(--text-main)', opacity: 0.4 }}>{item.type === 'calculateNode' ? t('nodes.calculate.desc') || 'Calculation' : t('categories.logic')}</text>
+                      <text className="pie-item-desc" y="20" style={{ fill: 'var(--text-main)', opacity: 0.4 }}>{item.type === 'calculateNode' ? t('nodes.calculate.desc') || '數學運算' : t('categories.logic')}</text>
                     </g>
                   </g>
                 );
@@ -1514,8 +1514,8 @@ function Flow() {
           <div className="menu-header">{t('common.node_actions')}</div>
           <div className="menu-item" onClick={handleToggleHeader}>
             {nodes.find(n => n.id === nodeMenu.nodeId)?.data.hideHeader
-              ? (language === 'zh-TW' ? '顯示 Header' : 'Show Header')
-              : (language === 'zh-TW' ? '隱藏 Header' : 'Hide Header')}
+              ? (language === 'zh-TW' ? '顯示標題列' : 'Show Header')
+              : (language === 'zh-TW' ? '隱藏標題列' : 'Hide Header')}
           </div>
           {nodes.find(n => n.id === nodeMenu.nodeId)?.type === 'driveImageNode' && (
             <div className="menu-item" onClick={handleToggleDriveImageOutput}>
@@ -1528,8 +1528,8 @@ function Flow() {
             <div className="menu-item" onClick={handleToggleCodeErrorOutput}>
               {nodes.find(n => n.id === nodeMenu.nodeId)?.data.showCodeErrorOutput ||
                 (nodes.find(n => n.id === nodeMenu.nodeId)?.data.handles || []).some(handle => handle.id === 'h-error')
-                ? (language === 'zh-TW' ? '隱藏 error 輸出' : 'Hide Error Output')
-                : (language === 'zh-TW' ? '顯示 error 輸出' : 'Show Error Output')}
+                ? (language === 'zh-TW' ? '隱藏錯誤 (Error) 輸出' : 'Hide Error Output')
+                : (language === 'zh-TW' ? '顯示錯誤 (Error) 輸出' : 'Show Error Output')}
             </div>
           )}
           <div className="menu-item" onClick={handleDuplicateNode}>{t('common.duplicate')}</div>

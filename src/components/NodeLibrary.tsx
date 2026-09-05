@@ -82,7 +82,7 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
                     className={`sidebar-btn more-btn ${layout === 'float' ? 'float-more' : ''}`} 
                     onClick={() => setLibraryExpanded(true)}
                 >
-                    {t('sidebar.show_more') || 'Show More...'}
+                    {t('sidebar.show_more') || '顯示更多...'}
                 </button>
             ) : (
                 <div className="node-library-grid more-nodes">
@@ -115,7 +115,7 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
                         onClick={() => setLibraryExpanded(false)}
                     >
                         <span style={{ fontSize: '1rem' }}>↑</span>
-                        <span>{t('sidebar.collapse') || 'Collapse'}</span>
+                        <span>{t('sidebar.collapse') || '收合'}</span>
                     </button>
                 </div>
             )}
@@ -153,7 +153,7 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
                     title="開啟自然語言 AI 工作流生成器"
                 >
                     <span>✨</span>
-                    <span>AI 生成工作流 (Prompt)</span>
+                    <span>AI 生成工作流</span>
                 </button>
 
                 <button
@@ -185,7 +185,7 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
                     }}
                     title="載入靜態架構範例供快速驗證"
                 >
-                    <span>⚡ 載入架構演示 (Demo)</span>
+                    <span>⚡ 載入架構演示</span>
                 </button>
             </div>
         </div>

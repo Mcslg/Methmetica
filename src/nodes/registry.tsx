@@ -136,22 +136,22 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'textNode',
         component: withNodeSuspense(LazyTextNode),
-        metadata: { label: 'Notebook', desc: 'Markdown & text processing', category: 'Logic', icon: <Icons.Text />, color: 'var(--accent-bright)' },
+        metadata: { label: '筆記 (Notebook)', desc: 'Markdown 與文字處理', category: 'Logic', icon: <Icons.Text />, color: 'var(--accent-bright)' },
         defaultSize: { width: 300, height: 180 },
         defaultHandles: textNodeHandles
     },
     {
         type: 'calculateNode',
         component: withNodeSuspense(LazyCalculateNode),
-        metadata: { label: 'Math Calc', desc: 'Symbolic math expressions', category: 'Math', icon: <Icons.Calculate />, color: 'var(--accent-bright)', hidden: true },
-        defaultSize: { width: 160, height: 75 },
+        metadata: { label: '數學運算 (Calculate)', desc: '符號運算與公式解析', category: 'Math', icon: <Icons.Calculate />, color: 'var(--accent-bright)', hidden: true },
+        defaultSize: { width: 170, height: 85 },
         defaultHandles: toolNodeHandles,
         execute: mathExecute
     },
     {
         type: 'decimalNode',
         component: DecimalNode,
-        metadata: { label: 'Decimal', desc: 'Fraction to float', category: 'Utils', icon: <Icons.Decimal />, color: 'var(--accent-bright)', hidden: true },
+        metadata: { label: '小數轉換 (Decimal)', desc: '分數轉浮點小數', category: 'Utils', icon: <Icons.Decimal />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 200, height: 120 },
         defaultHandles: toolNodeHandles,
         execute: mathExecute
@@ -159,7 +159,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'calculusNode',
         component: withNodeSuspense(LazyCalculusNode),
-        metadata: { label: 'Calculus', desc: 'Derivatives & Integrals', category: 'Math', icon: <Icons.Calculus />, color: 'var(--accent-bright)', hidden: true },
+        metadata: { label: '微積分 (Calculus)', desc: '導數與積分運算', category: 'Math', icon: <Icons.Calculus />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 220, height: 80 },
         defaultHandles: calculusNodeHandles,
         execute: mathExecute
@@ -167,7 +167,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'appendNode',
         component: AppendNode,
-        metadata: { label: 'Logger', desc: 'Append to TextNode', category: 'Logic', icon: <Icons.Append />, color: 'var(--accent-bright)', hidden: true },
+        metadata: { label: '日誌附加 (Logger)', desc: '附加文字至筆記節點', category: 'Logic', icon: <Icons.Append />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 200, height: 120 },
         defaultHandles: appendNodeHandles,
         execute: executeAppendNode
@@ -175,21 +175,21 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'buttonNode',
         component: ButtonNode,
-        metadata: { label: 'Trigger', desc: 'Signal trigger', category: 'Logic', icon: <Icons.Trigger />, color: 'var(--accent-bright)', hidden: true },
+        metadata: { label: '觸發器 (Trigger)', desc: '訊號脈衝觸發', category: 'Logic', icon: <Icons.Trigger />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 120, height: 46 },
         defaultHandles: buttonNodeHandles
     },
     {
         type: 'gateNode',
         component: GateNode,
-        metadata: { label: 'Gate', desc: 'Pass/Block trigger', category: 'Logic', icon: <Icons.Gate />, color: 'var(--accent-bright)', hidden: true },
+        metadata: { label: '閘門 (Gate)', desc: '條件通斷訊號閘門', category: 'Logic', icon: <Icons.Gate />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 180, height: 110 },
         defaultHandles: gateNodeHandles
     },
     {
         type: 'rangeNode',
         component: RangeNode,
-        metadata: { label: 'Range', desc: 'Number sequence', category: 'Math', icon: <Icons.Range />, color: 'var(--accent-bright)', hidden: true },
+        metadata: { label: '數列生成 (Range)', desc: '等差數列生成器', category: 'Math', icon: <Icons.Range />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 180, height: 110 },
         defaultHandles: rangeNodeHandles,
         execute: executeRangeNode
@@ -197,7 +197,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'forEachNode',
         component: ForEachNode,
-        metadata: { label: 'ForEach', desc: 'Loop neighbor nodes', category: 'Logic', icon: <Icons.ForEach />, color: 'var(--accent-bright)', hidden: true },
+        metadata: { label: '迴圈迭代 (ForEach)', desc: '依序遍歷相鄰節點', category: 'Logic', icon: <Icons.ForEach />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 180, height: 110 },
         defaultHandles: forEachNodeHandles,
         execute: executeForEachNode
@@ -205,7 +205,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'graphNode',
         component: withNodeSuspense(LazyGraphNode),
-        metadata: { label: 'Graph', desc: 'Plot 2D dynamic functions', category: 'Math', icon: <Icons.Graph />, color: 'var(--accent-bright)', hidden: true },
+        metadata: { label: '函數圖表 (Graph)', desc: '動態二維函數繪圖', category: 'Math', icon: <Icons.Graph />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 300, height: 260 },
         defaultHandles: graphNodeHandles,
         execute: mathExecute
@@ -213,14 +213,14 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'sliderNode',
         component: SliderNode,
-        metadata: { label: 'Slider', desc: 'Value slider', category: 'Input', icon: <Icons.Slider />, color: 'var(--accent-bright)', hidden: true },
+        metadata: { label: '數值滑桿 (Slider)', desc: '可互動數值滑桿', category: 'Input', icon: <Icons.Slider />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 180, height: 110 },
         defaultHandles: sliderNodeHandles
     },
     {
         type: 'solveNode',
         component: withNodeSuspense(LazySolveNode),
-        metadata: { label: 'Solver', desc: 'Equation solver', category: 'Math', icon: <Icons.Solve />, color: 'var(--accent-bright)', hidden: true },
+        metadata: { label: '方程式求解 (Solver)', desc: '代數方程式求解器', category: 'Math', icon: <Icons.Solve />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 220, height: 160 },
         defaultHandles: [{ id: 'h-in', type: 'input', position: 'left', offset: 50, label: 'eq' }, { id: 'h-out', type: 'output', position: 'right', offset: 50 }],
         execute: mathExecute
@@ -228,7 +228,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'balanceNode',
         component: withNodeSuspense(LazyBalanceNode),
-        metadata: { label: 'Balance', desc: 'Step-by-step equivalence', category: 'Math', icon: <Icons.Balance />, color: 'var(--accent-bright)', hidden: true },
+        metadata: { label: '天平解析 (Balance)', desc: '逐步等式等價推導', category: 'Math', icon: <Icons.Balance />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 240, height: 300 },
         defaultHandles: [{ id: 'h-in', type: 'input', position: 'left', offset: 50, label: 'eq' }, { id: 'h-out', type: 'output', position: 'right', offset: 50 }],
         execute: mathExecute
@@ -236,14 +236,14 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'soundNode',
         component: withNodeSuspense(LazySoundNode),
-        metadata: { label: 'Sound', desc: 'Synthesize sound from math', category: 'Output', icon: <Icons.Sound />, color: '#4ade80', hidden: true },
+        metadata: { label: '聲音合成 (Sound)', desc: '由數學波形合成音效', category: 'Output', icon: <Icons.Sound />, color: '#4ade80', hidden: true },
         defaultSize: { width: 220, height: 160 },
         defaultHandles: soundNodeHandles
     },
     {
         type: 'codeNode',
         component: CodeNode,
-        metadata: { label: 'Code', desc: 'Run custom JavaScript logic', category: 'Logic', icon: <Icons.Code />, color: '#38bdf8' },
+        metadata: { label: '程式腳本 (Code)', desc: '執行自訂 JavaScript 邏輯', category: 'Logic', icon: <Icons.Code />, color: '#38bdf8' },
         defaultSize: { width: 280, height: 240 },
         defaultHandles: codeNodeHandles,
         execute: executeCodeNode
@@ -251,7 +251,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'driveImageNode',
         component: DriveImageNode,
-        metadata: { label: 'Drive Image', desc: 'Use a private Google Drive image', category: 'Media', icon: <Icons.Image />, color: '#22c55e' },
+        metadata: { label: '雲端圖片 (Drive Image)', desc: '載入雲端硬碟圖片', category: 'Media', icon: <Icons.Image />, color: '#22c55e' },
         defaultSize: { width: 280, height: 280 },
         defaultHandles: [],
         execute: executeDriveImageNode
@@ -259,28 +259,28 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'numberNode',
         component: NumberNode,
-        metadata: { label: 'Number', desc: 'Constant value', category: 'Math', icon: <Icons.Number />, color: 'var(--accent-bright)', hidden: true },
+        metadata: { label: '數值常數 (Number)', desc: '常數數值輸入', category: 'Math', icon: <Icons.Number />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 120, height: 80 },
         defaultHandles: dataNodeHandles
     },
     {
         type: 'projectNode',
         component: ProjectNode,
-        metadata: { label: 'Project Metadata', desc: 'Root node for project Info', category: 'System', icon: <Icons.Calculate />, color: 'var(--accent-bright)', hidden: true },
+        metadata: { label: '專案設定 (Project)', desc: '工作流專案資訊根節點', category: 'System', icon: <Icons.Calculate />, color: 'var(--accent-bright)', hidden: true },
         defaultSize: { width: 300, height: 80 },
         defaultHandles: []
     },
     {
         type: 'nodeBuilderNode',
         component: NodeBuilderNode,
-        metadata: { label: 'Node Builder', desc: 'Build a reusable community node', category: 'Community', icon: <Icons.Package />, color: '#38bdf8', hidden: true },
+        metadata: { label: '節點製造器 (Builder)', desc: '封裝與建置自訂社群節點', category: 'Community', icon: <Icons.Package />, color: '#38bdf8', hidden: true },
         defaultSize: { width: 900, height: 720 },
         defaultHandles: []
     },
     {
         type: 'workflowLinkNode',
         component: WorkflowLinkNode,
-        metadata: { label: 'Workflow Link', desc: 'Open another workflow', category: 'Community', icon: <Icons.ExternalLink />, color: '#f59e0b', hidden: true },
+        metadata: { label: '工作流連結 (Link)', desc: '跳轉至其他工作流', category: 'Community', icon: <Icons.ExternalLink />, color: '#f59e0b', hidden: true },
         defaultSize: { width: 280, height: 180 },
         defaultHandles: [
             { id: 'h-in', type: 'input', position: 'left', offset: 42, label: 'ref' },
@@ -290,7 +290,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'communityTemplateNode',
         component: CommunityTemplateNode,
-        metadata: { label: 'Community Block', desc: 'Reusable template node', category: 'Community', icon: <Icons.Grid />, color: '#60a5fa', hidden: true },
+        metadata: { label: '社群元件 (Community)', desc: '可複用之社群節點模板', category: 'Community', icon: <Icons.Grid />, color: '#60a5fa', hidden: true },
         defaultSize: { width: 320, height: 240 },
         defaultHandles: [
             { id: 'h-in', type: 'input', position: 'left', offset: 42, label: 'in' },
@@ -301,7 +301,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'inputNode',
         component: InputNode,
-        metadata: { label: 'Interface In', desc: '子工作流外部資料輸入端點', category: 'Interface', icon: <Icons.Trigger />, color: '#38bdf8' },
+        metadata: { label: '端點輸入 (Interface In)', desc: '子工作流外部資料輸入端點', category: 'Interface', icon: <Icons.Trigger />, color: '#38bdf8' },
         defaultSize: { width: 200, height: 130 },
         defaultHandles: [{ id: 'out', type: 'output', position: 'right', offset: 50, label: 'out' }],
         execute: (node, state) => {
@@ -312,7 +312,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'outputNode',
         component: OutputNode,
-        metadata: { label: 'Interface Out', desc: '子工作流運算結果輸出端點', category: 'Interface', icon: <Icons.Result />, color: '#f59e0b' },
+        metadata: { label: '端點輸出 (Interface Out)', desc: '子工作流運算結果輸出端點', category: 'Interface', icon: <Icons.Result />, color: '#f59e0b' },
         defaultSize: { width: 200, height: 130 },
         defaultHandles: [{ id: 'in', type: 'input', position: 'left', offset: 50, label: 'in' }],
         execute: (node, state) => {
@@ -323,7 +323,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'dummyNode',
         component: DummyNode,
-        metadata: { label: 'Dummy Node', desc: 'AI 或使用者未實作之佔位節點', category: 'Logic', icon: <Icons.Code />, color: '#ec4899' },
+        metadata: { label: '待實作節點 (Dummy)', desc: 'AI 或使用者未實作之佔位節點', category: 'Logic', icon: <Icons.Code />, color: '#ec4899' },
         defaultSize: { width: 240, height: 160 },
         defaultHandles: [
             { id: 'in', type: 'input', position: 'left', offset: 50, label: 'in' },
@@ -333,7 +333,7 @@ export const nodeRegistry: NodeDefinition[] = [
     {
         type: 'compositeWorkflowNode',
         component: CompositeWorkflowNode,
-        metadata: { label: 'Composite Node', desc: '封裝之子工作流節點', category: 'Workflow', icon: <Icons.Package />, color: '#38bdf8' },
+        metadata: { label: '複合工作流 (Composite)', desc: '封裝之子工作流節點', category: 'Workflow', icon: <Icons.Package />, color: '#38bdf8' },
         defaultSize: { width: 280, height: 220 },
         defaultHandles: [
             { id: 'in', type: 'input', position: 'left', offset: 50, label: 'in' },

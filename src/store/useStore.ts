@@ -1512,7 +1512,7 @@ const useStore = create<AppState>()(
             }
 
             // Process Generic Input
-            if (node.type === 'decimalNode' || node.type === 'calculusNode' || node.type === 'gateNode' || node.type === 'balanceNode' || node.type === 'codeNode') {
+            if (node.type === 'decimalNode' || node.type === 'calculusNode' || node.type === 'gateNode' || node.type === 'balanceNode' || node.type === 'codeNode' || node.type === 'outputNode') {
                 if (valIn !== node.data.input && node.type !== 'gateNode') {
                     updatedData.input = valIn;
                     // For BalanceNode, if the root input changes, we reset the currentFormula to run through operations
@@ -1520,6 +1520,10 @@ const useStore = create<AppState>()(
                         // The executeNode will rebuild it, so we ensure it knows
                         updatedData.currentFormula = valIn;
                     }
+                    isUpdated = true;
+                }
+                if (node.type === 'outputNode' && valIn !== undefined && valIn !== node.data.value) {
+                    updatedData.value = valIn;
                     isUpdated = true;
                 }
                 if (valIn !== node.data.value && node.type === 'gateNode') {

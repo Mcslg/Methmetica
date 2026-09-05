@@ -73,7 +73,7 @@ export const SliderNode = memo(function SliderNode({ id, data, className }: Node
                 <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1, gap: '4px' }}>
                     <Icons.Slider />
                     <input
-                        title="Rename variable"
+                        title="重新命名變數"
                         className="nodrag"
                         style={{
                             background: 'transparent',
@@ -119,15 +119,15 @@ export const SliderNode = memo(function SliderNode({ id, data, className }: Node
                 {/* Range settings Row */}
                 <div className="slider-settings-row" style={{ display: 'flex', gap: '4px', fontSize: '0.45rem', color: 'var(--text-sub)', marginTop: '-1px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                        <label style={{ fontSize: '0.38rem', opacity: 0.3, marginBottom: '0px', letterSpacing: '0.05em' }}>MIN</label>
+                        <label style={{ fontSize: '0.38rem', opacity: 0.5, marginBottom: '0px', letterSpacing: '0.05em' }}>最小值</label>
                         <input type="text" defaultValue={min} onBlur={(e) => handleSettingsChange('min', e.target.value)} className="nodrag settings-input" style={{ fontSize: '0.5rem', padding: '0 2px', height: '12px' }} />
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                        <label style={{ fontSize: '0.38rem', opacity: 0.3, marginBottom: '0px', letterSpacing: '0.05em' }}>MAX</label>
+                        <label style={{ fontSize: '0.38rem', opacity: 0.5, marginBottom: '0px', letterSpacing: '0.05em' }}>最大值</label>
                         <input type="text" defaultValue={max} onBlur={(e) => handleSettingsChange('max', e.target.value)} className="nodrag settings-input" style={{ fontSize: '0.5rem', padding: '0 2px', height: '12px' }} />
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                        <label style={{ fontSize: '0.38rem', opacity: 0.3, marginBottom: '0px', letterSpacing: '0.05em' }}>STEP</label>
+                        <label style={{ fontSize: '0.38rem', opacity: 0.5, marginBottom: '0px', letterSpacing: '0.05em' }}>步進</label>
                         <input type="text" defaultValue={step} onBlur={(e) => handleSettingsChange('step', e.target.value)} className="nodrag settings-input" style={{ fontSize: '0.5rem', padding: '0 2px', height: '12px' }} />
                     </div>
                 </div>

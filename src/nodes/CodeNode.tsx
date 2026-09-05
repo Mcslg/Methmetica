@@ -492,7 +492,7 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
             data={data}
             selected={selected}
             icon={<Icons.Code />}
-            defaultLabel="Code"
+            defaultLabel="程式腳本"
             className="code-node"
             minWidth={260}
             minHeight={220}
@@ -502,6 +502,7 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
                     <button
                         onClick={() => updateNodeData(id, { autoRun: !data.autoRun })}
                         className="variant-toggle"
+                        title="切換自動執行模式"
                         style={{
                             fontSize: '0.6rem',
                             padding: '2px 6px',
@@ -512,11 +513,12 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
                             cursor: 'pointer'
                         }}
                     >
-                        AUTO
+                        自動
                     </button>
                     <button
                         onClick={() => executeNode(id, true)}
                         className="variant-toggle"
+                        title="立即執行腳本"
                         style={{
                             fontSize: '0.6rem',
                             padding: '2px 6px',
@@ -527,14 +529,14 @@ export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps
                             cursor: 'pointer'
                         }}
                     >
-                        RUN
+                        執行
                     </button>
                 </div>
             }
             customHandleDescriptions={{
-                'h-in': 'Generic input value',
-                'h-result': 'Execution result',
-                'h-error': 'Execution error'
+                'h-in': '通用輸入數值',
+                'h-result': '執行結果',
+                'h-error': '執行錯誤訊息'
             }}
         >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>

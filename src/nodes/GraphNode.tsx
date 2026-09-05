@@ -580,7 +580,7 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
     const handlePointerUp = (e: React.PointerEvent) => { setIsDragging(false); (e.target as HTMLElement).releasePointerCapture(e.pointerId); };
 
     return (
-        <NodeFrame id={id} data={data} selected={selected} icon={<Icons.Graph />} defaultLabel="Graph" className={`graph-node ${touchingClasses}`} contentStyle={{ padding: 0 }}>
+        <NodeFrame id={id} data={data} selected={selected} icon={<Icons.Graph />} defaultLabel="函數圖表" className={`graph-node ${touchingClasses}`} contentStyle={{ padding: 0 }}>
             <div className="nowheel" style={{ display: 'flex', flexDirection: 'row', width: '100%', height: '100%', overflow: 'hidden' }}>
                 {data.slots?.formulaSidebar && (
                     <div style={{ width: '220px', minWidth: '220px', flexShrink: 0, height: '100%' }}>
@@ -608,9 +608,9 @@ export const GraphNode = memo(function GraphNode({ id, data, selected }: NodePro
                             x{view.scale.toFixed(0)} · ({(view.x / view.scale * -1).toFixed(1)}, {(view.y / view.scale).toFixed(1)})
                         </div>
                         <div className="graph-controls" style={{ position: 'absolute', top: 8, right: 8, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <button onClick={() => setView(v => ({ ...v, scale: Math.max(1, v.scale * 1.3) }))}>+</button>
-                            <button onClick={() => setView(v => ({ ...v, scale: Math.max(1, v.scale / 1.3) }))}>−</button>
-                            <button onClick={() => setView({ x: 0, y: 0, scale: 40 })} style={{ fontSize: '0.5rem' }}>⌂</button>
+                            <button onClick={() => setView(v => ({ ...v, scale: Math.max(1, v.scale * 1.3) }))} title="放大">+</button>
+                            <button onClick={() => setView(v => ({ ...v, scale: Math.max(1, v.scale / 1.3) }))} title="縮小">−</button>
+                            <button onClick={() => setView({ x: 0, y: 0, scale: 40 })} style={{ fontSize: '0.5rem' }} title="重設視角">⌂</button>
                         </div>
                     </div>
                 </div>

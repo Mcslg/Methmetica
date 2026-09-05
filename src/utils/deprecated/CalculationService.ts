@@ -1,4 +1,5 @@
 import { getMathEngine, getMathSymbol } from '../MathEngine';
+import { normalizeLatexFormula, extractFormulaVariables, latexToNerdamer } from '../mathNormalizer';
 import useStore, { type AppNode, type CustomHandle } from '../../store/useStore';
 import { type Edge } from '@xyflow/react';
 // @ts-expect-error Nerdamer does not provide typings for this bundle entry.
@@ -219,18 +220,6 @@ export class CalculationService {
                 lp = '-Infinity';
             }
 
-            // Helper: convert LaTeX to nerdamer-friendly string
-            const latexToNerdamer = (s: string): string =>
-                s.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1)/($2)')
-                    .replace(/\\left\(/g, '(').replace(/\\right\)/g, ')')
-                    .replace(/\\sin/g, 'sin').replace(/\\cos/g, 'cos')
-                    .replace(/\\tan/g, 'tan').replace(/\\ln/g, 'log')
-                    .replace(/\\sqrt\{([^{}]+)\}/g, 'sqrt($1)')
-                    .replace(/\\cdot/g, '*')
-                    .replace(/\{/g, '(').replace(/\}/g, ')')
-                    .replace(/\\/g, '')
-                    .trim();
-
             // Helper: numerical two-sided limit approximation
             const numericalLimit = (exprStr: string, varName: string, target: string): string | null => {
                 try {
@@ -303,15 +292,17 @@ export class CalculationService {
 
     private static async executeFunction(node: AppNode, context: ExecutionContext): Promise<string> {
         const { nodes, edges } = context;
-        const formula = (node.data.useExternalFormula && node.data.formulaInput)
+        const rawFormula = (node.data.useExternalFormula && node.data.formulaInput)
             ? node.data.formulaInput
             : node.data.formula;
 
-        if (!formula) return '?';
+        if (!rawFormula) return '?';
+
+        const formula = normalizeLatexFormula(String(rawFormula));
 
         const ce = getMathEngine();
         const solver = ce.parse(formula) as unknown as EngineExpression;
-        const variables = solver.symbols; // Get list of symbols
+        const variables = extractFormulaVariables(formula);
 
         const sequenceVars: Record<string, SequenceValue[]> = {};
         const staticVars: Record<string, EngineExpression> = {};

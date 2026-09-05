@@ -1947,7 +1947,7 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                         <Icons.Text />
                         <input
                             name={`text-node-title-${id}`}
-                            title="Rename node"
+                            title="重新命名節點"
                             className="nodrag"
                             style={{
                                 background: 'transparent',
@@ -1961,16 +1961,16 @@ const _TextNode = function TextNode({ id, data, selected }: NodeProps<Node<NodeD
                                 outline: 'none',
                                 cursor: 'text'
                             }}
-                            value={data.label || 'Text'}
+                            value={data.label || '筆記'}
                             onChange={(e) => updateNodeData(id, { label: e.target.value })}
                             onFocus={(e) => {
-                                if (e.target.value === 'Text') {
+                                if (e.target.value === 'Text' || e.target.value === '筆記') {
                                     updateNodeData(id, { label: '' });
                                 }
                             }}
                             onBlur={(e) => {
                                 if (e.target.value === '') {
-                                    updateNodeData(id, { label: 'Text' });
+                                    updateNodeData(id, { label: '筆記' });
                                 }
                             }}
                             onMouseDown={(e) => e.stopPropagation()}

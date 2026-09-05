@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import { loadMathlive } from '../utils/loadMathlive';
+import { normalizeLatexFormula } from '../utils/mathNormalizer';
 
 interface MathInputProps {
     value: string;
@@ -86,18 +87,24 @@ export const MathInput = forwardRef<MathfieldElement, MathInputProps>(({ value, 
         };
     }, [isReady]); // Bind after mathlive registers the web component
 
+    // Helper to normalize formulas to standard LaTeX with implicit multiplication expanded
+    const normalizedValue = React.useMemo(() => {
+        if (!value) return '';
+        return normalizeLatexFormula(value);
+    }, [value]);
+
     // Manually sync changes from React store to the Web Component
     useEffect(() => {
         if (!isReady) return;
         const mf = mfRef.current;
         if (!mf) return;
 
-        if (mf.value !== value) {
+        if (mf.value !== normalizedValue && mf.value !== value) {
             isSettingValueRef.current = true;
-            mf.value = value;
+            mf.value = normalizedValue;
             isSettingValueRef.current = false;
         }
-    }, [value, isReady]);
+    }, [normalizedValue, value, isReady]);
 
     if (!isReady) {
         return (
@@ -118,7 +125,9 @@ export const MathInput = forwardRef<MathfieldElement, MathInputProps>(({ value, 
             read-only={readOnly ? "true" : undefined}
             onKeyDown={onKeyDown}
             onBlur={onBlur}
-        />
+        >
+            {normalizedValue}
+        </math-field>
     );
 });
 

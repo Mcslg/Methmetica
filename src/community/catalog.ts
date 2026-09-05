@@ -54,7 +54,7 @@ const publicWorkflowCards: CommunityWorkflowCard[] = [
 const defaultNodeTemplates: CommunityNodeTemplate[] = [
   {
     id: 'definition-card',
-    title: 'Definition Card',
+    title: '定義卡片 (Definition Card)',
     summary: '核心定義與前置知識卡，適合放在工作流起點。',
     category: 'Core',
     slug: 'definition-card',
@@ -88,7 +88,7 @@ const defaultNodeTemplates: CommunityNodeTemplate[] = [
   },
   {
     id: 'method-card',
-    title: 'Method Card',
+    title: '解法策略卡 (Method Card)',
     summary: '把最優算法與替代解法收斂成可重用模板。',
     category: 'Strategy',
     slug: 'method-card',
@@ -123,7 +123,7 @@ const defaultNodeTemplates: CommunityNodeTemplate[] = [
   },
   {
     id: 'workflow-link',
-    title: 'Workflow Link',
+    title: '工作流連結 (Workflow Link)',
     summary: '連到另一條工作流，適合做引用與延伸。',
     category: 'Navigation',
     slug: 'workflow-link',

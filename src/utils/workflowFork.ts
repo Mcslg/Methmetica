@@ -27,14 +27,14 @@ export const forkWorkflowToLocalDraft = ({
   const sourceVersionId = typeof sourceProject?.data.workflowVersionId === 'string'
     ? sourceProject.data.workflowVersionId
     : undefined;
-  const sourceTitle = String(sourceProject?.data.label || 'Core Workflow');
+  const sourceTitle = String(sourceProject?.data.label || '核心工作流');
   const forkedNodes = nodes.map(node => (
     node.type === 'projectNode'
       ? {
           ...node,
           data: {
             ...node.data,
-            label: `Copy of ${node.data.label || 'Untitled Workflow'}`,
+            label: `${node.data.label || '未命名工作流'} (副本)`,
             visibility: 'private' as const,
             workflowSource: 'draft' as const,
             readOnlyPreview: false,

@@ -1,7 +1,9 @@
 import { useEffect, memo } from 'react';
 import { type NodeProps, type Node, useUpdateNodeInternals } from '@xyflow/react';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 import useStore, { type NodeData, type AppState, type CustomHandle } from '../store/useStore';
-import { getMathEngine } from '../utils/MathEngine';
+import { normalizeLatexFormula, extractFormulaVariables } from '../utils/mathNormalizer';
 import { Icons } from '../components/Icons';
 import { NodeFrame } from '../components/NodeFrame';
 import { MathInput } from '../components/MathInput';
@@ -16,6 +18,7 @@ export const CalculateNode = memo(function CalculateNode({ id, data, selected }:
     const formulaInStore = useStore((state: AppState) => state.nodes.find(n => n.id === id)?.data.formula || '');
     // The formula we actually parse for handles
     const formulaToParse = useExternalFormula ? (data.formulaInput || '') : (data.formula || '');
+    const cleanFormulaToParse = normalizeLatexFormula(formulaToParse || '');
 
     // Get any variable that is already named in a textNode so we don't spawn a handle for it
     const globalVarsString = useStore((state: AppState) => {
@@ -30,25 +33,23 @@ export const CalculateNode = memo(function CalculateNode({ id, data, selected }:
         return Array.from(vars).sort().join(',');
     });
 
-    // Sync nerdamer variables to handles
+    // Sync variables to handles
     useEffect(() => {
         const syncHandles = async () => {
             const currentHandles = data.handles || [];
 
             // 1. Determine formula-based variable handles
             let newInputHandles: CustomHandle[] = [];
-            if (formulaToParse) {
+            if (cleanFormulaToParse) {
                 try {
-                    const ce = getMathEngine();
-                    const expr = ce.parse(formulaToParse);
-                    const variables = expr.unknowns ? [...expr.unknowns] : []; // e.g. ['x', 'y']
+                    const variables = extractFormulaVariables(cleanFormulaToParse);
 
                     const globalVarsSet = new Set(globalVarsString ? globalVarsString.split(',') : []);
                     const tempVariables = variables.filter((v: string) => !globalVarsSet.has(v));
 
                     // If we have variables, update. If we have NO variables but we ARE typing (formula exists), 
                     // we might want to keep the old ones to avoid flickering, but ONLY if we haven't successfully parsed a non-variable formula.
-                    if (tempVariables.length === 0 && /[a-zA-Z]/.test(formulaToParse)) {
+                    if (tempVariables.length === 0 && /[a-zA-Z]/.test(cleanFormulaToParse)) {
                         newInputHandles = currentHandles.filter(h => h.type === 'input');
                     } else {
                         newInputHandles = tempVariables.map((v: string, index: number) => {
@@ -71,7 +72,7 @@ export const CalculateNode = memo(function CalculateNode({ id, data, selected }:
                     newInputHandles = currentHandles.filter(h => h.type === 'input');
                 }
             }
-            // else: if !formulaToParse, newInputHandles is [], removing the default circle.
+            // else: if !cleanFormulaToParse, newInputHandles is [], removing the default circle.
 
             // 2. Add special handle for external formula if enabled
             const specialHandles: CustomHandle[] = [];
@@ -94,7 +95,7 @@ export const CalculateNode = memo(function CalculateNode({ id, data, selected }:
         };
 
         syncHandles();
-    }, [id, formulaToParse, useExternalFormula, updateNodeData, globalVarsString]);
+    }, [id, cleanFormulaToParse, useExternalFormula, updateNodeData, globalVarsString, data.handles, updateNodeInternals]);
 
     const isLocked = !!data.slots?.buttonNode;
 
@@ -104,7 +105,7 @@ export const CalculateNode = memo(function CalculateNode({ id, data, selected }:
             if (useExternalFormula && data.formulaInput === undefined) return;
             executeNode(id);
         }
-    }, [data.formulaInput, data.inputSignature, useExternalFormula, id, executeNode, isLocked, formulaToParse]);
+    }, [data.formulaInput, data.inputSignature, useExternalFormula, id, executeNode, isLocked, cleanFormulaToParse]);
 
     return (
         <NodeFrame
@@ -112,12 +113,13 @@ export const CalculateNode = memo(function CalculateNode({ id, data, selected }:
             data={data}
             selected={selected}
             icon={<Icons.Calculate />}
-            defaultLabel="Calculate"
+            defaultLabel="數學運算"
             className="calculate-node"
             headerExtras={
                 <button
                     onClick={() => updateNodeData(id, { useExternalFormula: !useExternalFormula })}
                     className="variant-toggle"
+                    title="切換外部公式輸入 (EXT)"
                     style={{ 
                         fontSize: '0.5rem', 
                         padding: '2px 4px', 
@@ -148,7 +150,20 @@ export const CalculateNode = memo(function CalculateNode({ id, data, selected }:
                     alignItems: 'center',
                     justifyContent: 'center'
                 }}>
-                    {data.formulaInput || 'Wait for input...'}
+                    {data.formulaInput ? (
+                        <span dangerouslySetInnerHTML={{
+                            __html: (() => {
+                                try {
+                                    const clean = normalizeLatexFormula(data.formulaInput);
+                                    return katex.renderToString(clean, { throwOnError: false, displayMode: false });
+                                } catch {
+                                    return data.formulaInput;
+                                }
+                            })()
+                        }} />
+                    ) : (
+                        '等待輸入中...'
+                    )}
                 </div>
             ) : (
                 !data.slots?.formulaSidebar && (
@@ -158,6 +173,45 @@ export const CalculateNode = memo(function CalculateNode({ id, data, selected }:
                         className="nodrag formula-input"
                     />
                 )
+            )}
+
+            {/* 即時計算結果預覽 (LaTeX) */}
+            {data.value !== undefined && data.value !== '' && data.value !== '?' && (
+                <div 
+                    className="calculate-result-preview" 
+                    title="計算結果 (LaTeX)"
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'flex-end',
+                        gap: '6px',
+                        marginTop: '6px',
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        background: 'rgba(56, 189, 248, 0.08)',
+                        border: '1px solid rgba(56, 189, 248, 0.2)',
+                        fontSize: '0.9rem',
+                        color: 'var(--accent-bright, #38bdf8)'
+                    }}
+                >
+                    <span style={{ fontSize: '0.75rem', opacity: 0.7, color: 'var(--text-sub, #94a3b8)' }}>=</span>
+                    <span 
+                        dangerouslySetInnerHTML={{
+                            __html: (() => {
+                                try {
+                                    const str = String(data.value);
+                                    const clean = str
+                                        .replace(/^(\$\$?)|(\$\$?)$/g, '')
+                                        .replace(/^\\\(|\\\)$/g, '')
+                                        .trim();
+                                    return katex.renderToString(clean, { throwOnError: false, displayMode: false });
+                                } catch {
+                                    return String(data.value);
+                                }
+                            })()
+                        }} 
+                    />
+                </div>
             )}
 
             <style>{`

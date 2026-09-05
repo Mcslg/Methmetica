@@ -55,7 +55,7 @@ export const InputNode = memo(function InputNode({ id, data, selected }: NodePro
       data={data}
       selected={selected}
       icon={<Icons.Trigger />}
-      defaultLabel={portName || 'Interface In'}
+      defaultLabel={portName || '端點輸入'}
       className="input-interface-node"
       minWidth={200}
       minHeight={130}
@@ -82,7 +82,7 @@ export const InputNode = memo(function InputNode({ id, data, selected }: NodePro
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '6px 4px' }}>
         <div>
           <label style={{ fontSize: '10px', color: 'var(--text-sub, #94a3b8)', display: 'block', marginBottom: '3px' }}>
-            變數名稱 (Port Name)
+            端點名稱 (Port Name)
           </label>
           <input
             type="text"

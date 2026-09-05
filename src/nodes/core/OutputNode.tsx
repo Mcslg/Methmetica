@@ -16,7 +16,8 @@ export const OutputNode = memo(function OutputNode({ id, data, selected }: NodeP
 
   const portName = data.nodeName || data.label || 'output_1';
   const dataType = (data.variant as WorkflowPortDataType) || 'real';
-  const displayValue = data.value ?? (data.input !== undefined ? data.input : '(等待連線輸入...)');
+  const incomingInput = data.input ?? data.inputs?.in ?? (data.inputs ? Object.values(data.inputs)[0] : undefined);
+  const displayValue = data.value ?? (incomingInput !== undefined ? incomingInput : '(等待連線輸入...)');
 
   // 確保 handles 遵循專案規範初始化（左側 input）
   useEffect(() => {
@@ -71,7 +72,7 @@ export const OutputNode = memo(function OutputNode({ id, data, selected }: NodeP
       data={data}
       selected={selected}
       icon={<Icons.Result />}
-      defaultLabel={portName || 'Interface Out'}
+      defaultLabel={portName || '端點輸出'}
       className="output-interface-node"
       minWidth={200}
       minHeight={130}
@@ -98,7 +99,7 @@ export const OutputNode = memo(function OutputNode({ id, data, selected }: NodeP
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '6px 4px' }}>
         <div>
           <label style={{ fontSize: '10px', color: 'var(--text-sub, #94a3b8)', display: 'block', marginBottom: '3px' }}>
-            輸出名稱 (Port Name)
+            端點名稱 (Port Name)
           </label>
           <input
             type="text"
@@ -120,7 +121,7 @@ export const OutputNode = memo(function OutputNode({ id, data, selected }: NodeP
 
         <div>
           <label style={{ fontSize: '10px', color: 'var(--text-sub, #94a3b8)', display: 'block', marginBottom: '3px' }}>
-            即時結果 (Output Value)
+            即時運算結果
           </label>
           <div
             style={{

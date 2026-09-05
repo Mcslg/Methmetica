@@ -10,6 +10,8 @@ export const en = {
     save: "Save",
     invalid_file: "Invalid project file format.",
     parse_error: "Failed to parse project file.",
+    goto_home: "Go to Dashboard",
+    unsaved_warning: "You have unsaved changes. Exit to Dashboard?",
   },
   tips: {
     right_click: "Right click",
@@ -33,6 +35,12 @@ export const en = {
     visuals: "Visuals",
     interaction: "Interaction",
     text: "Text",
+    utils: "Utils",
+    media: "Media",
+    interface: "Interfaces",
+    workflow: "Workflow",
+    strategy: "Strategy",
+    navigation: "Navigation",
   },
   sidebar: {
     title: "Library",
@@ -53,6 +61,7 @@ export const en = {
     collapse: "Collapse",
     update_cloud: "Sync to Cloud",
     save_cloud: "Save to Cloud",
+    synced: "Saved!",
     syncing: "Syncing...",
     unsaved_changes: "Unsaved Changes"
   },

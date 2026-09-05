@@ -210,7 +210,7 @@ export const SoundNode = memo(function SoundNode({ id, data, selected }: NodePro
     return (
         <NodeFrame 
             id={id} data={data} selected={selected} 
-            icon={<Icons.Sound />} defaultLabel="Sound" 
+            icon={<Icons.Sound />} defaultLabel="聲音合成" 
             className="sound-node"
         >
             {showPanel && (

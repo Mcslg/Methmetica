@@ -178,7 +178,7 @@ export function Sidebar() {
     const isCoreProposalSubmitted = Boolean(coreProposalWorkflowId && coreProposalStatus === 'submitted');
     const isCoreProposalDraft = Boolean(coreProposalWorkflowId && !isCoreProposalSubmitted);
     const publishTemplateLabel = isForkablePublicWorkflow
-        ? 'Fork'
+        ? '建立副本 (Fork)'
         : isCoreProposalSubmitted
             ? '已提交核心提案'
         : isCoreProposalDraft
@@ -297,7 +297,7 @@ export function Sidebar() {
         try {
             // Find workflow name from the project node
             const projectRoot = nodes.find(n => n.type === 'projectNode');
-            const name = projectRoot?.data?.label || 'Untitled Workflow';
+            const name = projectRoot?.data?.label || '未命名工作流';
             
             const fileId = await driveService.saveWorkflow(name, { nodes, edges }, activeFileId || undefined);
             setActiveFileId(fileId);
@@ -813,7 +813,7 @@ export function Sidebar() {
             return;
         }
 
-        const workflowName = String(projectRoot?.data.label || 'Untitled Workflow');
+        const workflowName = String(projectRoot?.data.label || '未命名工作流');
         const confirmMessage = canAdminDeleteSupabaseWorkflow
             ? `Admin 確定要刪除公開 workflow「${workflowName}」嗎？這會從社群列表移除，且不能復原。`
             : `確定要刪除 workflow「${workflowName}」嗎？這個動作不能復原。`;
@@ -851,7 +851,7 @@ export function Sidebar() {
     const handleBackToHome = () => {
         if (isDirty) {
             const shouldLeave = window.confirm(
-                t('common.unsaved_warning') || 'You have unsaved changes. Exit to Dashboard?'
+                t('common.unsaved_warning') || '您有未儲存的變更，確定要返回儀表板嗎？'
             );
             if (!shouldLeave) return;
         }
@@ -870,7 +870,7 @@ export function Sidebar() {
                 <div 
                     className="sidebar-header clickable" 
                     onClick={handleBackToHome}
-                    title={t('common.goto_home') || "Go to Dashboard"}
+                    title={t('common.goto_home') || "返回儀表板"}
                 >
                     <img
                         src={theme === 'dark' ? TitleDarkLogo : TitleLogo}
@@ -889,10 +889,10 @@ export function Sidebar() {
                         {!isPaletteFloating && (
                     <div className="sidebar-section">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                            <label style={{ marginBottom: 0 }}>{t('sidebar.title')} <span>(Drag & Drop)</span></label>
+                            <label style={{ marginBottom: 0 }}>{t('sidebar.title')} <span>(拖曳至畫布)</span></label>
                             <button
                                 className="icon-btn-small"
-                                title="Float Toolkit"
+                                title="獨立懸浮工具箱"
                                 onClick={() => setPaletteFloating(true)}
                             >
                                 <Icons.ExternalLink style={{ width: 14, height: 14 }} />
@@ -920,8 +920,8 @@ export function Sidebar() {
                                 <Icons.Languages />
                             )} 
                             {syncStatus === 'success' ? 
-                                (t('sidebar.synced') || 'Saved!') : 
-                                (activeFileId ? (t('sidebar.update_cloud') || 'Sync to Cloud') : (t('sidebar.save_cloud') || 'Save to Cloud'))
+                                (t('sidebar.synced') || '已儲存！') : 
+                                (activeFileId ? (t('sidebar.update_cloud') || '同步至雲端') : (t('sidebar.save_cloud') || '儲存至雲端'))
                             }
                         </button>
                     )}
@@ -932,7 +932,7 @@ export function Sidebar() {
                             disabled={(!projectRoot && !isForkablePublicWorkflow) || isCoreProposalSubmitted}
                             title={
                                 isForkablePublicWorkflow
-                                    ? 'Fork 這個公開工作流成為你的本機副本'
+                                    ? '建立副本 (Fork) 這個公開工作流成為你的本機副本'
                                     : isCoreProposalSubmitted
                                         ? '這份核心提案已提交，等待貢獻者審核'
                                     : isCoreProposalDraft
@@ -960,9 +960,9 @@ export function Sidebar() {
                             className={`sidebar-btn like ${publicWorkflowLike.liked ? 'active' : ''}`}
                             onClick={handleTogglePublicWorkflowLike}
                             disabled={publicWorkflowLike.isPending}
-                            title={publicWorkflowLike.liked ? '取消讚' : 'Like 這個公開 workflow'}
+                            title={publicWorkflowLike.liked ? '取消讚' : '為這個公開工作流按讚'}
                         >
-                            <Icons.Heart /> {publicWorkflowLike.liked ? 'Liked' : 'Like'} · {publicWorkflowLike.likeCount}
+                            <Icons.Heart /> {publicWorkflowLike.liked ? '已按讚' : '按讚'} · {publicWorkflowLike.likeCount}
                         </button>
                     )}
                     {canRequestWorkflowReview && (
@@ -1023,8 +1023,8 @@ export function Sidebar() {
                     {supabaseWorkflowId && (
                         <div className="workflow-version-panel">
                             <div className="workflow-version-header">
-                                <span>Versions</span>
-                                {isLoadingVersions && <small>Loading...</small>}
+                                <span>版本紀錄</span>
+                                {isLoadingVersions && <small>載入中...</small>}
                             </div>
                             {versionError ? (
                                 <div className="workflow-version-error">{versionError}</div>
@@ -1040,7 +1040,7 @@ export function Sidebar() {
                                                 className={`workflow-version-item ${version.id === activeWorkflowVersionId ? 'active' : ''} ${version.warningMessage ? 'has-warning' : ''}`}
                                             onClick={() => handleOpenVersion(version)}
                                             disabled={isSyncing}
-                                            title={version.warningMessage || version.updateSummary || `Open v${version.version}`}
+                                            title={version.warningMessage || version.updateSummary || `開啟版本 v${version.version}`}
                                             onMouseEnter={(event) => {
                                                 if (!hasHoverDetails) return;
                                                 const rect = event.currentTarget.getBoundingClientRect();
@@ -1066,7 +1066,7 @@ export function Sidebar() {
                                         >
                                             <span className="workflow-version-row">
                                                 <strong>v{version.version}</strong>
-                                                    {version.isCurrent && <em>current</em>}
+                                                    {version.isCurrent && <em>當前版本</em>}
                                                     {version.changeType && (
                                                         <em>{VERSION_CHANGE_LABELS[version.changeType] ?? version.changeType}</em>
                                                 )}
@@ -1103,7 +1103,7 @@ export function Sidebar() {
                     >
                         <div className="hold-progress" style={{ width: `${holdProgress}%` }} />
                         <Icons.Clear />
-                        <span>{holdProgress > 0 ? (t('sidebar.hold_to_clear') || 'Hold to Clear') : (t('sidebar.clear_all') || 'Clear All')}</span>
+                        <span>{holdProgress > 0 ? (t('sidebar.hold_to_clear') || '按住以清除') : (t('sidebar.clear_all') || '清除畫布')}</span>
                     </button>
                 </div>
                 </>
@@ -1128,7 +1128,7 @@ export function Sidebar() {
                 {isDeletingHover && (
                     <div className="delete-overlay">
                         <Icons.Clear />
-                        <span>{t('sidebar.drop_to_delete') || 'Drop to Delete'}</span>
+                        <span>{t('sidebar.drop_to_delete') || '放開以刪除'}</span>
                     </div>
                 )}
             </div>

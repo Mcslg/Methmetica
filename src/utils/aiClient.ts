@@ -3,7 +3,7 @@ import type { CommunityNodeTemplate } from '../community/types';
 import { defaultCommunityTemplates } from '../community/catalog';
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent';
-const GEMINI_FALLBACK_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+const GEMINI_FALLBACK_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
 const STORAGE_KEY = 'methmatica_gemini_api_key';
 
 export function getStoredApiKey(): string {
@@ -98,13 +98,13 @@ Every node has surface fields that you MUST fill in "config":
 
 - "calculateNode": Mathematical expression evaluator.
   - Surface Fields in config:
-    - "formula": (string, REQUIRED) The mathematical expression (e.g. "b^2 - 4*a*c", "x^2 + 2*x + 1", "\\sqrt{a^2 + b^2}", "A*\\sin(2*\\pi*f*t)").
+    - "formula": (string, REQUIRED) Standard LaTeX mathematical expression without outer $ delimiters (e.g. "b^2 - 4ac" or "b^2 - 4\\cdot a\\cdot c", "x^2 + 2x + 1", "\\sqrt{a^2 + b^2}", "A\\cdot \\sin(2\\pi f t)"). Avoid programming-style asterisks '*' for multiplication; use standard LaTeX concatenation or '\\cdot'.
     - "label": (string) Header title (e.g. "判別式計算").
   - Handles:
-    - Target (Input) Handles: Automatically derived from variables in "formula" with format "h-in-<var>" (e.g. "h-in-a", "h-in-b", "h-in-c"). You may specify "toPort": "h-in-a" or simply "toPort": "a".
+    - Target (Input) Handles: Automatically derived from variables in "formula" with format "h-in-<var>" (e.g. "h-in-a", "h-in-b", "h-in-c"). You may specify "toPort": "h-in-a" or simply "toPort": "a". NOTE: In standard mathematical expressions like "b^2 - 4ac", 'a' and 'c' are separate multiplied variables (4 * a * c); provide distinct sliderNodes for 'a' and 'c' and wire them to "h-in-a" and "h-in-c" respectively. Never treat "ac" as a single variable.
     - External Formula Target Handle: "h-fn-in" (used when formula itself is wired dynamically from upstream).
     - Source (Output) Handle: "h-out" (emits the evaluated result).
-  - Config example: { "label": "判別式運算", "formula": "b^2 - 4*a*c" }
+  - Config example: { "label": "判別式運算", "formula": "b^2 - 4ac" }
 
 - "sliderNode": Dynamic numeric slider controller for parameters.
   - Surface Fields in config:
@@ -221,7 +221,7 @@ You MUST reply ONLY with a single valid JSON object strictly matching this schem
       "type": "calculateNode",
       "name": "判別式計算",
       "description": "運算區：計算判別式",
-      "config": { "formula": "b^2 - 4*a*c", "label": "判別式運算" }
+      "config": { "formula": "b^2 - 4ac", "label": "判別式運算" }
     },
     {
       "id": "node-out-d",
@@ -456,7 +456,7 @@ export async function callGeminiGenerateWorkflow(
   try {
     return await executeRequest(GEMINI_API_URL);
   } catch (err) {
-    console.warn('[AI] gemini-3.6-flash failed, trying fallback gemini-2.5-flash...', err);
+    console.warn('[AI] gemini-3.6-flash failed, trying fallback gemini-3.5-flash...', err);
     return await executeRequest(GEMINI_FALLBACK_URL);
   }
 }

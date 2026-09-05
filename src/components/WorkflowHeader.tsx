@@ -8,8 +8,9 @@ export function WorkflowHeader() {
 
   if (!projectNode) return null;
 
-  const title = projectNode.data.label || 'Untitled Workflow';
+  const title = projectNode.data.label || '未命名工作流';
   const visibility = projectNode.data.visibility || 'private';
+  const visibilityText = String(visibility) === 'public' ? '公開' : String(visibility) === 'unlisted' ? '不公開' : String(visibility) === 'core' ? '核心' : '私人';
   const reviewStatus = projectNode.data.reviewStatus;
   const isUnverified = visibility !== 'private' && reviewStatus === 'unreviewed';
   const ownerId = projectNode.data.ownerId;
@@ -47,8 +48,8 @@ export function WorkflowHeader() {
           {title}
         </strong>
         <span style={{ fontSize: '0.72rem', color: 'var(--text-sub)', lineHeight: 1.4 }}>
-          {shouldShowAuthor ? `by ${authorName} · ` : ''}
-          {String(visibility).toUpperCase()}
+          {shouldShowAuthor ? `作者：${authorName} · ` : ''}
+          {visibilityText}
           {isUnverified ? ' · 未驗證' : ''}
         </span>
       </div>
@@ -80,7 +81,7 @@ export function WorkflowHeader() {
         fontSize: '0.75rem',
         fontWeight: 600,
         color: 'var(--text-sub)'
-      }} title={`${nodes.length} Nodes`}>
+      }} title={`${nodes.length} 個節點`}>
         {nodes.length}
       </div>
     </div>

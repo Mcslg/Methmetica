@@ -498,7 +498,7 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
 
   const handleCreateBuilder = () => {
     const draft = stripLegacyInterfaceBlocks(makeInitialDraft({
-      title: (localName || data.label || 'Untitled Workflow').trim(),
+      title: (localName || data.label || '未命名工作流').trim(),
       summary: localDesc || data.description || '',
       tags: parseTags(localTags),
     })) as CommunityNodeTemplate;
@@ -793,7 +793,7 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
         return;
       }
 
-      const title = (localName || data.label || 'Untitled Workflow').trim() || 'Untitled Workflow';
+      const title = (localName || data.label || '未命名工作流').trim() || '未命名工作流';
       const description = localDesc || data.description || '';
       const tags = parseTags(localTags);
       const publishedNodes = state.nodes.map(node => (
@@ -994,7 +994,7 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
       data={data}
       selected={selected}
       icon={<Icons.Package />}
-      defaultLabel="Node Builder"
+      defaultLabel="節點製造器"
       className="node-builder-node"
       minWidth={320}
       minHeight={180}

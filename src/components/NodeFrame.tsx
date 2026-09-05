@@ -143,7 +143,7 @@ export const NodeFrame: React.FC<NodeFrameProps> = ({
                         {icon}
                         <input
                             name={`node-title-${id}`}
-                            title="Rename node"
+                            title="重新命名節點"
                             className="nodrag"
                             style={{
                                 background: 'transparent',

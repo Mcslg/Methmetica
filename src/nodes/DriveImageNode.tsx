@@ -177,13 +177,13 @@ export const DriveImageNode = memo(function DriveImageNode({ id, data, selected 
       data={data}
       selected={selected}
       icon={<Icons.Image />}
-      defaultLabel="Drive Image"
+      defaultLabel="雲端圖片"
       className="drive-image-node"
       minWidth={240}
       minHeight={210}
       contentStyle={{ padding: '10px', gap: '8px', alignItems: 'stretch' }}
       customHandleDescriptions={{
-        'h-image': 'Google Drive image metadata',
+        'h-image': 'Google 雲端硬碟圖片資訊',
       }}
     >
       <div style={{ display: 'grid', width: '100%', height: '100%' }}>
@@ -191,7 +191,7 @@ export const DriveImageNode = memo(function DriveImageNode({ id, data, selected 
           className="nodrag"
           role="button"
           tabIndex={0}
-          title={data.driveFileId ? 'Change Google Drive image' : 'Choose Google Drive image'}
+          title={data.driveFileId ? '更換 Google 雲端圖片' : '選擇 Google 雲端圖片'}
           onClick={chooseImage}
           onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') {
@@ -226,7 +226,7 @@ export const DriveImageNode = memo(function DriveImageNode({ id, data, selected 
             />
           ) : (
             <div style={{ padding: '18px', textAlign: 'center', color: 'var(--text-sub)', fontSize: '0.72rem' }}>
-              {isLoading ? 'Loading image...' : data.driveFileId ? 'Preview unavailable' : 'Choose from Drive'}
+              {isLoading ? '載入圖片中...' : data.driveFileId ? '無法顯示預覽' : '從雲端硬碟選取圖片'}
             </div>
           )}
 
@@ -238,7 +238,7 @@ export const DriveImageNode = memo(function DriveImageNode({ id, data, selected 
                 event.stopPropagation();
                 clearImage();
               }}
-              title="Clear image"
+              title="清除圖片"
               style={{
                 position: 'absolute',
                 right: 8,

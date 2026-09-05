@@ -30,6 +30,32 @@
 
 ## 🧪 待測試 (Pending Test)
 
+- [ ] **全介面非同步文字繁體中文化收斂 (Pure Traditional Chinese UI Normalization)**：
+  - **節點註冊庫全面中文化**：統一 [registry.tsx](file:///Users/mac/Documents/methmatica/src/nodes/registry.tsx) 中全數 24 種節點的 `metadata.label` 與 `desc`，徹底消除側邊欄與右鍵選單的純英文字串（如 `Notebook` $\to$ `筆記 (Notebook)`、`Math Calc` $\to$ `數學運算 (Calculate)`、`Interface In/Out` $\to$ `端點輸入/輸出` 等）。
+  - **節點本體預設標籤收斂**：修復 [CalculateNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/CalculateNode.tsx)、[GraphNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/GraphNode.tsx)、[InputNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/core/InputNode.tsx)、[OutputNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/core/OutputNode.tsx)、[TextNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/TextNode.tsx)、[CodeNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/CodeNode.tsx) 等所有節點的 `defaultLabel` 與提示詞，不再預設出現在畫布上為英文。
+  - **i18n 字典與分類補全**：在 [zh-TW.ts](file:///Users/mac/Documents/methmatica/src/translations/zh-TW.ts) 與 [en.ts](file:///Users/mac/Documents/methmatica/src/translations/en.ts) 補齊遺漏的類別 (`utils`, `media`, `interface`, `workflow`, `strategy`, `navigation`) 與導航常用詞 (`goto_home`, `unsaved_warning`, `synced`)，杜絕 `t(...)` 返回 raw key。
+  - **全域操作與控制元件在地化**：滑桿參數標籤由 `MIN/MAX/STEP` 轉為 `最小值/最大值/步進`；右鍵選單「Header」轉為「標題列」；程式碼節點「AUTO/RUN」轉為「自動/執行」；頂部狀態列「UNTITLED WORKFLOW」轉為「未命名工作流」，呈現一致成熟的繁體中文體驗。
+  - 0 errors 通過 `npm run build` 與 `npx eslint src`。
+
+- [ ] **相鄰單字母隱式相乘自動拆解與變數解析引擎 (Smart Implicit Multiplication & Robust Variable Extraction)**：
+  - **根本原因排查與解決**：徹底解決 CAS 代數系統（如 Nerdamer）與正則解析器將相鄰字母（如 `b^2 - 4ac` 中的 `ac`）誤判為單一識別字、導致拉動 Slider 時端點不吻合且輸出無法連動代入的根本問題。
+  - **集中式數學公式正規化器 (`mathNormalizer.ts`)**：
+    - 自動補齊數學函數反斜線（`sin` $\to$ `\sin`，`pi` $\to$ `\pi`）。
+    - 智慧展開相鄰單字母乘法（`4ac` $\to$ `4 \cdot a \cdot c`，`ac` $\to$ `a \cdot c`，`2\pi r` $\to$ `2\pi \cdot r`），同時嚴格保護 LaTeX 語法關鍵字（如 `\sin`, `\frac`, `\cdot`, `\Delta` 等）。
+    - 智慧展開括號與數字乘法（`4a(b+c)` $\to$ `4 \cdot a \cdot (b+c)`，`(a)(b)` $\to$ `(a) \cdot (b)`）。
+  - **雙軌容錯變數提取器 (`extractFormulaVariables`)**：結合 ComputeEngine 語法樹與保留字過濾正則（以單詞邊界排序防止子字串污染），確保端點生成為獨立的 `h-in-b`, `h-in-a`, `h-in-c`。
+  - **Nerdamer 轉換器 (`latexToNerdamer`)**：在方程式求解與代換前將隱式相乘轉為顯式 `*`，保證拉動各個 Slider 時數值能被精確代換計算。
+  - **跨模組全套用**：同步套用於 [MathInput.tsx](file:///Users/mac/Documents/methmatica/src/components/MathInput.tsx)、[CalculateNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/CalculateNode.tsx)、[aiWorkflowGenerator.ts](file:///Users/mac/Documents/methmatica/src/utils/aiWorkflowGenerator.ts)、[CalculationService.ts](file:///Users/mac/Documents/methmatica/src/utils/deprecated/CalculationService.ts) 與 [aiClient.ts](file:///Users/mac/Documents/methmatica/src/utils/aiClient.ts)。
+  - 0 errors 通過 `npm run build` 與 `npx eslint src`。
+
+- [ ] **CalculateNode 與工作流算式 LaTeX 全面支援與即時預覽 (CalculateNode LaTeX Normalization, External Formula KaTeX & Realtime Result Preview)**：
+  - **MathInput LaTeX 語法自動正規化**：在 [MathInput.tsx](file:///Users/mac/Documents/methmatica/src/components/MathInput.tsx) 建立標準 LaTeX 正規化機制，自動脫除外層 `$` / `$$` / `\(` / `\)` 定界符，並將程式碼乘號 `*` 自動轉譯為標準數學點乘 `\cdot`，且補齊常見數學函數斜線前綴（如 `\sin`, `\pi`），使 MathLive 在首幀掛載與後續狀態同步時均能呈現標準印刷級排版。
+  - **外部公式輸入 (EXT) KaTeX 渲染**：在 [CalculateNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/CalculateNode.tsx) 修復 `useExternalFormula` 視圖原為純文字 `<div>` 的問題，引入 KaTeX 即時轉譯外部傳入之 LaTeX 算式。
+  - **CalculateNode 即時運算結果預覽**：在 [CalculateNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/CalculateNode.tsx) 卡片底部新增 `= <katex>` 結果預覽列，當未知數輸入運算完成後直接以 KaTeX 呈現印刷級計算結果，不再盲算。
+  - **OutputNode 端點資料流拓撲聯動**：在 [useStore.ts](file:///Users/mac/Documents/methmatica/src/store/useStore.ts) 的 `evaluateGraph` 拓撲運算中納入 `outputNode`，使 `calculateNode` 輸出的結果能即時傳遞至 `outputNode.data.input` 與 `outputNode.data.value`，搭配 [OutputNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/core/OutputNode.tsx) 完成端對端 LaTeX 串接。
+  - **AI 提示詞與算式變數解析容錯強化**：在 [aiClient.ts](file:///Users/mac/Documents/methmatica/src/utils/aiClient.ts)、[aiWorkflowGenerator.ts](file:///Users/mac/Documents/methmatica/src/utils/aiWorkflowGenerator.ts) 與 [CalculationService.ts](file:///Users/mac/Documents/methmatica/src/utils/deprecated/CalculationService.ts) 將提示詞範例升級為正統 LaTeX（如 `b^2 - 4ac`），並在算式變數抽取與計算引擎執行階段徹底排除外層符號干擾。
+  - 0 errors 通過 `npm run build` 與 `npx eslint src`。
+
 - [ ] **全域 LaTeX 語法解析轉換與即時渲染修復 (LaTeX Parsing, Attribute Escaping & Global KaTeX Rendering)**：
   - **單雙錢號與標準 LaTeX 語法支援**：修復 [TextNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/TextNode.tsx) 原先僅識別 `$$...$$` 而忽略 `$x$` 行內公式的問題，全面擴充支援 `$$...$$`、`$...$`、`\[...\]` 與 `\(...\)`。
   - **HTML 屬性安全轉義防穿透**：解決含有 `<`、`>` 符號的公式（如 `\Delta > 0`）因未做屬性轉義導致 HTML 標籤提早閉合中斷的問題。

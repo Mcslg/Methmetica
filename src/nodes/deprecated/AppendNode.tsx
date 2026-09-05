@@ -19,7 +19,7 @@ export const AppendNode = memo(function AppendNode({ id, data, selected }: NodeP
             data={data}
             selected={selected}
             icon={<Icons.Append />}
-            defaultLabel="Appender"
+            defaultLabel="日誌附加"
             className="append-node"
             headerExtras={
                 <button

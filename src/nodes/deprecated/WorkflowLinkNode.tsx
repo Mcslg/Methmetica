@@ -21,20 +21,20 @@ export function WorkflowLinkNode({ id, data, selected }: { id: string; data: any
       data={data}
       selected={selected}
       icon={<Icons.ExternalLink />}
-      defaultLabel={data.label || 'Workflow Link'}
+      defaultLabel={data.label || '工作流連結'}
       minWidth={260}
       minHeight={160}
       className="workflow-link-node"
       headerExtras={
         <button className="exec-button" onClick={(e) => { e.stopPropagation(); openTarget(); }}>
-          Open
+          開啟
         </button>
       }
-      customHandleDescriptions={{ 'h-in': 'Incoming reference', 'h-out': 'Open target workflow' }}
+      customHandleDescriptions={{ 'h-in': '關聯引用輸入', 'h-out': '開啟目標工作流' }}
     >
       <div className="workflow-link-body">
         <label className="workflow-link-field">
-          <span>Target workflow ID</span>
+          <span>目標工作流 ID</span>
           <input
             value={data.targetWorkflowId || ''}
             onChange={(e) => updateNodeData(id, { ...data, targetWorkflowId: e.target.value })}
@@ -42,7 +42,7 @@ export function WorkflowLinkNode({ id, data, selected }: { id: string; data: any
           />
         </label>
         <label className="workflow-link-field">
-          <span>Display title</span>
+          <span>顯示標題</span>
           <input
             value={data.targetWorkflowTitle || ''}
             onChange={(e) => updateNodeData(id, { ...data, targetWorkflowTitle: e.target.value })}
@@ -50,17 +50,17 @@ export function WorkflowLinkNode({ id, data, selected }: { id: string; data: any
           />
         </label>
         <label className="workflow-link-field">
-          <span>Callout</span>
+          <span>說明文字</span>
           <textarea
             value={data.callout || ''}
             onChange={(e) => updateNodeData(id, { ...data, callout: e.target.value })}
-            placeholder="Why should users jump here?"
+            placeholder="說明跳轉至此工作流的原因..."
           />
         </label>
         <div className="workflow-link-foot">
-          <span className="workflow-link-badge">Reference</span>
+          <span className="workflow-link-badge">外部連結</span>
           <button className="sidebar-btn" onClick={(e) => { e.stopPropagation(); openTarget(); }}>
-            <Icons.ExternalLink /> Open referenced workflow
+            <Icons.ExternalLink /> 開啟引用的工作流
           </button>
         </div>
       </div>

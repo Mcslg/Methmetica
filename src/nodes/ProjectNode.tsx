@@ -65,7 +65,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
     tags: string[];
     workflowIcon: WorkflowIcon;
   }>) => {
-    const finalName = (patch?.label ?? localName).trim() || 'Untitled Workflow';
+    const finalName = (patch?.label ?? localName).trim() || '未命名工作流';
     const finalDesc = patch?.description ?? localDesc;
     const finalTags = patch?.tags ?? parseTags(localTags);
     const finalWorkflowIcon = patch?.workflowIcon ?? localWorkflowIcon;
@@ -125,7 +125,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         return;
       }
 
-      const title = (localName || data.label || 'Untitled Workflow').trim() || 'Untitled Workflow';
+      const title = (localName || data.label || '未命名工作流').trim() || '未命名工作流';
       const description = localDesc || data.description || '';
       const tags = parseTags(localTags);
       const updateMetadata = {
@@ -263,7 +263,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
       data={data}
       selected={selected}
       icon={<Icons.Package />}
-      defaultLabel={t('nodes.project.name_label') || 'Project Root'}
+      defaultLabel={t('nodes.project.name_label') || '專案設定'}
       className="project-node"
       minWidth={320}
       minHeight={180}
@@ -272,7 +272,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
           <button
             onClick={handleFocus}
-            title={t('nodes.project.view_label') || 'Focus Area'}
+            title={t('nodes.project.view_label') || '聚焦視角'}
             style={{ background: 'transparent', border: 'none', color: 'var(--text-sub)', cursor: 'pointer', padding: '4px' }}
           >
             <Icons.Grid size={14} />
@@ -290,11 +290,11 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
         <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', fontSize: '0.7rem', color: 'var(--text-sub)' }}>
           {activeFileId ? (
             <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--system-success)' }}>
-              <Icons.Languages size={10} /> {t('nodes.project.last_sync') || 'Cloud Protected'}
+              <Icons.Languages size={10} /> {t('nodes.project.last_sync') || '已同步至雲端'}
             </span>
           ) : (
             <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--system-warning)' }}>
-              <Icons.Moon size={10} /> {t('nodes.project.unsaved') || 'Local Session'}
+              <Icons.Moon size={10} /> {t('nodes.project.unsaved') || '未同步至雲端'}
             </span>
           )}
         </div>
@@ -303,12 +303,12 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
           <div className="project-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div className="root-metadata">
               <div className="root-field">
-                <span>Icon</span>
+                <span>圖示</span>
                 <div className="workflow-icon-picker">
                   <button
                     type="button"
                     className={`workflow-icon-preview ${isIconPickerOpen ? 'active' : ''}`}
-                    title="Choose workflow icon"
+                    title="選擇工作流圖示"
                     aria-expanded={isIconPickerOpen}
                     onClick={() => setIsIconPickerOpen(value => !value)}
                     style={{
@@ -322,13 +322,13 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                   {isIconPickerOpen && (
                     <div className="workflow-icon-popover">
                       <div className="workflow-icon-popover-header">
-                        <strong>Icon</strong>
+                        <strong>圖示</strong>
                         <input
                           name={`project-icon-accent-${id}`}
                           className="workflow-icon-color"
                           type="color"
                           value={localWorkflowIcon.accent || DEFAULT_WORKFLOW_ICON.accent}
-                          title="Icon color"
+                          title="圖示顏色"
                           onChange={(e) => {
                             const nextIcon = { ...localWorkflowIcon, accent: e.target.value };
                             setLocalWorkflowIcon(nextIcon);
@@ -363,7 +363,7 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                 </div>
               </div>
               <label className="root-field" style={{ gridColumn: '1 / -1' }}>
-                <span>{t('nodes.project.name_label') || 'Project Name'}</span>
+                <span>{t('nodes.project.name_label') || '工作流名稱'}</span>
                 <input
                   name={`project-name-${id}`}
                   type="text"
@@ -371,22 +371,22 @@ export const ProjectNode = React.memo(function ProjectNode({ id, data, selected 
                   value={localName}
                   onChange={(e) => setLocalName(e.target.value)}
                   onBlur={() => saveWorkflowMetadata()}
-                  placeholder={t('nodes.project.name_placeholder') || 'Enter workflow name...'}
+                  placeholder={t('nodes.project.name_placeholder') || '請輸入工作流名稱...'}
                 />
               </label>
               <label className="root-field">
-                <span>{t('nodes.project.desc_label') || 'Description'}</span>
+                <span>{t('nodes.project.desc_label') || '專案描述'}</span>
                 <textarea
                   name={`project-description-${id}`}
                   className="project-desc-input"
                   value={localDesc}
                   onChange={(e) => setLocalDesc(e.target.value)}
                   onBlur={() => saveWorkflowMetadata()}
-                  placeholder={t('nodes.project.desc_placeholder') || 'Explain this workflow...'}
+                  placeholder={t('nodes.project.desc_placeholder') || '寫下關於這個工作流的細節...'}
                 />
               </label>
               <label className="root-field">
-                <span>Tags</span>
+                <span>標籤</span>
                 <input
                   name={`project-tags-${id}`}
                   type="text"

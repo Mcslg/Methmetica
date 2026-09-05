@@ -38,7 +38,7 @@ export const SolveNode = memo(function SolveNode({ id, data, selected }: NodePro
             data={data}
             selected={selected}
             icon={<Icons.Solve />}
-            defaultLabel="Solve"
+            defaultLabel="方程式求解"
             className="solve-node"
             onManualRun={() => executeNode(id, true)}
             headerExtras={

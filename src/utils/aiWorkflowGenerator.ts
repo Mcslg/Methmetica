@@ -11,7 +11,7 @@ import { nodeRegistry } from '../nodes/registry';
 import type { CommunityNodeTemplate } from '../community/types';
 import { getCommunityTemplateById, defaultCommunityTemplates } from '../community/catalog';
 import { getTemplateHandles } from '../community/types';
-import { getMathEngine } from './MathEngine';
+import { normalizeLatexFormula, extractFormulaVariables } from './mathNormalizer';
 
 export interface CatalogSearchItem {
   id: string;
@@ -72,6 +72,31 @@ export function queryNodeCatalog(
     };
   }
 
+  // 3. 搜尋社群公開節點範本
+  const communityMatch = defaultCommunityTemplates.find(
+    t => t.title.toLowerCase().includes(normKey) || t.id.toLowerCase() === normKey
+  );
+  if (communityMatch) {
+    const handles = getTemplateHandles(communityMatch);
+    return {
+      id: communityMatch.id,
+      name: communityMatch.title,
+      description: communityMatch.summary,
+      type: 'communityTemplateNode',
+      inputs: handles.filter(h => h.type === 'input').map(h => ({
+        id: h.id,
+        name: h.label || h.id,
+        dataType: 'any',
+      })),
+      outputs: handles.filter(h => h.type === 'output').map(h => ({
+        id: h.id,
+        name: h.label || h.id,
+        dataType: 'any',
+      })),
+      source: 'community',
+    };
+  }
+
   return null;
 }
 
@@ -129,30 +154,7 @@ function computeNodeLayers(
 }
 
 export { callGeminiGenerateWorkflow, callGeminiImplementDummyNode } from './aiClient';
-
-/**
- * 從數學公式提取未知變數，供 calculateNode 自動生成輸入端點
- */
-function extractFormulaVariables(formula: string): string[] {
-  if (!formula || !formula.trim()) return [];
-  try {
-    const ce = getMathEngine();
-    const expr = ce.parse(formula);
-    if (expr.unknowns && expr.unknowns.length > 0) {
-      return [...expr.unknowns];
-    }
-  } catch {
-    // 忽略 parse 例外，改用 regex 容錯解析
-  }
-  const matches = formula.match(/[a-zA-Z]+/g) || [];
-  const mathKeywords = new Set([
-    'sin', 'cos', 'tan', 'cot', 'sec', 'csc',
-    'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh',
-    'sqrt', 'log', 'ln', 'exp', 'pi', 'PI', 'e', 'E',
-    'abs', 'frac', 'sum', 'prod', 'int', 'diff'
-  ]);
-  return Array.from(new Set(matches.filter(m => !mathKeywords.has(m))));
-}
+export { normalizeLatexFormula, extractFormulaVariables } from './mathNormalizer';
 
 /**
  * 將 AI 產出的宣告式 WorkflowSpec 轉換為畫布上的 AppNode[] 與 Edge[]
@@ -225,7 +227,8 @@ export function convertSpecToCanvasGraph(
 
     // 1. calculateNode 表層欄位與 Handles 預初始化
     if (nodeSpec.type === 'calculateNode') {
-      const formula = String(cfg.formula || cfg.formulaInput || '');
+      const rawFormula = String(cfg.formula || cfg.formulaInput || '');
+      const formula = normalizeLatexFormula(rawFormula);
       const vars = extractFormulaVariables(formula);
       const spacing = 100 / (vars.length + 1);
       const inputHandles: CustomHandle[] = vars.map((v, index) => ({
@@ -241,7 +244,7 @@ export function convertSpecToCanvasGraph(
       const outputHandle: CustomHandle = { id: 'h-out', type: 'output', position: 'right', offset: 50 };
       extraData = {
         formula,
-        formulaInput: cfg.formulaInput || formula,
+        formulaInput: formula,
         handles: [...specialHandles, ...inputHandles, outputHandle],
         label: String(cfg.label || nodeSpec.name || 'Calculate'),
         nodeName: String(cfg.nodeName || cfg.label || nodeSpec.name || 'Calculate'),
