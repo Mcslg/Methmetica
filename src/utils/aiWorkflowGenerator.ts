@@ -168,11 +168,11 @@ export function convertSpecToCanvasGraph(
   const specNodeMap = new Map(spec.nodes.map(n => [n.id, n]));
   const typeOrder: Record<string, number> = {
     textNode: 1,
-    communityTemplateNode: 2,
-    sliderNode: 3,
-    inputNode: 4,
-    calculateNode: 5,
-    codeNode: 6,
+    sliderNode: 2,
+    inputNode: 3,
+    calculateNode: 4,
+    codeNode: 5,
+    communityTemplateNode: 6,
     dummyNode: 7,
     graphNode: 8,
     outputNode: 9,

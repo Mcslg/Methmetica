@@ -30,10 +30,10 @@
 
 ## 🧪 待測試 (Pending Test)
 
-- [ ] **AI 提示詞三區架構規範與分層排版垂直順序優化 (Three-Zone Architectural Pattern & Layer Bucket Vertical Ordering)**：
-  - **三區架構 System Instruction**：在 [aiClient.ts](file:///Users/mac/Documents/methmatica/src/utils/aiClient.ts) 規範三大分區：1. 說明區（`textNode` 配合 LaTeX 公式、`communityTemplateNode` 知識卡片）、2. 互動區（`sliderNode` 參數控制）、3. 節點輸入輸出定義區（`inputNode`/`outputNode` 規格端點、`calculateNode`/`codeNode` 算式邏輯、`graphNode` 視覺呈現、`dummyNode` 遞迴子程序）。
-  - **分層垂直排序優化**：在 [aiWorkflowGenerator.ts](file:///Users/mac/Documents/methmatica/src/utils/aiWorkflowGenerator.ts) 的 `convertSpecToCanvasGraph` 中，對同分層之節點 bucket 依三區功能層級排序（說明區置頂，互動區居中，運算與輸出在後），避免同列中拉桿與說明文字上下錯置。
-  - **範例與 JSON Schema 同步**：更新系統提示詞範例 JSON 為包含三區之一元二次判別式完整工作流，明確定義各區命名、用途與端口連線。
+- [ ] **AI 提示詞三區架構與社群節點嚴格調用規範 (Three-Zone Prompt Architecture & Strict Community Node Invocation)**：
+  - **說明區收斂至原生 textNode**：在 [aiClient.ts](file:///Users/mac/Documents/methmatica/src/utils/aiClient.ts) 明確規範說明區（Zone 1）必須且僅能使用支援 Markdown 與 LaTeX 公式之原生 `textNode`，嚴禁生成虛構的填空社群卡片。
+  - **社群節點嚴格調用規範**：將社群節點庫定位為預先發布之黑盒子依賴（Black-box Component），僅在使用者需求明確精確吻合既有節點 ID 與功能時才允許引用其宣告 Handles，嚴禁現場改寫欄位或隨意捏造實例。若無完全吻合之社群節點，一律回歸原生幾何/數值節點與 `dummyNode`。
+  - **分層垂直排序優化**：在 [aiWorkflowGenerator.ts](file:///Users/mac/Documents/methmatica/src/utils/aiWorkflowGenerator.ts) 的 `convertSpecToCanvasGraph` 中，對同分層之節點 bucket 依功能排序（說明區 `textNode` 置頂，互動區 `sliderNode` 居中，運算與社群程序在後），避免畫布同列節點上下錯置。
   - 0 errors 通過 `npx eslint src` 與 `npm run build`。
 
 - [ ] **AI 節點表層欄位感知與連線端口自動正規化 (Node Surface Config & Port Normalization)**：

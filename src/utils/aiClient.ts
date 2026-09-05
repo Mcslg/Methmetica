@@ -33,32 +33,29 @@ export function formatCommunityCatalogForPrompt(templates: CommunityNodeTemplate
   const lines = templates.map(t => {
     const inPorts = (t.inputs || []).map(i => `"${i.id}" (${i.label || i.id})`).join(', ') || 'none';
     const outPorts = (t.outputs || []).map(o => `"${o.id}" (${o.label || o.id})`).join(', ') || 'none';
-    const fieldLines = (t.fields || []).map(f => {
-      const defaultStr = f.defaultValue ? `, default: "${f.defaultValue}"` : '';
-      const placeholderStr = f.placeholder ? `, e.g. "${f.placeholder}"` : '';
-      return `      - "${f.id}": ${f.label} (${f.kind}${defaultStr}${placeholderStr})`;
-    }).join('\n');
 
     return `- Template ID: "${t.id}"
   - Title: "${t.title}"
   - Category: "${t.category || 'Community'}"
   - Summary: "${t.summary || ''}"
   - Target Handles (Inputs): [${inPorts}]
-  - Source Handles (Outputs): [${outPorts}]
-  - Configurable Surface Fields (in "config": { "templateFields": { ... } }):
-${fieldLines || '      (none)'}`;
+  - Source Handles (Outputs): [${outPorts}]`;
   });
 
-  return `### 3. AVAILABLE COMMUNITY TEMPLATE NODES:
-You can instantiate community templates by specifying "type": "communityTemplateNode" and in "config" provide:
-{
-  "templateId": "<templateId>",
-  "label": "<title>",
-  "templateFields": {
-    "<fieldId>": "<fill content according to the problem context>"
+  return `### 3. EXISTING COMMUNITY NODE CATALOG (STRICT DEPENDENCY INVOCATION ONLY):
+The catalog below lists published, pre-built community nodes.
+STRICT INVOCATION POLICY:
+- ONLY invoke a community node if the user's request explicitly matches its specific purpose and pre-packaged domain function.
+- NEVER instantiate community nodes to invent or fake generic notes, definitions, or algorithms. For general explanations or notes, you MUST use "textNode".
+- When invoking an existing community node, specify "type": "communityTemplateNode" and provide in "config":
+  {
+    "templateId": "<exact Template ID from catalog>",
+    "label": "<title>"
   }
-}
-Whenever the user's request involves theorem definitions, structured problem-solving methods, or concepts covered by a community template, PRIORITIZE using these community nodes:
+- Wire ONLY to its declared Target Handles (Inputs) and Source Handles (Outputs). Never hallucinate ports or overwrite internal structures.
+- If no existing community node precisely fits the user's task, DO NOT use this section; construct the workflow using primitive nodes and textNode instead.
+
+Registered Community Nodes:
 ${lines.join('\n\n')}`;
 }
 
@@ -79,9 +76,9 @@ Your task is to convert user's mathematical or algorithmic requests into a stric
 Every generated workflow MUST be clearly structured into THREE DISTINCT FUNCTIONAL ZONES:
 - 【1. 說明區 (Explanation & Knowledge Zone)】:
   - Purpose: Provide mathematical background, theorem statements, problem definitions, or operation instructions.
-  - Primary Nodes:
-    - "textNode": Use rich Markdown and LaTeX (e.g. "$$\\Delta = b^2 - 4ac$$") explaining the underlying theory.
-    - "communityTemplateNode" (e.g. "definition-card", "method-card"): Prioritize when the workflow centers on canonical mathematical definitions or established solving methodologies.
+  - Primary Node:
+    - "textNode": (MANDATORY for explanation) Use rich Markdown and LaTeX (e.g. "$$\\Delta = b^2 - 4ac$$") explaining the underlying theory.
+    - NEVER instantiate fake community templates for explanation.
 - 【2. 互動區 (Interactive Parameter Control Zone)】:
   - Purpose: Provide dynamic UI controllers allowing users to adjust variables in real-time.
   - Primary Nodes:
@@ -93,6 +90,7 @@ Every generated workflow MUST be clearly structured into THREE DISTINCT FUNCTION
     - "calculateNode": Symbolic mathematical expression evaluations (formula).
     - "codeNode": Multi-step algorithmic logic.
     - "graphNode": 2D/3D visual curve plotting connected downstream.
+    - "communityTemplateNode": ONLY if a pre-existing community node in the catalog directly performs this exact computation or procedure.
     - "dummyNode": For missing algorithmic sub-procedures needing recursive decomposition.
 
 ### 2. AVAILABLE PRIMITIVE NODES (AND THEIR SURFACE EDITABLE FIELDS):
