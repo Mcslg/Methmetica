@@ -69,6 +69,17 @@ export const parseRouteFromLocation = (locationLike: Location): AppRoute => {
     return normalizeRoute({ view: 'editor', source, id });
   }
 
+  // 容錯解析：舊版 ?subgraph=xxx 或 ?draft=xxx 連結自動對應至 draft 路由
+  const subgraphId = params.get('subgraph');
+  if (subgraphId) {
+    return normalizeRoute({ view: 'editor', source: 'draft', id: subgraphId });
+  }
+
+  const draftId = params.get('draft');
+  if (draftId) {
+    return normalizeRoute({ view: 'editor', source: 'draft', id: draftId });
+  }
+
   // Backward compatibility: no URL route means old editor entry behavior.
   return { view: 'editor', source: 'new' };
 };

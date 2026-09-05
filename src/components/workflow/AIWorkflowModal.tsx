@@ -124,14 +124,14 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
           width: '90%',
           maxWidth: '680px',
           maxHeight: '90vh',
-          backgroundColor: 'rgba(15, 23, 42, 0.94)',
-          border: '1px solid rgba(56, 189, 248, 0.3)',
+          backgroundColor: 'var(--bg-node, #101710)',
+          border: '1px solid var(--ai-border, rgba(74, 222, 128, 0.3))',
           borderRadius: '16px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6), 0 0 24px rgba(56, 189, 248, 0.15)',
+          boxShadow: 'var(--node-shadow, 0 25px 50px -12px rgba(0, 0, 0, 0.6))',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          color: '#f8fafc',
+          color: 'var(--text-main, #f8fafc)',
           fontFamily: 'inherit',
         }}
         onClick={e => e.stopPropagation()}
@@ -140,11 +140,11 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
         <div
           style={{
             padding: '16px 20px',
-            borderBottom: '1px solid rgba(148, 163, 184, 0.12)',
+            borderBottom: '1px solid var(--border-node, rgba(255, 255, 255, 0.08))',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            background: 'linear-gradient(90deg, rgba(56, 189, 248, 0.08) 0%, transparent 100%)',
+            background: 'var(--ai-bg, rgba(74, 222, 128, 0.08))',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -153,20 +153,20 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
                 width: '32px',
                 height: '32px',
                 borderRadius: '8px',
-                background: 'linear-gradient(135deg, #0284c7 0%, #7c3aed 100%)',
+                background: 'var(--ai-bg, rgba(74, 222, 128, 0.15))',
+                border: '1px solid var(--ai-border, rgba(74, 222, 128, 0.3))',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 4px 10px rgba(124, 58, 237, 0.3)',
               }}
             >
-              <Icons.Sparkles style={{ width: 18, height: 18, color: '#fff' }} />
+              <Icons.Sparkles style={{ width: 18, height: 18, color: 'var(--ai-text, #4ade80)' }} />
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, letterSpacing: '-0.01em' }}>
+              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--text-main)' }}>
                 AI 工作流自動生成 (AI Workflow Generator)
               </h3>
-              <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8' }}>
+              <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-sub, #94a3b8)' }}>
                 使用 Google Gemini 將自然語言需求編譯為有向無環圖 (DAG)
               </p>
             </div>
@@ -177,9 +177,9 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
               onClick={() => setShowApiKeySettings(v => !v)}
               title="設定 Gemini API Key"
               style={{
-                background: apiKey ? 'rgba(56, 189, 248, 0.1)' : 'rgba(239, 68, 68, 0.15)',
-                border: apiKey ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid rgba(239, 68, 68, 0.4)',
-                color: apiKey ? '#38bdf8' : '#f87171',
+                background: apiKey ? 'var(--ai-bg, rgba(74, 222, 128, 0.1))' : 'var(--color-danger-bg, rgba(239, 68, 68, 0.15))',
+                border: apiKey ? '1px solid var(--ai-border, rgba(74, 222, 128, 0.3))' : '1px solid var(--color-danger-border, rgba(239, 68, 68, 0.4))',
+                color: apiKey ? 'var(--ai-text, #4ade80)' : 'var(--color-danger, #f87171)',
                 padding: '5px 9px',
                 borderRadius: '6px',
                 fontSize: '11px',
@@ -199,7 +199,7 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: '#94a3b8',
+                color: 'var(--text-sub, #94a3b8)',
                 cursor: 'pointer',
                 padding: '4px',
                 display: 'flex',
@@ -264,7 +264,7 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
 
           {/* 輸入區 */}
           <div>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#cbd5e1', marginBottom: '6px' }}>
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-main, #cbd5e1)', marginBottom: '6px' }}>
               描述您想要建立的數學或演算法工作流：
             </label>
             <textarea
@@ -274,11 +274,11 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
               placeholder="例如：製作一個計算二次方程式判別式與兩根的工作流，帶有三個輸入與一個判別式運算..."
               style={{
                 width: '100%',
-                background: 'rgba(30, 41, 59, 0.6)',
-                border: '1px solid rgba(148, 163, 184, 0.25)',
+                background: 'var(--bg-input, rgba(0, 0, 0, 0.25))',
+                border: '1px solid var(--border-input, rgba(255, 255, 255, 0.15))',
                 borderRadius: '8px',
                 padding: '10px 12px',
-                color: '#f8fafc',
+                color: 'var(--text-main, #f8fafc)',
                 fontSize: '13px',
                 lineHeight: 1.5,
                 outline: 'none',
@@ -295,7 +295,7 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
 
           {/* 快捷範例 */}
           <div>
-            <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '6px', fontWeight: 600 }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-sub, #94a3b8)', marginBottom: '6px', fontWeight: 600 }}>
               或點選常用範例：
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -308,22 +308,22 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
                   }}
                   disabled={isGenerating}
                   style={{
-                    background: 'rgba(30, 41, 59, 0.8)',
-                    border: '1px solid rgba(148, 163, 184, 0.2)',
+                    background: 'var(--bg-node, rgba(15, 20, 15, 0.8))',
+                    border: '1px solid var(--border-node, rgba(255, 255, 255, 0.1))',
                     borderRadius: '6px',
                     padding: '4px 9px',
-                    color: '#cbd5e1',
+                    color: 'var(--text-sub, #cbd5e1)',
                     fontSize: '11px',
                     cursor: 'pointer',
                     transition: 'all 0.15s',
                   }}
                   onMouseEnter={e => {
-                    e.currentTarget.style.borderColor = '#38bdf8';
-                    e.currentTarget.style.color = '#38bdf8';
+                    e.currentTarget.style.borderColor = 'var(--ai-border-hover, #4ade80)';
+                    e.currentTarget.style.color = 'var(--ai-text, #4ade80)';
                   }}
                   onMouseLeave={e => {
-                    e.currentTarget.style.borderColor = 'rgba(148, 163, 184, 0.2)';
-                    e.currentTarget.style.color = '#cbd5e1';
+                    e.currentTarget.style.borderColor = 'var(--border-node, rgba(255, 255, 255, 0.1))';
+                    e.currentTarget.style.color = 'var(--text-sub, #cbd5e1)';
                   }}
                 >
                   ⚡ {preset.title}
@@ -338,9 +338,9 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
               style={{
                 padding: '10px 12px',
                 borderRadius: '8px',
-                background: 'rgba(239, 68, 68, 0.12)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                color: '#fca5a5',
+                background: 'var(--color-danger-bg, rgba(239, 68, 68, 0.12))',
+                border: '1px solid var(--color-danger-border, rgba(239, 68, 68, 0.3))',
+                color: 'var(--color-danger, #ef4444)',
                 fontSize: '12px',
                 lineHeight: 1.4,
               }}
@@ -355,25 +355,25 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
               style={{
                 padding: '14px',
                 borderRadius: '10px',
-                background: 'rgba(15, 23, 42, 0.8)',
-                border: '1px solid rgba(56, 189, 248, 0.35)',
+                background: 'var(--bg-input, rgba(0, 0, 0, 0.25))',
+                border: '1px solid var(--ai-border, rgba(74, 222, 128, 0.35))',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '10px',
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontWeight: 700, fontSize: '14px', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--ai-text, #4ade80)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Icons.Check style={{ width: 16, height: 16 }} />
                   <span>{generatedSpec.name}</span>
                 </div>
-                <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-sub, #94a3b8)' }}>
                   {generatedSpec.nodes.length} 個節點 • {generatedSpec.edges.length} 條連線
                 </span>
               </div>
 
               {generatedSpec.description && (
-                <p style={{ margin: 0, fontSize: '11.5px', color: '#cbd5e1', lineHeight: 1.4 }}>
+                <p style={{ margin: 0, fontSize: '11.5px', color: 'var(--text-sub, #cbd5e1)', lineHeight: 1.4 }}>
                   {generatedSpec.description}
                 </p>
               )}
@@ -384,9 +384,9 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
                   <span
                     key={idx}
                     style={{
-                      background: n.type === 'dummyNode' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(30, 41, 59, 0.9)',
-                      border: n.type === 'dummyNode' ? '1px solid rgba(234, 179, 8, 0.4)' : '1px solid rgba(148, 163, 184, 0.25)',
-                      color: n.type === 'dummyNode' ? '#facc15' : '#e2e8f0',
+                      background: n.type === 'dummyNode' ? 'var(--color-warning-bg, rgba(234, 179, 8, 0.15))' : 'var(--bg-node, rgba(15, 20, 15, 0.9))',
+                      border: n.type === 'dummyNode' ? '1px solid var(--color-warning-border, rgba(234, 179, 8, 0.4))' : '1px solid var(--border-node, rgba(255, 255, 255, 0.15))',
+                      color: n.type === 'dummyNode' ? 'var(--color-warning, #facc15)' : 'var(--text-main, #e2e8f0)',
                       borderRadius: '4px',
                       padding: '2px 6px',
                       fontSize: '10.5px',
@@ -404,8 +404,8 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
         <div
           style={{
             padding: '12px 20px',
-            borderTop: '1px solid rgba(148, 163, 184, 0.12)',
-            background: 'rgba(15, 23, 42, 0.8)',
+            borderTop: '1px solid var(--border-node, rgba(255, 255, 255, 0.08))',
+            background: 'var(--bg-node, rgba(15, 20, 15, 0.85))',
             display: 'flex',
             justifyContent: 'flex-end',
             gap: '8px',
@@ -416,9 +416,9 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
               <button
                 onClick={() => handleApply('append')}
                 style={{
-                  background: 'rgba(30, 41, 59, 0.9)',
-                  border: '1px solid rgba(148, 163, 184, 0.3)',
-                  color: '#e2e8f0',
+                  background: 'var(--bg-input, rgba(0, 0, 0, 0.2))',
+                  border: '1px solid var(--border-input, rgba(255, 255, 255, 0.2))',
+                  color: 'var(--text-main, #e2e8f0)',
                   borderRadius: '6px',
                   padding: '7px 14px',
                   fontSize: '12px',
@@ -431,15 +431,15 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
               <button
                 onClick={() => handleApply('replace')}
                 style={{
-                  background: 'linear-gradient(135deg, #0284c7 0%, #2563eb 100%)',
-                  border: 'none',
-                  color: 'white',
+                  background: 'var(--ai-btn-bg, #166534)',
+                  border: '1px solid var(--ai-border, rgba(74, 222, 128, 0.4))',
+                  color: 'var(--ai-btn-text, white)',
                   borderRadius: '6px',
                   padding: '7px 16px',
                   fontSize: '12px',
                   fontWeight: 600,
                   cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(2, 132, 199, 0.35)',
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
                 }}
               >
                 覆蓋當前畫布並開啟
@@ -451,10 +451,10 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
               disabled={isGenerating || !prompt.trim()}
               style={{
                 background: isGenerating || !prompt.trim()
-                  ? 'rgba(71, 85, 105, 0.5)'
-                  : 'linear-gradient(135deg, #0284c7 0%, #7c3aed 100%)',
-                border: 'none',
-                color: 'white',
+                  ? 'rgba(71, 85, 105, 0.4)'
+                  : 'var(--ai-btn-bg, #166534)',
+                border: '1px solid var(--ai-border, rgba(74, 222, 128, 0.3))',
+                color: 'var(--ai-btn-text, white)',
                 borderRadius: '6px',
                 padding: '8px 18px',
                 fontSize: '12px',
@@ -463,7 +463,7 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
-                boxShadow: isGenerating ? 'none' : '0 4px 14px rgba(124, 58, 237, 0.35)',
+                boxShadow: isGenerating ? 'none' : '0 2px 8px rgba(0, 0, 0, 0.2)',
               }}
             >
               {isGenerating ? (

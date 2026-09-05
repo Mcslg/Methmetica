@@ -25,7 +25,7 @@ import * as driveService from './utils/googleDriveService';
 import { loadLocalDraft, loadPublicWorkflowEdit, saveLocalDraft, savePublicWorkflowEdit } from './utils/localDraftService';
 import { type AppRoute, parseRouteFromLocation, readEditorSnapshotFromHistory, replaceRoute } from './utils/navigation';
 import type { MathValue } from './types/mathTypes';
-import { expandDummyNodeWithSubgraph } from './utils/aiWorkflowGenerator';
+import { expandDummyNodeWithSubgraph, createNodeManufacturingWorkflow } from './utils/aiWorkflowGenerator';
 import type { WorkflowSpec } from './types/workflowSpec';
 import { AIWorkflowModal } from './components/workflow/AIWorkflowModal';
 import { callGeminiImplementDummyNode, getStoredApiKey } from './utils/aiClient';
@@ -677,13 +677,36 @@ function Flow() {
 
       if (!generatedSpec) return;
 
+      // 建立「節點製造工作流」草稿（含 ProjectNode、InputNode、運算節點、OutputNode）
+      const customTemplates = useStore.getState().communityTemplates;
+      const dummyNode = useStore.getState().nodes.find(n => n.id === nodeId);
+      const existingDraftId = dummyNode?.data?.draftId as string | undefined;
+
+      let draftId: string;
+      try {
+        const result = createNodeManufacturingWorkflow(
+          generatedSpec,
+          {
+            label: `${label} 製造工作流`,
+            description: description || `由 AI 自動生成的「${label}」節點製造工作流，包含介面端點與演算法實作。`,
+            existingDraftId,
+          },
+          customTemplates
+        );
+        draftId = result.draftId;
+      } catch (err) {
+        console.warn('[AI] 製造工作流草稿建立失敗，仍繼續展開節點', err);
+        draftId = '';
+      }
+
       const currentNodes = useStore.getState().nodes;
       const currentEdges = useStore.getState().edges;
       const { nodes: nextNodes, edges: nextEdges } = expandDummyNodeWithSubgraph(
         currentNodes,
         currentEdges,
         nodeId,
-        generatedSpec
+        generatedSpec,
+        draftId || undefined
       );
 
       useStore.setState({ nodes: nextNodes, edges: nextEdges });
@@ -693,8 +716,44 @@ function Flow() {
     const handleOpenSubgraphNewPage = (e: Event) => {
       const customEvt = e as CustomEvent<{ nodeId: string; workflowSpec?: WorkflowSpec }>;
       const { nodeId, workflowSpec } = customEvt.detail;
+
+      // 若節點本身已有 draftId，直接跳轉（不應走到這裡，但作為防衛性處理）
+      const existingNode = useStore.getState().nodes.find(n => n.id === nodeId);
+      const existingDraftId = existingNode?.data?.draftId as string | undefined
+        || existingNode?.data?.subgraphDraftId as string | undefined;
+      if (existingDraftId) {
+        window.open(
+          `${window.location.origin}${window.location.pathname}?view=editor&source=draft&id=${existingDraftId}`,
+          '_blank'
+        );
+        return;
+      }
+
+      // Fallback：即時建立製造工作流草稿後跳轉
+      if (workflowSpec) {
+        try {
+          const result = createNodeManufacturingWorkflow(workflowSpec, {
+            label: `${workflowSpec.name} 製造工作流`,
+            description: workflowSpec.description,
+          });
+
+          // 回填 draftId 到當前父節點
+          const updateNodeData = useStore.getState().updateNodeData;
+          updateNodeData(nodeId, { draftId: result.draftId, subgraphDraftId: result.draftId });
+
+          window.open(
+            `${window.location.origin}${window.location.pathname}?view=editor&source=draft&id=${result.draftId}`,
+            '_blank'
+          );
+        } catch (err) {
+          console.warn('[AI] Fallback 製造工作流草稿建立失敗', err);
+        }
+        return;
+      }
+
+      // 最終 fallback：使用舊版 subgraph 暫存機制（容錯路由已能解析）
       const spec = workflowSpec || {
-        schemaVersion: 2,
+        schemaVersion: 2 as const,
         id: `subgraph-${nodeId}`,
         name: '子工作流',
         description: '',
@@ -1082,11 +1141,11 @@ function Flow() {
           top: 14,
           right: 116,
           zIndex: 1300,
-          border: '1px solid rgba(56, 189, 248, 0.45)',
-          background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.28) 0%, rgba(124, 58, 237, 0.28) 100%)',
+          border: '1px solid var(--ai-border, rgba(74, 222, 128, 0.3))',
+          background: 'var(--ai-bg, rgba(74, 222, 128, 0.08))',
           backdropFilter: 'blur(10px)',
           WebkitBackdropFilter: 'blur(10px)',
-          color: '#38bdf8',
+          color: 'var(--ai-text, #4ade80)',
           borderRadius: '8px',
           padding: '6px 12px',
           fontSize: '0.75rem',
@@ -1095,16 +1154,16 @@ function Flow() {
           display: 'flex',
           alignItems: 'center',
           gap: '6px',
-          boxShadow: '0 2px 10px rgba(0, 0, 0, 0.25)',
+          boxShadow: '0 2px 10px rgba(0, 0, 0, 0.15)',
           transition: 'all 0.15s ease',
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.75)';
-          e.currentTarget.style.color = '#ffffff';
+          e.currentTarget.style.borderColor = 'var(--ai-border-hover, rgba(74, 222, 128, 0.6))';
+          e.currentTarget.style.background = 'var(--ai-bg, rgba(74, 222, 128, 0.15))';
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.45)';
-          e.currentTarget.style.color = '#38bdf8';
+          e.currentTarget.style.borderColor = 'var(--ai-border, rgba(74, 222, 128, 0.3))';
+          e.currentTarget.style.background = 'var(--ai-bg, rgba(74, 222, 128, 0.08))';
         }}
         title="AI 工作流自動生成 (Google Gemini)"
       >
@@ -1533,15 +1592,15 @@ function Flow() {
             </div>
           )}
           <div className="menu-item" onClick={handleDuplicateNode}>{t('common.duplicate')}</div>
-          <div className="menu-item" style={{ color: '#ff4757' }} onClick={handleDeleteNode}>{t('common.delete')}</div>
+          <div className="menu-item" style={{ color: 'var(--color-danger, #ef4444)' }} onClick={handleDeleteNode}>{t('common.delete')}</div>
         </div>
       )}
 
       {idleTooltip && createPortal(
         <div className="idle-tooltip" style={{ position: 'fixed', left: idleTooltip.x + 20, top: idleTooltip.y + 20, background: 'var(--bg-node)', backdropFilter: 'blur(10px)', border: '1px solid var(--border-node)', padding: '8px 14px', borderRadius: '12px', color: 'var(--text-main)', fontSize: '0.75rem', pointerEvents: 'none', zIndex: 9999, boxShadow: 'var(--node-shadow)', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 500 }}>
-          <span><span style={{ color: '#4facfe', fontWeight: 700 }}>{t('tips.right_click')}</span> {t('tips.create_node')}</span>
+          <span><span style={{ color: 'var(--accent-bright)', fontWeight: 700 }}>{t('tips.right_click')}</span> {t('tips.create_node')}</span>
           <span style={{ opacity: 0.3 }}>|</span>
-          <span><span style={{ color: '#ffcc00', fontWeight: 700 }}>{t('tips.shift_right_click')}</span> {t('tips.quick_create')}</span>
+          <span><span style={{ color: 'var(--color-warning, #f59e0b)', fontWeight: 700 }}>{t('tips.shift_right_click')}</span> {t('tips.quick_create')}</span>
         </div>,
         document.body
       )}
@@ -1549,25 +1608,26 @@ function Flow() {
       <div
         style={{
           position: 'fixed',
-          right: 24,
-          top: 18,
+          right: 18,
+          top: 54,
           zIndex: 99999,
           pointerEvents: 'none',
           display: 'flex',
           alignItems: 'center',
-          gap: 10,
-          padding: '10px 14px',
-          borderRadius: 14,
+          gap: 6,
+          padding: '4px 8px',
+          borderRadius: 8,
           border: `1px solid ${isExplainMode ? 'rgba(74, 222, 128, 0.45)' : 'var(--border-node)'}`,
           background: isExplainMode
-            ? (theme === 'dark' ? 'rgba(20, 34, 22, 0.82)' : 'rgba(240, 253, 244, 0.95)')
+            ? (theme === 'dark' ? 'rgba(20, 34, 22, 0.85)' : 'rgba(240, 253, 244, 0.95)')
             : 'var(--bg-node)',
-          backdropFilter: 'blur(14px)',
+          backdropFilter: 'blur(12px)',
           color: 'var(--text-main)',
           boxShadow: 'var(--node-shadow)',
+          transition: 'all 0.2s ease',
         }}
       >
-        <span style={{ fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.65 }}>
+        <span style={{ fontSize: '0.65rem', letterSpacing: '0.06em', opacity: 0.75, fontWeight: 500 }}>
           {language === 'zh-TW' ? '說明模式' : 'Explain Mode'}
         </span>
         <span
@@ -1575,12 +1635,14 @@ function Flow() {
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            minWidth: 28,
-            height: 28,
-            borderRadius: 8,
+            minWidth: 18,
+            height: 18,
+            borderRadius: 4,
             background: isExplainMode ? 'rgba(74, 222, 128, 0.18)' : 'var(--bg-input)',
             border: `1px solid ${isExplainMode ? 'rgba(74, 222, 128, 0.45)' : 'var(--border-input)'}`,
             fontWeight: 700,
+            fontSize: '10px',
+            lineHeight: 1,
           }}
         >
           M

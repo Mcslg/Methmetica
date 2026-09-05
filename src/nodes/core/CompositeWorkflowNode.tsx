@@ -78,19 +78,28 @@ export const CompositeWorkflowNode = memo(function CompositeWorkflowNode({
     evaluateGraph();
   };
 
-  // 在新頁面開啟內部工作流
+  // 在新頁面開啟內部工作流（優先使用 draftId 對應的製造草稿路由）
+  const draftId = rawData.draftId as string | undefined
+    || rawData.subgraphDraftId as string | undefined;
+
   const handleOpenInNewPage = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const targetWorkflowId = (rawData.workflowSpec as WorkflowSpec | undefined)?.id || (rawData.subgraphId as string | undefined);
-    if (targetWorkflowId) {
-      window.open(`/?subgraph=${targetWorkflowId}`, '_blank');
-    } else {
-      window.dispatchEvent(
-        new CustomEvent('open-subgraph-new-page', {
-          detail: { nodeId: id, workflowSpec }
-        })
+
+    if (draftId) {
+      // 優先：透過標準草稿路由開啟製造工作流（可直接銜接節點封裝器）
+      window.open(
+        `${window.location.origin}${window.location.pathname}?view=editor&source=draft&id=${draftId}`,
+        '_blank'
       );
+      return;
     }
+
+    // Fallback：派發事件讓 App.tsx 即時建立草稿後再開啟
+    window.dispatchEvent(
+      new CustomEvent('open-subgraph-new-page', {
+        detail: { nodeId: id, workflowSpec }
+      })
+    );
   };
 
   return (
@@ -107,9 +116,9 @@ export const CompositeWorkflowNode = memo(function CompositeWorkflowNode({
         <button
           className="exec-button community-template-action-btn community-template-open-btn"
           onClick={handleOpenInNewPage}
-          title="開啟內部工作流"
+          title={draftId ? `開啟製造工作流草稿 (${draftId})` : '開啟子工作流'}
         >
-          開啟
+          {draftId ? '開啟製造工作流 ↗' : '開啟'}
         </button>
       }
     >

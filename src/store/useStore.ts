@@ -21,6 +21,8 @@ import {
     applyEdgeChanges,
 } from '@xyflow/react';
 import { incrementEvalGraph } from '../components/DebugOverlay';
+import { runCompiledArtifact, compileSubgraphWorkflow } from '../utils/workflowCompiler';
+import { loadLocalDraft } from '../utils/localDraftService';
 
 export const createGraphSignature = (nodes: AppNode[], edges: Edge[]) => {
     const essentialNodes = nodes.map(n => ({
@@ -196,6 +198,9 @@ export type NodeData = {
     driveWebViewUrl?: string;
     driveThumbnailUrl?: string;
     nodeComments?: NodeComment[];
+    // 自訂節點製造工作流草稿 ID（由 AI 實作 DummyNode 後自動生成並回填）
+    draftId?: string;
+    subgraphDraftId?: string;
 };
 
 const templateHandleToCustomHandle = (handle: TemplateHandleSpec): CustomHandle => ({
@@ -1550,8 +1555,59 @@ const useStore = create<AppState>()(
                 }
             }
 
+            // Process Composite Workflow Node (子工作流無狀態求值)
+            if (node.type === 'compositeWorkflowNode') {
+                const draftId = (node.data.draftId || node.data.subgraphDraftId) as string | undefined;
+                let subgraphGraph: { nodes: AppNode[]; edges: Edge[] } | null = null;
+
+                if (draftId) {
+                    const draft = loadLocalDraft(draftId);
+                    if (draft && draft.nodes) {
+                        subgraphGraph = { nodes: draft.nodes, edges: draft.edges || [] };
+                    }
+                }
+
+                if (subgraphGraph && subgraphGraph.nodes.length > 0) {
+                    // 輸入端點比對映射：外部輸入 handle -> 子圖 inputNode ID
+                    const runtimeInputs: Record<string, string> = {};
+                    Object.entries(collectedInputs).forEach(([key, val]) => {
+                        runtimeInputs[key] = val;
+                    });
+
+                    // 編譯並執行子圖
+                    const compileResult = compileSubgraphWorkflow(subgraphGraph);
+                    if (!compileResult.ok || !compileResult.artifact) {
+                        const errorMsg = compileResult.diagnostics.map(d => d.message).join('；');
+                        if (updatedData.error !== errorMsg) {
+                            updatedData.error = errorMsg;
+                            isUpdated = true;
+                        }
+                    } else {
+                        // 執行求值 (若無非同步 codeNode，其求值皆同步在 Promise 微任務中立即返回)
+                        runCompiledArtifact(compileResult.artifact, runtimeInputs).then(result => {
+                            if (result.error) {
+                                get().updateNodeData(node.id, { error: result.error }, { skipGraphEval: true });
+                            } else {
+                                const currentOutputs = node.data.outputs || {};
+                                if (JSON.stringify(currentOutputs) !== JSON.stringify(result.outputs)) {
+                                    get().updateNodeData(node.id, {
+                                        outputs: result.outputs,
+                                        value: Object.values(result.outputs)[0] || '',
+                                        error: undefined,
+                                    });
+                                }
+                            }
+                        }).catch(err => {
+                            get().updateNodeData(node.id, {
+                                error: err instanceof Error ? err.message : String(err),
+                            }, { skipGraphEval: true });
+                        });
+                    }
+                }
+            }
+
             // Build input signature to trigger downstream recalculation reliably
-            if (['calculateNode', 'solveNode', 'graphNode', 'balanceNode', 'codeNode'].includes(node.type || '')) {
+            if (['calculateNode', 'solveNode', 'graphNode', 'balanceNode', 'codeNode', 'compositeWorkflowNode'].includes(node.type || '')) {
                 const signature = Object.keys(collectedInputs)
                     .sort()
                     .map(handleId => `${handleId}=${collectedInputs[handleId]}|typed=${JSON.stringify(collectedTypedInputs[handleId] ?? '')}`)

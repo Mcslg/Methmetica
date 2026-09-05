@@ -12,7 +12,7 @@ interface NodeCreatorPanelProps {
   onNodeCreated?: () => void;
 }
 
-export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
+export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = ({ onNodeCreated }) => {
   const nodes = useStore(state => state.nodes);
 
   // 取得 ProjectNode 的名稱與描述作為預設
@@ -136,17 +136,36 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
         display: 'flex',
         flexDirection: 'column',
         gap: '16px',
-        color: '#f8fafc',
+        color: 'var(--text-main)',
         width: '100%',
       }}
     >
       {/* 標題與簡介 */}
       <div>
-        <div style={{ fontSize: '13px', fontWeight: 700, color: '#38bdf8', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <Icons.Package style={{ width: 15, height: 15 }} />
-          <span>自訂節點封裝器</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+          <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--accent-bright)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Icons.Package style={{ width: 15, height: 15 }} />
+            <span>自訂節點封裝器</span>
+          </div>
+          {onNodeCreated && (
+            <button
+              onClick={onNodeCreated}
+              style={{
+                background: 'transparent',
+                border: '1px solid var(--border-node)',
+                borderRadius: '6px',
+                color: 'var(--text-sub)',
+                fontSize: '11px',
+                padding: '2px 8px',
+                cursor: 'pointer',
+              }}
+              title="返回元件庫"
+            >
+              ← 返回元件庫
+            </button>
+          )}
         </div>
-        <p style={{ fontSize: '11px', color: '#94a3b8', margin: 0, lineHeight: 1.4 }}>
+        <p style={{ fontSize: '11px', color: 'var(--text-sub)', margin: 0, lineHeight: 1.4 }}>
           將畫布上的邏輯打包為獨立節點。設定對外接口並客製化節點卡片元件。
         </p>
       </div>
@@ -154,7 +173,7 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
       {/* 介面端點偵測狀態 */}
       <div
         style={{
-          background: 'rgba(15, 23, 42, 0.6)',
+          background: 'var(--bg-input, rgba(0, 0, 0, 0.05))',
           border: '1px solid var(--border-node)',
           borderRadius: '8px',
           padding: '10px 12px',
@@ -162,14 +181,14 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-          <span style={{ fontWeight: 600, color: '#cbd5e1' }}>已偵測對外接口</span>
+          <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>已偵測對外接口</span>
           <span
             style={{
               fontSize: '10px',
               padding: '2px 6px',
               borderRadius: '4px',
-              background: inputs.length + outputs.length > 0 ? 'rgba(34, 197, 94, 0.15)' : 'rgba(234, 179, 8, 0.15)',
-              color: inputs.length + outputs.length > 0 ? '#4ade80' : '#facc15',
+              background: inputs.length + outputs.length > 0 ? 'var(--accent-light, rgba(74, 222, 128, 0.15))' : 'var(--color-warning-bg, rgba(234, 179, 8, 0.15))',
+              color: inputs.length + outputs.length > 0 ? 'var(--accent-bright, #4ade80)' : 'var(--color-warning, #facc15)',
               fontWeight: 600,
             }}
           >
@@ -178,7 +197,7 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
         </div>
 
         {inputs.length === 0 && outputs.length === 0 ? (
-          <div style={{ color: '#64748b', fontSize: '10.5px', lineHeight: 1.4 }}>
+          <div style={{ color: 'var(--text-sub)', fontSize: '10.5px', lineHeight: 1.4 }}>
             💡 提示：請在「元件庫」分頁將「Interface In」或「Interface Out」拖入畫布拉線，即可自動形成此節點的連接端口。
           </div>
         ) : (
@@ -189,10 +208,10 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
                 style={{
                   padding: '2px 6px',
                   borderRadius: '4px',
-                  background: '#1e293b',
-                  color: '#38bdf8',
+                  background: 'var(--bg-node)',
+                  color: 'var(--accent-bright)',
                   fontSize: '10px',
-                  border: '1px solid #334155',
+                  border: '1px solid var(--border-input)',
                 }}
               >
                 ◀ {inp.name}
@@ -204,10 +223,10 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
                 style={{
                   padding: '2px 6px',
                   borderRadius: '4px',
-                  background: '#1e293b',
-                  color: '#a855f7',
+                  background: 'var(--bg-node)',
+                  color: 'var(--accent-bright)',
                   fontSize: '10px',
-                  border: '1px solid #334155',
+                  border: '1px solid var(--border-input)',
                 }}
               >
                 {out.name} ▶
@@ -219,7 +238,7 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
 
       {/* 卡片外觀 UI 元件庫 */}
       <div>
-        <div style={{ fontSize: '11px', fontWeight: 600, color: '#cbd5e1', marginBottom: '6px' }}>
+        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '6px' }}>
           卡片外觀元件 (點擊或拖放加入卡片)
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
@@ -238,7 +257,7 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
               }}
               onClick={() => handleAddUIComponent(comp.type)}
               style={{
-                background: 'rgba(15, 23, 42, 0.6)',
+                background: 'var(--bg-input, rgba(0, 0, 0, 0.05))',
                 border: '1px solid var(--border-node)',
                 borderRadius: '6px',
                 padding: '8px',
@@ -249,20 +268,20 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
                 transition: 'all 0.15s ease',
               }}
               onMouseEnter={e => {
-                e.currentTarget.style.borderColor = '#38bdf8';
-                e.currentTarget.style.background = '#1e293b';
+                e.currentTarget.style.borderColor = 'var(--accent-bright)';
+                e.currentTarget.style.background = 'var(--accent-light)';
               }}
               onMouseLeave={e => {
                 e.currentTarget.style.borderColor = 'var(--border-node)';
-                e.currentTarget.style.background = 'rgba(15, 23, 42, 0.6)';
+                e.currentTarget.style.background = 'var(--bg-input, rgba(0, 0, 0, 0.05))';
               }}
               title="點擊或拖入下方卡片"
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: 600, color: '#e2e8f0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: 600, color: 'var(--text-main)' }}>
                 <span>{comp.icon}</span>
                 <span>{comp.label}</span>
               </div>
-              <div style={{ fontSize: '9.5px', color: '#64748b' }}>{comp.desc}</div>
+              <div style={{ fontSize: '9.5px', color: 'var(--text-sub)' }}>{comp.desc}</div>
             </div>
           ))}
         </div>
@@ -270,7 +289,7 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
 
       {/* 卡片即時預覽與 Drop Zone */}
       <div>
-        <div style={{ fontSize: '11px', fontWeight: 600, color: '#cbd5e1', marginBottom: '6px' }}>
+        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '6px' }}>
           節點卡片外觀預覽 (Drop Zone)
         </div>
         <div
@@ -282,9 +301,9 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
           onDragLeave={() => setIsDragOverCard(false)}
           onDrop={handleDropOnCard}
           style={{
-            border: isDragOverCard ? '2px dashed #38bdf8' : '1px solid var(--border-node)',
+            border: isDragOverCard ? '2px dashed var(--accent-bright)' : '1px solid var(--border-node)',
             borderRadius: '8px',
-            background: isDragOverCard ? 'rgba(56, 189, 248, 0.05)' : 'rgba(15, 23, 42, 0.4)',
+            background: isDragOverCard ? 'var(--accent-light)' : 'var(--bg-input, rgba(0, 0, 0, 0.03))',
             padding: '10px 6px',
             transition: 'all 0.2s',
             display: 'flex',
@@ -305,8 +324,8 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
                 <span
                   style={{
                     fontSize: '10px',
-                    color: '#94a3b8',
-                    border: '1px solid rgba(255,255,255,0.1)',
+                    color: 'var(--text-sub)',
+                    border: '1px solid var(--border-node)',
                     borderRadius: '4px',
                     padding: '1px 4px',
                   }}
@@ -317,7 +336,7 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
             >
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {defaultDesc && (
-                  <div style={{ fontSize: '10px', color: '#94a3b8', fontStyle: 'italic' }}>
+                  <div style={{ fontSize: '10px', color: 'var(--text-sub)', fontStyle: 'italic' }}>
                     {defaultDesc}
                   </div>
                 )}
@@ -325,12 +344,12 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
                 {uiComponents.length === 0 ? (
                   <div
                     style={{
-                      border: '1px dashed #334155',
+                      border: '1px dashed var(--border-node)',
                       borderRadius: '6px',
                       padding: '16px 8px',
                       textAlign: 'center',
                       fontSize: '10.5px',
-                      color: '#64748b',
+                      color: 'var(--text-sub)',
                     }}
                   >
                     拖曳或點選上方元件加入卡片
@@ -342,10 +361,10 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
                         key={spec.id}
                         style={{
                           position: 'relative',
-                          border: '1px solid #1e293b',
+                          border: '1px solid var(--border-node)',
                           borderRadius: '6px',
                           padding: '6px 8px',
-                          background: '#131e36',
+                          background: 'var(--bg-node)',
                         }}
                       >
                         <div
@@ -362,7 +381,7 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
                             style={{
                               background: 'transparent',
                               border: 'none',
-                              color: idx === 0 ? '#475569' : '#94a3b8',
+                              color: idx === 0 ? 'var(--border-input)' : 'var(--text-sub)',
                               cursor: idx === 0 ? 'default' : 'pointer',
                               fontSize: '10px',
                               padding: '0 2px',
@@ -377,7 +396,7 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
                             style={{
                               background: 'transparent',
                               border: 'none',
-                              color: idx === uiComponents.length - 1 ? '#475569' : '#94a3b8',
+                              color: idx === uiComponents.length - 1 ? 'var(--border-input)' : 'var(--text-sub)',
                               cursor: idx === uiComponents.length - 1 ? 'default' : 'pointer',
                               fontSize: '10px',
                               padding: '0 2px',
@@ -391,7 +410,7 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
                             style={{
                               background: 'transparent',
                               border: 'none',
-                              color: '#ef4444',
+                              color: 'var(--color-danger, #ef4444)',
                               cursor: 'pointer',
                               fontSize: '10px',
                               padding: '0 2px',
@@ -421,13 +440,13 @@ export const NodeCreatorPanel: React.FC<NodeCreatorPanelProps> = () => {
         marginTop: '6px',
         padding: '10px 12px',
         borderRadius: '8px',
-        background: 'rgba(56, 189, 248, 0.08)',
-        border: '1px solid rgba(56, 189, 248, 0.2)',
+        background: 'var(--ai-bg, rgba(74, 222, 128, 0.08))',
+        border: '1px solid var(--ai-border, rgba(74, 222, 128, 0.2))',
         fontSize: '11px',
-        color: '#94a3b8',
+        color: 'var(--text-sub)',
         lineHeight: 1.5
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#38bdf8', fontWeight: 600, marginBottom: '3px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent-bright)', fontWeight: 600, marginBottom: '3px' }}>
           <Icons.Check style={{ width: 14, height: 14 }} />
           <span>節點規格已就緒</span>
         </div>

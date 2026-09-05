@@ -11,12 +11,20 @@ import type {
 import { getTemplateInterfaceSchema } from '../community/types';
 import { resolveTemplateViewOverridesFromBindings } from '../community/templateView';
 import { executeCodeNode } from '../nodes/CodeNode';
+import { evaluateMathExpression } from './statelessMathEvaluator';
 
 export const WORKFLOW_ARTIFACT_VERSION = 'beta-ir-1';
 export const WORKFLOW_COMPILER_VERSION = 'beta-compiler-1';
 export const WORKFLOW_RUNTIME_VERSION = 'beta-runtime-1';
 
-const SUPPORTED_NODE_TYPES = new Set(['textNode', 'codeNode', 'communityTemplateNode']);
+const SUPPORTED_NODE_TYPES = new Set([
+  'textNode',
+  'codeNode',
+  'communityTemplateNode',
+  'calculateNode',
+  'inputNode',
+  'outputNode',
+]);
 const DEFAULT_LIMITS = {
   maxExpandedNodes: 250,
   maxExecutionSteps: 500,
@@ -38,10 +46,10 @@ export type CompileDiagnostic = {
 export type CompiledNodeSpec = {
   id: string;
   sourceNodeId: string;
-  type: 'textNode' | 'codeNode' | 'communityTemplateNode' | 'bridge';
+  type: 'textNode' | 'codeNode' | 'communityTemplateNode' | 'bridge' | 'calculateNode' | 'inputNode' | 'outputNode';
   label?: string;
   tracePath: string[];
-  data: Pick<NodeData, 'text' | 'value' | 'outputs' | 'code' | 'language' | 'handles'>;
+  data: Pick<NodeData, 'text' | 'value' | 'outputs' | 'code' | 'language' | 'handles' | 'formula' | 'formulaInput'>;
   artifact?: CompiledWorkflowArtifact;
   templateId?: string;
 };
@@ -339,7 +347,19 @@ export const compileWorkflowToArtifact = (
       code: node.data.code,
       language: node.data.language,
       handles: node.data.handles,
+      formula: node.data.formula,
+      formulaInput: node.data.formulaInput,
     };
+
+    if (node.type === 'calculateNode' && !node.data.formula && !node.data.formulaInput) {
+      diagnostics.push({
+        severity: 'error',
+        code: 'missing_formula',
+        message: `節點 "${getNodeLabel(node)}" 缺少算式，無法編譯。`,
+        nodeId: node.id,
+        dependencyPath: tracePath,
+      });
+    }
 
     if (node.type === 'communityTemplateNode') {
       const template = findTemplate(node, templates);
@@ -404,7 +424,7 @@ export const compileWorkflowToArtifact = (
     compiledNodes.push({
       id: node.id,
       sourceNodeId: node.id,
-      type: node.type as 'textNode' | 'codeNode',
+      type: node.type as 'textNode' | 'codeNode' | 'calculateNode' | 'inputNode' | 'outputNode',
       label: getNodeLabel(node),
       tracePath,
       data: baseData,
@@ -613,18 +633,78 @@ export const runCompiledArtifact = async (
         outputs: runtimeNode.data.outputs || {},
         value: runtimeNode.data.value,
       });
+      continue;
+    }
+
+    if (spec.type === 'calculateNode') {
+      const rawFormula = spec.data.formulaInput || spec.data.formula || '';
+      try {
+        const computed = evaluateMathExpression(rawFormula, stepInputs);
+        valuesByNode.set(spec.id, {
+          outputs: {
+            'h-out': computed,
+          },
+          value: computed,
+        });
+      } catch (calcError) {
+        return {
+          outputs: {},
+          error: `CalculateNode "${spec.label || spec.id}" 計算失敗：${calcError instanceof Error ? calcError.message : String(calcError)}`,
+          trace,
+        };
+      }
+      continue;
+    }
+
+    if (spec.type === 'inputNode') {
+      // 優先取直接傳入的 input，若無則取上游連線或節點預設值
+      const assignedValue = inputs[spec.id] ?? inputs[spec.label || ''] ?? Object.values(stepInputs)[0] ?? spec.data.value ?? '';
+      valuesByNode.set(spec.id, {
+        outputs: {
+          out: String(assignedValue),
+          'h-out': String(assignedValue),
+        },
+        value: String(assignedValue),
+      });
+      continue;
+    }
+
+    if (spec.type === 'outputNode') {
+      const incomingValue = Object.values(stepInputs)[0] ?? spec.data.value ?? '';
+      valuesByNode.set(spec.id, {
+        outputs: {
+          'h-out': String(incomingValue),
+        },
+        value: String(incomingValue),
+      });
+      continue;
     }
   }
 
+  // 匯總輸出：若有 entryBridgeId（傳統模式），優先從連到 Bridge 的 edge 收集
   const finalInputs: Record<string, string> = {};
-  artifact.edges
-    .filter(edge => edge.target === artifact.entryBridgeId)
-    .forEach(edge => {
-      const value = readSourceValue(valuesByNode, edge.source, edge.sourceHandle);
-      if (value !== undefined && edge.targetHandle) {
-        finalInputs[edge.targetHandle] = value;
+  if (artifact.entryBridgeId && artifact.entryBridgeId !== 'subgraph-io-bridge') {
+    artifact.edges
+      .filter(edge => edge.target === artifact.entryBridgeId)
+      .forEach(edge => {
+        const value = readSourceValue(valuesByNode, edge.source, edge.sourceHandle);
+        if (value !== undefined && edge.targetHandle) {
+          finalInputs[edge.targetHandle] = value;
+        }
+      });
+  }
+
+  // 子圖模式：直接從各 outputNode 節點收集數值
+  artifact.interfaceSchema.outputs.forEach(port => {
+    if (finalInputs[port.id] !== undefined) return;
+    const targetNode = artifact.nodes.find(n => n.id === port.id || n.label === port.label);
+    if (targetNode) {
+      const val = valuesByNode.get(targetNode.id)?.value;
+      if (val !== undefined) {
+        finalInputs[port.id] = val;
       }
-    });
+    }
+  });
 
   const outputs = Object.fromEntries(
     artifact.interfaceSchema.outputs.map(port => [port.id, finalInputs[port.id] || ''])
@@ -648,3 +728,171 @@ export const runCompiledArtifact = async (
 export const formatCompileDiagnostics = (diagnostics: CompileDiagnostic[]) => (
   diagnostics.map(diagnostic => diagnostic.message).join('；')
 );
+
+/**
+ * 將標準子工作流圖（由 inputNode 輸入、outputNode 輸出，且可能含有 calculateNode/textNode/codeNode 等）
+ * 編譯為可供無狀態 Runtime 執行的 CompiledWorkflowArtifact。
+ */
+export const compileSubgraphWorkflow = (
+  graph: {
+    nodes: AppNode[];
+    edges: Edge[];
+    inputs?: Array<{ id: string; name: string }>;
+    outputs?: Array<{ id: string; name: string }>;
+  },
+  options: CompileOptions = {}
+): CompileResult => {
+  const diagnostics: CompileDiagnostic[] = [];
+  const dependencyPath = options.dependencyPath ?? ['Subgraph'];
+  const limits = { ...DEFAULT_LIMITS, ...options.limits };
+
+  // 1. 識別輸入端點與輸出端點
+  const inputNodes = graph.nodes.filter(n => n.type === 'inputNode');
+  const outputNodes = graph.nodes.filter(n => n.type === 'outputNode');
+
+  const interfaceSchema: TemplateInterfaceSchema = {
+    inputs: (graph.inputs || inputNodes.map(n => ({ id: n.id, name: n.data?.label || n.id }))).map(i => ({
+      id: i.id,
+      label: i.name,
+      type: 'input' as const,
+      position: 'left' as const,
+      offset: 50,
+      source: 'static' as const,
+      valueKind: 'value' as const,
+    })),
+    outputs: (graph.outputs || outputNodes.map(n => ({ id: n.id, name: n.data?.label || n.id }))).map(o => ({
+      id: o.id,
+      label: o.name,
+      type: 'output' as const,
+      position: 'right' as const,
+      offset: 50,
+      source: 'static' as const,
+      valueKind: 'value' as const,
+    })),
+  };
+
+  // 2. 檢查不支援的節點型別並報錯
+  graph.nodes.forEach(n => {
+    if (n.type === 'projectNode') return; // projectNode 僅為詮釋資料，不參與運算
+    if (!SUPPORTED_NODE_TYPES.has(n.type || '')) {
+      diagnostics.push({
+        severity: 'error',
+        code: 'unsupported_node_type',
+        message: `子工作流包含不支援的節點型別 "${n.type || 'unknown'}" (節點: ${getNodeLabel(n)})。`,
+        nodeId: n.id,
+        dependencyPath,
+      });
+    }
+  });
+
+  // 3. 拓撲排序
+  const executableNodes = graph.nodes.filter(n => n.type !== 'projectNode');
+  const executableIds = new Set(executableNodes.map(n => n.id));
+  const orderedNodes = topologicalOrder(executableNodes, graph.edges, executableIds);
+
+  if (!orderedNodes) {
+    diagnostics.push({
+      severity: 'error',
+      code: 'cycle_in_graph',
+      message: '子工作流內部存在循環依賴，無法完成求值編譯。',
+      dependencyPath,
+    });
+  }
+
+  if (diagnostics.some(d => d.severity === 'error')) {
+    return { ok: false, diagnostics };
+  }
+
+  const compiledNodes: CompiledNodeSpec[] = [];
+  (orderedNodes ?? []).forEach(node => {
+    const tracePath = [...dependencyPath, getNodeLabel(node)];
+    const baseData = {
+      text: node.data.text,
+      value: node.data.value,
+      outputs: node.data.outputs,
+      code: node.data.code,
+      language: node.data.language,
+      handles: node.data.handles,
+      formula: node.data.formula,
+      formulaInput: node.data.formulaInput,
+    };
+
+    if (node.type === 'calculateNode' && !node.data.formula && !node.data.formulaInput) {
+      diagnostics.push({
+        severity: 'error',
+        code: 'missing_formula',
+        message: `數學運算節點 "${getNodeLabel(node)}" 未設定算式。`,
+        nodeId: node.id,
+        dependencyPath: tracePath,
+      });
+    }
+
+    compiledNodes.push({
+      id: node.id,
+      sourceNodeId: node.id,
+      type: node.type as CompiledNodeSpec['type'],
+      label: getNodeLabel(node),
+      tracePath,
+      data: baseData,
+    });
+  });
+
+  const executionPlan = (orderedNodes ?? []).map((node): CompiledExecutionStep => ({
+    id: `step-${node.id}`,
+    nodeId: node.id,
+    type: node.type as CompiledExecutionStep['type'],
+    tracePath: [...dependencyPath, getNodeLabel(node)],
+  }));
+
+  const artifact: CompiledWorkflowArtifact = {
+    artifactVersion: WORKFLOW_ARTIFACT_VERSION,
+    compilerVersion: WORKFLOW_COMPILER_VERSION,
+    runtimeVersion: WORKFLOW_RUNTIME_VERSION,
+    entryBridgeId: 'subgraph-io-bridge',
+    interfaceSchema,
+    nodes: compiledNodes,
+    edges: graph.edges.map(e => ({ ...e })),
+    executionPlan,
+    dependencyManifest: { entries: [] },
+    permissions: {
+      containsCodeNode: graph.nodes.some(n => n.type === 'codeNode'),
+    },
+    limits,
+  };
+
+  return {
+    ok: diagnostics.every(d => d.severity !== 'error'),
+    artifact,
+    diagnostics,
+  };
+};
+
+/**
+ * 將子工作流規格直接編譯並產出可供重複調用的無狀態非同步執行函式：
+ * (inputs: Record<string, string>) => Promise<Record<string, string>>
+ */
+export const buildWorkflowFunction = (
+  graph: {
+    nodes: AppNode[];
+    edges: Edge[];
+    inputs?: Array<{ id: string; name: string }>;
+    outputs?: Array<{ id: string; name: string }>;
+  }
+) => {
+  const compileResult = compileSubgraphWorkflow(graph);
+  if (!compileResult.ok || !compileResult.artifact) {
+    const errorMsg = formatCompileDiagnostics(compileResult.diagnostics);
+    throw new Error(`子工作流編譯失敗：${errorMsg}`);
+  }
+
+  const artifact = compileResult.artifact;
+
+  return async (runtimeInputs: Record<string, string>): Promise<Record<string, string>> => {
+    const runResult = await runCompiledArtifact(artifact, runtimeInputs);
+    if (runResult.error) {
+      throw new Error(runResult.error);
+    }
+    return runResult.outputs;
+  };
+};
+

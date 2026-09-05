@@ -12,6 +12,7 @@ import type { CommunityNodeTemplate } from '../community/types';
 import { getCommunityTemplateById, defaultCommunityTemplates } from '../community/catalog';
 import { getTemplateHandles } from '../community/types';
 import { normalizeLatexFormula, extractFormulaVariables } from './mathNormalizer';
+import { createLocalDraft, saveLocalDraft } from './localDraftService';
 
 export interface CatalogSearchItem {
   id: string;
@@ -460,6 +461,68 @@ export function convertSpecToCanvasGraph(
   return { nodes, edges };
 }
 
+export interface ManufacturingWorkflowResult {
+  draftId: string;
+  nodes: AppNode[];
+  edges: Edge[];
+}
+
+/**
+ * 建立「製造出該自訂節點的工作流」：
+ * 包含標準 ProjectNode（具備設計與建立節點 CTA）、InputNode（介面輸入）、運算節點與 OutputNode（介面輸出），
+ * 並將其持久化為 localDraftService 中的獨立草稿文件。
+ */
+export function createNodeManufacturingWorkflow(
+  spec: WorkflowSpec,
+  metadata?: {
+    label?: string;
+    description?: string;
+    existingDraftId?: string;
+  },
+  availableCommunityTemplates?: CommunityNodeTemplate[]
+): ManufacturingWorkflowResult {
+  // 1. 將 spec 轉為 Canvas Graph，放置於 (450, 50) 為左側 ProjectNode 預留空間
+  const { nodes: subNodes, edges: subEdges } = convertSpecToCanvasGraph(
+    spec,
+    { x: 450, y: 50 },
+    availableCommunityTemplates
+  );
+
+  // 2. 建立標準 ProjectNode
+  const nodeTitle = metadata?.label || spec.name || '自訂節點製造工作流';
+  const nodeDesc = metadata?.description || spec.description || '這是一個由 AI 自動生成的節點製造工作流，可於側邊欄點擊「設計與建立節點」進行客製化與封裝。';
+
+  const projectNode: AppNode = {
+    id: 'project-root',
+    type: 'projectNode',
+    position: { x: 50, y: 50 },
+    data: {
+      label: nodeTitle,
+      description: nodeDesc,
+      tags: ['custom-node', 'ai-generated'],
+      visibility: 'private',
+      workflowIcon: { type: 'lucide', value: 'Package' },
+    },
+    deletable: false,
+  };
+
+  const finalNodes = [projectNode, ...subNodes];
+
+  // 3. 儲存至 localDraftService
+  let draftId = metadata?.existingDraftId;
+  if (draftId) {
+    saveLocalDraft(draftId, { nodes: finalNodes, edges: subEdges });
+  } else {
+    draftId = createLocalDraft({ nodes: finalNodes, edges: subEdges });
+  }
+
+  return {
+    draftId,
+    nodes: finalNodes,
+    edges: subEdges,
+  };
+}
+
 /**
  * 將 Dummy 節點遞迴展開為具體實作的子工作流節點 (CompositeWorkflowNode)
  */
@@ -467,10 +530,13 @@ export function expandDummyNodeWithSubgraph(
   currentNodes: AppNode[],
   currentEdges: Edge[],
   dummyNodeId: string,
-  subgraphSpec: WorkflowSpec
+  subgraphSpec: WorkflowSpec,
+  draftId?: string
 ): { nodes: AppNode[]; edges: Edge[] } {
   const dummyNode = currentNodes.find(n => n.id === dummyNodeId);
   if (!dummyNode) return { nodes: currentNodes, edges: currentEdges };
+
+  const effectiveDraftId = draftId || (dummyNode.data?.draftId as string | undefined);
 
   // 替換 Dummy 節點為封裝之 CompositeWorkflowNode
   const replacementNode: AppNode = {
@@ -482,6 +548,8 @@ export function expandDummyNodeWithSubgraph(
       description: subgraphSpec.description,
       workflowSpec: subgraphSpec,
       subgraphId: subgraphSpec.id,
+      draftId: effectiveDraftId,
+      subgraphDraftId: effectiveDraftId,
     },
   };
 
@@ -489,3 +557,4 @@ export function expandDummyNodeWithSubgraph(
 
   return { nodes: nextNodes, edges: currentEdges };
 }
+

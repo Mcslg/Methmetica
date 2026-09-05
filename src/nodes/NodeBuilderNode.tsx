@@ -1037,9 +1037,9 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
                   display: 'grid',
                   gap: '16px',
                   padding: '14px',
-                  border: '1px solid rgba(255,255,255,0.08)',
+                  border: '1px solid var(--border-node)',
                   borderRadius: '14px',
-                  background: 'rgba(255,255,255,0.03)',
+                  background: 'var(--bg-input, rgba(0,0,0,0.05))',
                   marginBottom: '14px'
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
@@ -1075,9 +1075,9 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
                           gap: '8px',
                           alignItems: 'center',
                           padding: '10px',
-                          border: '1px solid rgba(255,255,255,0.08)',
+                          border: '1px solid var(--border-node)',
                           borderRadius: '10px',
-                          background: 'rgba(0,0,0,0.16)'
+                          background: 'var(--bg-node)'
                         }}>
                           <div style={{ display: 'grid', gap: '6px' }}>
                             <input
@@ -1173,9 +1173,9 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
                           gap: '8px',
                           alignItems: 'center',
                           padding: '10px',
-                          border: '1px solid rgba(255,255,255,0.08)',
+                          border: '1px solid var(--border-node)',
                           borderRadius: '10px',
-                          background: 'rgba(0,0,0,0.16)'
+                          background: 'var(--bg-node)'
                         }}>
                           <div style={{ display: 'grid', gap: '6px' }}>
                             <input
@@ -1281,9 +1281,9 @@ export const NodeBuilderNode = React.memo(function NodeBuilderNode({ id, data, s
                           gap: '8px',
                           alignItems: 'center',
                           padding: '9px 10px',
-                          border: '1px solid rgba(255,255,255,0.08)',
+                          border: '1px solid var(--border-node)',
                           borderRadius: '10px',
-                          background: 'rgba(0,0,0,0.14)'
+                          background: 'var(--bg-node)'
                         }}
                       >
                         <div style={{ display: 'grid', gap: '3px', minWidth: 0 }}>

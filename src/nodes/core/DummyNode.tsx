@@ -79,8 +79,9 @@ export const DummyNode = memo(function DummyNode({ id, data, selected }: NodePro
       headerExtras={
         <span
           style={{
-            background: 'rgba(236, 72, 153, 0.2)',
-            color: '#f472b6',
+            background: 'var(--color-warning-bg, rgba(245, 158, 11, 0.12))',
+            color: 'var(--color-warning, #f59e0b)',
+            border: '1px solid var(--color-warning-border, rgba(245, 158, 11, 0.3))',
             fontSize: '9px',
             padding: '2px 5px',
             borderRadius: '4px',
@@ -100,9 +101,9 @@ export const DummyNode = memo(function DummyNode({ id, data, selected }: NodePro
           onClick={handleGenerate}
           style={{
             width: '100%',
-            background: 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)',
-            color: '#fff',
-            border: 'none',
+            background: 'var(--ai-btn-bg, #166534)',
+            color: 'var(--ai-btn-text, #ffffff)',
+            border: '1px solid var(--ai-border, rgba(74, 222, 128, 0.3))',
             borderRadius: '6px',
             padding: '7px 10px',
             fontSize: '11px',
@@ -112,12 +113,12 @@ export const DummyNode = memo(function DummyNode({ id, data, selected }: NodePro
             alignItems: 'center',
             justifyContent: 'center',
             gap: '6px',
-            boxShadow: '0 2px 8px rgba(236, 72, 153, 0.3)',
+            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.2)',
             marginTop: '4px',
-            transition: 'opacity 0.2s',
+            transition: 'background 0.2s',
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ai-btn-hover, #15803d)')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--ai-btn-bg, #166534)')}
         >
           <span>✨</span>
           <span>由 AI 實作此節點</span>

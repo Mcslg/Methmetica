@@ -30,6 +30,45 @@
 
 ## 🧪 待測試 (Pending Test)
 
+- [ ] **子工作流編譯為無狀態函式求值與 CompositeWorkflowNode 運算對接 (Workflow Subgraph Compilation & Stateless Evaluation)**：
+  - **純無狀態數學求值工具 (`statelessMathEvaluator.ts`)**：抽取 `evaluateMathExpression(formula, variables)`，使用 ComputeEngine 進行嚴謹的純函式變數代入與運算求值，不依賴 React 畫面組件。
+  - **擴充工作流編譯器 (`workflowCompiler.ts`)**：
+    - 節點支援白名單納入 `calculateNode`、`inputNode`、`outputNode`（若遇到未知型別或算式缺失則嚴格報錯中斷）。
+    - 支援無 Bridge 的標準子工作流編譯架構（`compileSubgraphWorkflow`），自動以 `inputNode` 群作為輸入端點、`outputNode` 群作為輸出端點。
+    - 匯出 `buildWorkflowFunction(graph)`，可直接產出非同步純運算函式 `(inputs) => Promise<outputs>`。
+  - **畫布求值管線對接 (`useStore.ts`)**：
+    - 在 `evaluateGraph` 拓撲排序中加入 `compositeWorkflowNode` 求值分支：自動讀取本機製造草稿（`draftId`），編譯為子圖 artifact 並以當前外部輸入執行運算，計算完成自動更新 `outputs` 推出下游節點。
+  - 0 errors 通過 `npm run build` 與 `npx eslint src`。
+
+- [ ] **AI 實作節點自動生成「節點製造工作流」與新分頁跳轉整合 (AI Dummy Node Auto-Manufacturing Workflow & Tab Navigation)**：
+  - 當 DummyNode 點擊「✨ 由 AI 實作此節點」完成後，呼叫 `createNodeManufacturingWorkflow` 自動將生成的子圖規格轉化為包含 `ProjectNode`、`InputNode`（介面輸入）、運算節點、`OutputNode`（介面輸出）的完整自訂節點製造工作流。
+  - 呼叫 `localDraftService.createLocalDraft` 將製造工作流保存至本地草稿庫，並將 `draftId` 回填至父工作流中的 `CompositeWorkflowNode`（`data.draftId` 與 `data.subgraphDraftId`）。
+  - 複合節點點擊「開啟製造工作流 ↗」時，透過標準路由 `/?view=editor&source=draft&id=${draftId}` 在獨立新分頁開啟該製造草稿，可立即試算或點擊「設計與建立節點」進行自訂節點封裝。
+  - 增強 `navigation.ts` 路由解析，支援舊版 `?subgraph=` 與 `?draft=` 連結容錯映射至標準草稿路由。
+  - 在 `NodeData` 型別新增 `draftId` 與 `subgraphDraftId` 可選欄位。
+  - 0 errors 通過 `tsc -b` 與 `vite build`。
+
+- [ ] **右上角「說明模式 (Explain Mode)」提示微縮與避讓排版優化 (Explain Mode Badge Compact & Positioning Adjustment)**：
+  - **位置下移避讓頂部操作列**：修復原先 `top: 18px` 與頂部 `Go to Node` 按鈕互相遮擋衝突的問題，向下調整至 `top: 54px, right: 18px`，清晰獨立停靠於頂部控制區下方。
+  - **尺寸與內距輕量微縮**：整體內距由 `10px 14px` 縮減為 `4px 8px`，圓角由 `14px` 調整為 `8px`；快捷鍵字母「M」鍵帽由 `28×28px` 縮減至 `18×18px`（字體 `10px`），標題字體微調為 `0.65rem`，大幅減少畫布右上角視覺干擾，維持優雅簡約的指示效果。
+  - 0 errors 通過 `npm run build` 與 `npx eslint src`。
+
+- [ ] **自訂節點封裝器與「設計與建立節點」按鈕淺色模式可讀性與背景相容修復 (Node Creator Panel & Builder Button Light Mode Readability & Theming Fix)**：
+  - **「設計與建立節點」按鈕文字隱形修復**：修復 [index.css](file:///Users/mac/Documents/methmatica/src/index.css) 中 `.builder-create-btn` 原先寫死 `color: #e0f2fe`（淡粉白），在淺色模式的米白卡片上呈現「白底白字」完全看不清的問題；改採具高對比與高質感的實體主題膠囊按鈕（`--ai-btn-bg` 搭配純白字），在深色（翠綠）與淺色（深墨綠）模式下皆清晰明亮。
+  - **自訂節點封裝器 UI 背景與文字對比修復**：徹底重構 [NodeCreatorPanel.tsx](file:///Users/mac/Documents/methmatica/src/components/workflow/NodeCreatorPanel.tsx)，拔除根層級的硬編碼純白文字 `color: '#f8fafc'` 與各子區塊硬編碼的暗黑背景色（`rgba(15, 23, 42, 0.6)`、`#131e36`），全數切換為主題變數 `--text-main`、`--text-sub`、`--bg-input` 與 `--bg-node`。淺色模式下側邊欄無論換何種背景，文字均呈現深墨綠色，不再出現「背景蓋住文字」或反白消失的瑕疵，並新增「← 返回元件庫」快捷跳轉。
+  - **節點製造器 (NodeBuilderNode) 介面區塊相容性**：修復 [NodeBuilderNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/NodeBuilderNode.tsx) 介面端點清單的原生白框與黑灰底，全面收斂為 `--border-node` 與 `--bg-node`。
+  - 0 errors 通過 `npm run build` 與 `npx eslint src`。
+
+- [ ] **系統主色調收斂與 AI 生成去漸層化 (Dual-Theme Convergence & Seamless AI Aesthetics)**：
+  - **亮暗雙主色調體系收斂**：嚴格鎖定現有的暗色（以 `:root` 墨綠黑 `#080d08` 為基底、翡翠綠 `#4ade80` 為高亮）與亮色（以 `[data-theme='light']` 暖米白 `#fdfbf7` 為基底、深墨綠 `#0E2F0B` 為文字與邊框）兩種主題，不增加多餘選色器或外部主題擴充。
+  - **AI 生成介面去漸層化與主題高度融合**：
+    - 全面移除 [AIWorkflowModal.tsx](file:///Users/mac/Documents/methmatica/src/components/workflow/AIWorkflowModal.tsx) 頂部標題、圖示、預設範例與底部「開始生成工作流」/「覆蓋並開啟」的高彩度紫色與天藍色漸層（`linear-gradient`），改用自然融合的 `--ai-bg`、`--ai-border` 與 `--ai-btn-bg`，在深色下沉穩翠綠、在淺色下優雅墨綠。
+    - 移除 [NodeLibrary.tsx](file:///Users/mac/Documents/methmatica/src/components/NodeLibrary.tsx) 側邊欄「✨ AI 生成工作流」的紫藍漸層與陰影，改用與側邊欄完全協調之微透亮底色與框線。
+    - 移除 [DummyNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/core/DummyNode.tsx)「✨ 由 AI 實作此節點」按鈕的粉紫高彩度漸層與外框徽章粉色，改為實體按鈕與警告黃徽章。
+    - 移除 [App.tsx](file:///Users/mac/Documents/methmatica/src/App.tsx) 頂部右上角「✨ AI 生成工作流」浮動按鈕的紫藍漸層，改用 `--ai-bg` 與 `--ai-text`，徹底解決淺色模式下反差突兀的問題。
+  - **語意警告色獨立化**：將刪除節點（紅色 `--color-danger`）與提示/警告（黃色 `--color-warning`）獨立於主色綠之外，確保功能危險性與快捷鍵提示清晰可辨。
+  - 0 errors 通過 `npm run build` 與 `npx eslint src`。
+
 - [ ] **全介面非同步文字繁體中文化收斂 (Pure Traditional Chinese UI Normalization)**：
   - **節點註冊庫全面中文化**：統一 [registry.tsx](file:///Users/mac/Documents/methmatica/src/nodes/registry.tsx) 中全數 24 種節點的 `metadata.label` 與 `desc`，徹底消除側邊欄與右鍵選單的純英文字串（如 `Notebook` $\to$ `筆記 (Notebook)`、`Math Calc` $\to$ `數學運算 (Calculate)`、`Interface In/Out` $\to$ `端點輸入/輸出` 等）。
   - **節點本體預設標籤收斂**：修復 [CalculateNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/CalculateNode.tsx)、[GraphNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/GraphNode.tsx)、[InputNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/core/InputNode.tsx)、[OutputNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/core/OutputNode.tsx)、[TextNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/TextNode.tsx)、[CodeNode.tsx](file:///Users/mac/Documents/methmatica/src/nodes/CodeNode.tsx) 等所有節點的 `defaultLabel` 與提示詞，不再預設出現在畫布上為英文。

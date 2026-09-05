@@ -127,10 +127,10 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
                     }}
                     style={{
                         width: '100%',
-                        background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.25) 0%, rgba(139, 92, 246, 0.25) 100%)',
-                        border: '1px solid rgba(56, 189, 248, 0.5)',
+                        background: 'var(--ai-bg, rgba(74, 222, 128, 0.08))',
+                        border: '1px solid var(--ai-border, rgba(74, 222, 128, 0.3))',
                         borderRadius: '6px',
-                        color: '#38bdf8',
+                        color: 'var(--ai-text, #4ade80)',
                         padding: '7px 8px',
                         fontSize: '11.5px',
                         fontWeight: 600,
@@ -140,15 +140,14 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
                         justifyContent: 'center',
                         gap: '6px',
                         transition: 'all 0.2s',
-                        boxShadow: '0 2px 8px rgba(56, 189, 248, 0.15)',
                     }}
                     onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'linear-gradient(135deg, rgba(56, 189, 248, 0.4) 0%, rgba(139, 92, 246, 0.4) 100%)';
-                        e.currentTarget.style.color = '#ffffff';
+                        e.currentTarget.style.borderColor = 'var(--ai-border-hover, rgba(74, 222, 128, 0.6))';
+                        e.currentTarget.style.background = 'var(--ai-bg, rgba(74, 222, 128, 0.15))';
                     }}
                     onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'linear-gradient(135deg, rgba(56, 189, 248, 0.25) 0%, rgba(139, 92, 246, 0.25) 100%)';
-                        e.currentTarget.style.color = '#38bdf8';
+                        e.currentTarget.style.borderColor = 'var(--ai-border, rgba(74, 222, 128, 0.3))';
+                        e.currentTarget.style.background = 'var(--ai-bg, rgba(74, 222, 128, 0.08))';
                     }}
                     title="開啟自然語言 AI 工作流生成器"
                 >
@@ -162,10 +161,10 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
                     }}
                     style={{
                         width: '100%',
-                        background: 'rgba(30, 41, 59, 0.6)',
-                        border: '1px solid rgba(148, 163, 184, 0.2)',
+                        background: 'var(--bg-input, rgba(0, 0, 0, 0.2))',
+                        border: '1px solid var(--border-node, rgba(255, 255, 255, 0.1))',
                         borderRadius: '6px',
-                        color: '#94a3b8',
+                        color: 'var(--text-sub, #94a3b8)',
                         padding: '4px 8px',
                         fontSize: '10px',
                         cursor: 'pointer',
@@ -176,12 +175,12 @@ export const NodeLibrary: React.FC<NodeLibraryProps> = ({ onDragStart, layout = 
                         transition: 'all 0.15s',
                     }}
                     onMouseEnter={(e) => {
-                        e.currentTarget.style.color = '#e2e8f0';
-                        e.currentTarget.style.borderColor = 'rgba(148, 163, 184, 0.4)';
+                        e.currentTarget.style.color = 'var(--text-main, #e2e8f0)';
+                        e.currentTarget.style.borderColor = 'var(--border-input, rgba(255, 255, 255, 0.25))';
                     }}
                     onMouseLeave={(e) => {
-                        e.currentTarget.style.color = '#94a3b8';
-                        e.currentTarget.style.borderColor = 'rgba(148, 163, 184, 0.2)';
+                        e.currentTarget.style.color = 'var(--text-sub, #94a3b8)';
+                        e.currentTarget.style.borderColor = 'var(--border-node, rgba(255, 255, 255, 0.1))';
                     }}
                     title="載入靜態架構範例供快速驗證"
                 >
