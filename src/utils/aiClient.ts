@@ -155,10 +155,13 @@ Every node has surface fields that you MUST fill in "config":
   - Handles: Target "in".
   - Config example: { "nodeName": "area", "variant": "real" }
 
-- "dummyNode": MUST be used when the user requires an algorithm/sub-procedure that does not exist in primitives or community nodes (e.g. "求質數表", "傅立葉變換", "矩陣求逆").
+- "dummyNode": Used for modular encapsulation or sub-procedures.
+  - TRIGGER CONDITIONS (CRITICAL):
+    1. The user explicitly requests a modularized or separate sub-node (e.g. "另外做一個節點", "包裝成獨立節點", "將XX單獨做一個節點", "做成子工作流"). Even if the formula is simple enough for calculateNode (such as "餘弦定理請另外做一個節點" or "畢氏定理單獨封裝"), you MUST use "dummyNode" to represent that modular component so the system can automatically build its manufacturing subgraph.
+    2. The user requires an algorithm/sub-procedure that does not exist in primitives or community nodes (e.g. "求質數表", "快速傅立葉變換(FFT)", "矩陣求逆").
   - Config: {
-      "label": "<Algorithm Name>",
-      "description": "<Goal of this missing block>",
+      "label": "<Algorithm/Node Name>",
+      "description": "<Goal and mathematical context of this block>",
       "expectedInputs": [{ "id": "<id>", "name": "<name>" }],
       "expectedOutputs": [{ "id": "<id>", "name": "<name>" }]
     }

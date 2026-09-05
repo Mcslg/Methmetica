@@ -30,6 +30,11 @@
 
 ## 🧪 待測試 (Pending Test)
 
+- [ ] **AI 提示詞識別「另外做一個節點/獨立模組」與 DummyNode 連鎖觸發 (AI Prompt Semantic DummyNode Trigger for Custom Subgraphs)**：
+  - **強約束觸發規則 (Trigger Conditions)**：在 [`aiClient.ts`](file:///Users/mac/Documents/methmatica/src/utils/aiClient.ts) 的系統提示詞（System Instruction）中強化 `dummyNode` 規則。明確要求模型當使用者提示詞提及「另外做一個節點」、「封裝成獨立節點/模組」、「另外做成一個模組」時，**即使公式本身非常單純（例如餘弦定理），也必須強制使用 `dummyNode`**，不可直接簡化為單個 `calculateNode`。
+  - **自動連鎖製造草稿**：配合既有的方案 A 自動連鎖實作機制，只要頂層產生 `dummyNode`，系統將自動向 Gemini 發起二次請求實作子圖、生成帶有 Markdown 文件說明的製造草稿，並替換為可直接展開與求值的 `compositeWorkflowNode`。
+  - 0 errors 通過 `npm run build` 與 `npx eslint src/utils/aiClient.ts`。
+
 - [ ] **AI 生成工作流彈窗與閒置右鍵提示浮層衝突修復 (Idle Tooltip vs AI Modal Conflict Fix)**：
   - **層級與開啟互斥**：將 [`AIWorkflowModal.tsx`](file:///Users/mac/Documents/methmatica/src/components/workflow/AIWorkflowModal.tsx) 遮罩的 `z-index` 調升至 `100001`，徹底壓過一般全域浮層。
   - **即時清理與觸發阻擋**：在 [`App.tsx`](file:///Users/mac/Documents/methmatica/src/App.tsx) 中封裝 `handleOpenAIModal`，當開啟 AI 工作流生成彈窗時，立即清除閒置計時器並將 `idleTooltip` 設為 `null`；在 `onMouseMove` 與 DOM 渲染條件中加入 `!isAIModalOpen` 雙重防護，徹底消除彈窗開啟時右鍵產生節點浮動提示的滯留問題。
