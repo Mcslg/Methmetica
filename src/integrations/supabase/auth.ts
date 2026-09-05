@@ -34,7 +34,8 @@ export const profileToAppUser = (
 export async function signInWithGoogle() {
   if (!supabase) throw new Error('Supabase is not configured.');
 
-  const redirectTo = window.location.origin;
+  // 正確取得包含 base path (如 /Methmetica/) 的乾淨回跳網址
+  const redirectTo = `${window.location.origin}${window.location.pathname}`;
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo },
