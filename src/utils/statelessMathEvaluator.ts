@@ -23,15 +23,25 @@ export function evaluateMathExpression(
     const requiredVars = extractFormulaVariables(formula);
 
     for (const v of requiredVars) {
-      // 支援普通變數與前綴變數 (如 h-in-x -> x)
+      // 支援普通變數與前綴變數 (如 h-in-x -> x, h-in-theta -> theta)
+      const cleanVar = v.replace(/^\\/, '');
       let val = variables[v];
       if (val === undefined) {
+        val = variables[cleanVar];
+      }
+      if (val === undefined) {
         val = variables[`h-in-${v}`];
+      }
+      if (val === undefined) {
+        val = variables[`h-in-${cleanVar}`];
       }
 
       if (val !== undefined && String(val).trim() !== '') {
         const parsedVal = ce.parse(String(val));
         ce.assign(v, parsedVal);
+        if (cleanVar !== v) {
+          ce.assign(cleanVar, parsedVal);
+        }
       }
     }
 

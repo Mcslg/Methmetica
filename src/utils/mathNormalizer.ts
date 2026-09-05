@@ -1,7 +1,16 @@
 import { getMathEngine } from './MathEngine';
 
 /**
- * 標準 LaTeX 數學關鍵字與指令集合（包含常見函數、希臘字母、運算結構）
+ * 常見希臘字母變數集合（應被視為可輸入的數學變數，如 theta, alpha, omega 等）
+ */
+export const GREEK_VARIABLES = new Set([
+  'alpha', 'beta', 'gamma', 'delta', 'Delta', 'theta', 'lambda',
+  'mu', 'nu', 'xi', 'pi_var', 'rho', 'sigma', 'tau', 'phi', 'chi', 'psi', 'omega',
+  'Alpha', 'Beta', 'Gamma', 'Theta', 'Lambda', 'Sigma', 'Phi', 'Psi', 'Omega'
+]);
+
+/**
+ * 標準 LaTeX 數學運算子與指令集合（不包含可作為未知數的希臘字母）
  */
 export const LATEX_COMMANDS = new Set([
   'sin', 'cos', 'tan', 'cot', 'sec', 'csc',
@@ -10,15 +19,19 @@ export const LATEX_COMMANDS = new Set([
   'frac', 'cdot', 'times', 'div', 'pm', 'mp', 'partial',
   'left', 'right', 'int', 'sum', 'prod', 'lim', 'infty',
   'mathbf', 'mathrm', 'mathit', 'text',
-  'alpha', 'beta', 'gamma', 'delta', 'Delta', 'theta', 'lambda',
-  'mu', 'sigma', 'omega', 'phi', 'psi'
+  ...GREEK_VARIABLES,
 ]);
 
 /**
- * 數學常數與排除名單（在變數提取時不應被視為使用者輸入未知數）
+ * 數學常數與排除名單（在變數提取時不應被視為使用者輸入未知數；排除純函數與 pi/e/i 等常數，但允許其他希臘字母作為變數）
  */
 export const MATH_CONSTANTS_AND_EXCLUDES = new Set([
-  ...LATEX_COMMANDS,
+  'sin', 'cos', 'tan', 'cot', 'sec', 'csc',
+  'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh',
+  'sqrt', 'log', 'ln', 'exp', 'abs', 'det',
+  'frac', 'cdot', 'times', 'div', 'pm', 'mp', 'partial',
+  'left', 'right', 'int', 'sum', 'prod', 'lim', 'infty',
+  'mathbf', 'mathrm', 'mathit', 'text',
   'pi', 'PI', 'e', 'E', 'i', 'I', 'infty'
 ]);
 

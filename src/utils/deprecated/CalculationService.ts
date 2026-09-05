@@ -320,7 +320,11 @@ export class CalculationService {
             }
         });
         variables.forEach((v: string) => {
-            const handle = node.data.handles?.find((h: CustomHandle) => h.label === v || h.id === `h-in-${v}`);
+            const cleanV = v.replace(/^\\/, '');
+            const handle = node.data.handles?.find((h: CustomHandle) => 
+                h.label === v || h.label === cleanV || 
+                h.id === `h-in-${v}` || h.id === `h-in-${cleanV}`
+            );
             let val: string | undefined;
 
             if (handle) {
@@ -337,7 +341,7 @@ export class CalculationService {
 
             // [NEW] Check if variable is provided by an absorbed slot (e.g. a plugged Slider)
             if (!val || val.trim() === '') {
-                const slotSid = node.data.slots?.[v];
+                const slotSid = node.data.slots?.[v] || node.data.slots?.[cleanV];
                 if (typeof slotSid === 'string') {
                     const absorbedNode = nodes.find(n => n.id === slotSid);
                     if (absorbedNode && absorbedNode.data.value !== undefined) {
@@ -397,7 +401,13 @@ export class CalculationService {
 
         // Standard single evaluation
         ce.pushScope();
-        Object.entries(staticVars).forEach(([k, val]) => ce.assign(k, val));
+        Object.entries(staticVars).forEach(([k, val]) => {
+            ce.assign(k, val);
+            const cleanK = k.replace(/^\\/, '');
+            if (cleanK !== k) {
+                ce.assign(cleanK, val);
+            }
+        });
 
         let finalRes;
         if (node.type === 'solveNode') {

@@ -487,7 +487,12 @@ export async function callGeminiImplementDummyNode(
 - 輸入端點：${inputsDesc}（子工作流內部必須以對應名稱的 inputNode 承接，handle 為 'out'）
 - 輸出端點：${outputsDesc}（子工作流內部必須將最終運算連線至對應名稱的 outputNode，handle 為 'in'）
 
-請產生一個完整的子工作流（包含 inputNode, calculateNode 或 codeNode, outputNode），確保端點 id 完全對齊上述要求。`;
+請產生一個完整的子工作流，務必包含：
+1. 一個 "textNode"（筆記說明節點），詳細說明此演算法的數學原理、步驟流程與公式推導，方便使用者閱讀與維護。
+2. 對應的 "inputNode" 接收輸入參數。
+3. 具體的運算節點（如 "calculateNode" 符號公式或 "codeNode" 演算法腳本）。
+4. 對應的 "outputNode" 匯出最終結果。
+確保所有端點 id 與連線完全正確。`;
 
   return await callGeminiGenerateWorkflow(prompt, apiKeyOverride, availableCommunityTemplates);
 }

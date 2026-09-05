@@ -2,10 +2,15 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Icons } from '../Icons';
 import {
   callGeminiGenerateWorkflow,
+  callGeminiImplementDummyNode,
   getStoredApiKey,
   setStoredApiKey,
 } from '../../utils/aiClient';
-import { convertSpecToCanvasGraph } from '../../utils/aiWorkflowGenerator';
+import {
+  convertSpecToCanvasGraph,
+  createNodeManufacturingWorkflow,
+  expandDummyNodeWithSubgraph,
+} from '../../utils/aiWorkflowGenerator';
 import type { WorkflowSpec } from '../../types/workflowSpec';
 import useStore, { type AppNode } from '../../store/useStore';
 import { defaultCommunityTemplates } from '../../community/catalog';
@@ -49,7 +54,9 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
   const [apiKey, setApiKey] = useState('');
   const [showApiKeySettings, setShowApiKeySettings] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generatingStatusText, setGeneratingStatusText] = useState('AI 正在分析並分層排版中...');
   const [generatedSpec, setGeneratedSpec] = useState<WorkflowSpec | null>(null);
+  const [resolvedCanvasGraph, setResolvedCanvasGraph] = useState<{ nodes: AppNode[]; edges: Edge[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const customCommunityTemplates = useStore(state => state.communityTemplates);
@@ -82,24 +89,109 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
     if (!textToRun) return;
 
     setIsGenerating(true);
+    setGeneratingStatusText('AI 正在規劃頂層工作流架構...');
     setError(null);
     setGeneratedSpec(null);
 
     try {
+      // 1. 生成頂層工作流規格
       const spec = await callGeminiGenerateWorkflow(textToRun, apiKey, allTemplates);
+
+      // 2. 檢測是否有佔位節點 (dummyNode)
+      const dummyNodes = spec.nodes.filter(n => n.type === 'dummyNode');
+
+      if (dummyNodes.length > 0 && apiKey) {
+        setGeneratingStatusText(`正在為 ${dummyNodes.length} 個佔位節點自動實作複合工作流...`);
+
+        // 將 spec 轉為畫布圖以進行節點替換
+        let { nodes: currentCanvasNodes, edges: currentCanvasEdges } = convertSpecToCanvasGraph(
+          spec,
+          { x: 120, y: 120 },
+          allTemplates
+        );
+
+        // 依序為每一個 dummyNode 生成具體子圖並替換為 compositeWorkflowNode
+        for (let i = 0; i < dummyNodes.length; i++) {
+          const dummy = dummyNodes[i];
+          setGeneratingStatusText(`正在實作演算法節點「${dummy.name}」(${i + 1}/${dummyNodes.length})...`);
+
+          const cfg = (dummy.config || {}) as Record<string, unknown>;
+          const expectedInputs = Array.isArray(cfg.expectedInputs)
+            ? (cfg.expectedInputs as Array<{ id?: string; name?: string }>).map((inp, idx) => ({
+                id: String(inp.id || `in_${idx}`),
+                name: String(inp.name || inp.id || `in_${idx}`),
+              }))
+            : [{ id: 'in', name: 'in' }];
+
+          const expectedOutputs = Array.isArray(cfg.expectedOutputs)
+            ? (cfg.expectedOutputs as Array<{ id?: string; name?: string }>).map((out, idx) => ({
+                id: String(out.id || `out_${idx}`),
+                name: String(out.name || out.id || `out_${idx}`),
+              }))
+            : [{ id: 'out', name: 'out' }];
+
+          try {
+            const subSpec = await callGeminiImplementDummyNode(
+              {
+                label: dummy.name,
+                description: dummy.description || dummy.name,
+                expectedInputs,
+                expectedOutputs,
+              },
+              apiKey,
+              allTemplates
+            );
+
+            // 建立本機製造工作流草稿（含 ProjectNode、InputNode、OutputNode 等）
+            const mfg = createNodeManufacturingWorkflow(
+              subSpec,
+              {
+                label: `${dummy.name} 製造工作流`,
+                description: dummy.description || `由 AI 自動生成的「${dummy.name}」節點製造工作流。`,
+              },
+              allTemplates
+            );
+
+            // 將畫布中的 dummyNode 替換為帶有 draftId 的 compositeWorkflowNode
+            const expanded = expandDummyNodeWithSubgraph(
+              currentCanvasNodes,
+              currentCanvasEdges,
+              dummy.id,
+              subSpec,
+              mfg.draftId
+            );
+            currentCanvasNodes = expanded.nodes;
+            currentCanvasEdges = expanded.edges;
+          } catch (subErr) {
+            console.warn(`[AI] 自動實作 Dummy 節點「${dummy.name}」失敗，保留為佔位節點手動實作`, subErr);
+          }
+        }
+
+        // 保存包含已替換節點的規格
+        setResolvedCanvasGraph({ nodes: currentCanvasNodes, edges: currentCanvasEdges });
+      } else {
+        setResolvedCanvasGraph(null);
+      }
+
       setGeneratedSpec(spec);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err || '生成失敗，請檢查 API Key 或網路連線。');
       setError(msg);
     } finally {
       setIsGenerating(false);
+      setGeneratingStatusText('AI 正在分析並分層排版中...');
     }
   };
 
   const handleApply = (mode: 'replace' | 'append') => {
     if (!generatedSpec) return;
-    const { nodes, edges } = convertSpecToCanvasGraph(generatedSpec, { x: 120, y: 120 }, allTemplates);
-    onApplyGraph(nodes, edges, mode);
+
+    if (resolvedCanvasGraph) {
+      onApplyGraph(resolvedCanvasGraph.nodes, resolvedCanvasGraph.edges, mode);
+    } else {
+      const { nodes, edges } = convertSpecToCanvasGraph(generatedSpec, { x: 120, y: 120 }, allTemplates);
+      onApplyGraph(nodes, edges, mode);
+    }
     onClose();
   };
 
@@ -469,7 +561,7 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
               {isGenerating ? (
                 <>
                   <div className="spinner-small" style={{ width: 14, height: 14 }} />
-                  <span>AI 正在分析並分層排版中...</span>
+                  <span>{generatingStatusText}</span>
                 </>
               ) : (
                 <>

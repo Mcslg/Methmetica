@@ -30,6 +30,17 @@
 
 ## 🧪 待測試 (Pending Test)
 
+- [ ] **端點輸入 (InputNode) 輸出值同步與 CalculateNode 希臘字母變數支援修復 (InputNode Output Sync & Greek Variables Support)**：
+  - **InputNode 輸出同步**：修復 [`InputNode.tsx`](file:///Users/mac/Documents/methmatica/src/nodes/core/InputNode.tsx) 在修改輸入數值時僅更新 `data.value` 的缺陷，同步寫入 `data.outputs.out` 與 `data.outputs['h-out']`，確保下游連線與子圖 Runtime 能可靠讀取即時數值。
+  - **希臘字母變數解放**：重構 [`mathNormalizer.ts`](file:///Users/mac/Documents/methmatica/src/utils/mathNormalizer.ts)，將 `alpha, beta, theta, omega, phi...` 等希臘符號從常數排除名單中分離，使其能正確作為公式未知數提取，使 `calculateNode` 左側自動生成對應的輸入端口（Handle）。
+  - **雙向變數指派相容**：在 [`statelessMathEvaluator.ts`](file:///Users/mac/Documents/methmatica/src/utils/statelessMathEvaluator.ts) 與 [`CalculationService.ts`](file:///Users/mac/Documents/methmatica/src/utils/deprecated/CalculationService.ts) 中，支援希臘變數名稱與 LaTeX 反斜線符號（如 `theta` 與 `\theta`）的雙向比對與指派。
+  - 0 errors 通過 `npm run build` 與 `npx eslint`。
+
+- [ ] **自訂節點製造工作流自動注入 Markdown 筆記說明節點 (Auto-Injected Documentation TextNode in Manufacturing Workflows)**：
+  - **Prompt 明確要求**：在 [`aiClient.ts`](file:///Users/mac/Documents/methmatica/src/utils/aiClient.ts) 的 `callGeminiImplementDummyNode` 中，明確指示 AI 在生成子工作流時必須包含一個 `textNode`，詳細記載數學原理、計算步驟與推導說明。
+  - **雙重保障自動注入**：在 [`aiWorkflowGenerator.ts`](file:///Users/mac/Documents/methmatica/src/utils/aiWorkflowGenerator.ts) 的 `createNodeManufacturingWorkflow` 中，若 AI 產生的子圖未含文字卡片，系統自動在 `ProjectNode` 下方注入一個規格完整的 `textNode` 說明卡片（含功能概述、Inputs 規格、Outputs 結果與操作提示），確保使用者開啟製造工作流時有一目了然的文件說明。
+  - 0 errors 通過 `npm run build` 與 `npx eslint src`。
+
 - [ ] **子工作流編譯為無狀態函式求值與 CompositeWorkflowNode 運算對接 (Workflow Subgraph Compilation & Stateless Evaluation)**：
   - **純無狀態數學求值工具 (`statelessMathEvaluator.ts`)**：抽取 `evaluateMathExpression(formula, variables)`，使用 ComputeEngine 進行嚴謹的純函式變數代入與運算求值，不依賴 React 畫面組件。
   - **擴充工作流編譯器 (`workflowCompiler.ts`)**：

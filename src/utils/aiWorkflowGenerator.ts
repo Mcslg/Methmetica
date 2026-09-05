@@ -506,9 +506,32 @@ export function createNodeManufacturingWorkflow(
     deletable: false,
   };
 
-  const finalNodes = [projectNode, ...subNodes];
+  // 3. 確保工作流內有文字說明節點 (textNode) 解釋演算法與接口
+  const hasTextNode = subNodes.some(n => n.type === 'textNode');
+  const additionalNodes: AppNode[] = [];
 
-  // 3. 儲存至 localDraftService
+  if (!hasTextNode) {
+    const inputsSummary = (spec.inputs || []).map(i => `- **${i.name}** (\`${i.id}\`): ${i.description || '輸入參數'}`).join('\n') || '- 無特定輸入';
+    const outputsSummary = (spec.outputs || []).map(o => `- **${o.name}** (\`${o.id}\`): ${o.description || '運算輸出'}`).join('\n') || '- 無特定輸出';
+
+    const explanationNote: AppNode = {
+      id: `doc-note-${Date.now()}`,
+      type: 'textNode',
+      position: { x: 50, y: 380 },
+      data: {
+        label: `📖 ${nodeTitle} 演算法與接口說明`,
+        text: `### 📌 功能概述\n${nodeDesc}\n\n---\n\n### 🔌 輸入接口 (Inputs)\n${inputsSummary}\n\n### ⚡ 輸出結果 (Outputs)\n${outputsSummary}\n\n> 💡 **提示**：可於右上方編輯運算節點公式或程式碼，完成後點擊左側「設計與建立節點」進行打包。`,
+        handles: [
+          { id: 'h-out', type: 'output', position: 'right', offset: 50, label: 'doc' },
+        ],
+      },
+    };
+    additionalNodes.push(explanationNote);
+  }
+
+  const finalNodes = [projectNode, ...additionalNodes, ...subNodes];
+
+  // 4. 儲存至 localDraftService
   let draftId = metadata?.existingDraftId;
   if (draftId) {
     saveLocalDraft(draftId, { nodes: finalNodes, edges: subEdges });

@@ -45,7 +45,14 @@ export const InputNode = memo(function InputNode({ id, data, selected }: NodePro
 
   const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const nextVal = e.target.value;
-    updateNodeData(id, { value: nextVal });
+    updateNodeData(id, {
+      value: nextVal,
+      outputs: {
+        ...(data.outputs || {}),
+        out: nextVal,
+        'h-out': nextVal,
+      },
+    });
     evaluateGraph();
   };
 
