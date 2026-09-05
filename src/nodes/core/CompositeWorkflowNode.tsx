@@ -102,6 +102,32 @@ export const CompositeWorkflowNode = memo(function CompositeWorkflowNode({
     );
   };
 
+  // 重新生成子工作流
+  const [isRegenerating, setIsRegenerating] = useState(false);
+
+  const handleRegenerate = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isRegenerating) return;
+    setIsRegenerating(true);
+
+    window.dispatchEvent(
+      new CustomEvent('ai-implement-dummy-node', {
+        detail: {
+          nodeId: id,
+          label,
+          description,
+          inputs: inputs.map(i => ({ id: i.id, name: i.name })),
+          outputs: outputs.map(o => ({ id: o.id, name: o.name })),
+        },
+      })
+    );
+
+    // 2 秒後恢復按鈕狀態
+    setTimeout(() => {
+      setIsRegenerating(false);
+    }, 2000);
+  };
+
   return (
     <NodeFrame
       id={id}
@@ -113,13 +139,29 @@ export const CompositeWorkflowNode = memo(function CompositeWorkflowNode({
       minWidth={250}
       minHeight={160}
       headerExtras={
-        <button
-          className="exec-button community-template-action-btn community-template-open-btn"
-          onClick={handleOpenInNewPage}
-          title={draftId ? `開啟製造工作流草稿 (${draftId})` : '開啟子工作流'}
-        >
-          {draftId ? '開啟製造工作流 ↗' : '開啟'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <button
+            className="exec-button community-template-action-btn"
+            onClick={handleRegenerate}
+            disabled={isRegenerating}
+            title="以現有端點與說明請 AI 重新生成實作工作流"
+            style={{
+              padding: '2px 6px',
+              fontSize: '11px',
+              opacity: isRegenerating ? 0.6 : 1,
+            }}
+          >
+            {isRegenerating ? '生成中...' : '🔄 重新生成'}
+          </button>
+          <button
+            className="exec-button community-template-action-btn community-template-open-btn"
+            onClick={handleOpenInNewPage}
+            title={draftId ? `開啟製造工作流草稿 (${draftId})` : '開啟子工作流'}
+            style={{ padding: '2px 6px', fontSize: '11px' }}
+          >
+            {draftId ? '開啟製造工作流 ↗' : '開啟'}
+          </button>
+        </div>
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '6px 4px' }}>

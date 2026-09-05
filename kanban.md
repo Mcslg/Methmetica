@@ -38,6 +38,8 @@
     - 匯出 `buildWorkflowFunction(graph)`，可直接產出非同步純運算函式 `(inputs) => Promise<outputs>`。
   - **畫布求值管線對接 (`useStore.ts`)**：
     - 在 `evaluateGraph` 拓撲排序中加入 `compositeWorkflowNode` 求值分支：自動讀取本機製造草稿（`draftId`），編譯為子圖 artifact 並以當前外部輸入執行運算，計算完成自動更新 `outputs` 推出下游節點。
+  - **複合節點「🔄 重新生成」按鈕 (`CompositeWorkflowNode.tsx`)**：
+    - 在右上角控制列新增「🔄 重新生成」按鈕，可直接以原先的輸入/輸出接口向 AI 發起重新生成並覆蓋既有草稿，解決初次生成不滿意需手動刪除重拉的問題。
   - 0 errors 通過 `npm run build` 與 `npx eslint src`。
 
 - [ ] **AI 實作節點自動生成「節點製造工作流」與新分頁跳轉整合 (AI Dummy Node Auto-Manufacturing Workflow & Tab Navigation)**：
