@@ -4,6 +4,8 @@
 
 ---
 
+簡單任務可能略顯冗餘：對於極為單純的運算指令（如「計算 1+1」），模型依然會生成說明卡片與滑桿，需視實際使用情境評估是否需允許在極簡指令下放寬三區限制。
+
 - [ ] **自訂節點防循環與右鍵選單檢索 (Custom Node Circularity Prevention & Context Menu Discovery)**：
   - 移除節點製造面板上的本工作流就地封裝按鈕，防止自我循環依賴。
   - 私人自訂工作流自動可用（含有效端點即被視為節點），比照社群節點採 `search-only` 隱藏於左側側欄，僅在右鍵選單/搜尋中可見。
@@ -27,6 +29,12 @@
 ---
 
 ## 🧪 待測試 (Pending Test)
+
+- [ ] **AI 提示詞三區架構規範與分層排版垂直順序優化 (Three-Zone Architectural Pattern & Layer Bucket Vertical Ordering)**：
+  - **三區架構 System Instruction**：在 [aiClient.ts](file:///Users/mac/Documents/methmatica/src/utils/aiClient.ts) 規範三大分區：1. 說明區（`textNode` 配合 LaTeX 公式、`communityTemplateNode` 知識卡片）、2. 互動區（`sliderNode` 參數控制）、3. 節點輸入輸出定義區（`inputNode`/`outputNode` 規格端點、`calculateNode`/`codeNode` 算式邏輯、`graphNode` 視覺呈現、`dummyNode` 遞迴子程序）。
+  - **分層垂直排序優化**：在 [aiWorkflowGenerator.ts](file:///Users/mac/Documents/methmatica/src/utils/aiWorkflowGenerator.ts) 的 `convertSpecToCanvasGraph` 中，對同分層之節點 bucket 依三區功能層級排序（說明區置頂，互動區居中，運算與輸出在後），避免同列中拉桿與說明文字上下錯置。
+  - **範例與 JSON Schema 同步**：更新系統提示詞範例 JSON 為包含三區之一元二次判別式完整工作流，明確定義各區命名、用途與端口連線。
+  - 0 errors 通過 `npx eslint src` 與 `npm run build`。
 
 - [ ] **AI 節點表層欄位感知與連線端口自動正規化 (Node Surface Config & Port Normalization)**：
   - **表層欄位對齊**：在 `aiClient.ts` 明確定義 `calculateNode`（`formula`）、`sliderNode`（`nodeName`/`value`/`min`/`max`/`step`）、`graphNode`（`formula`）、`textNode`（`text`）、`inputNode`/`outputNode`（`nodeName`/`variant`/`value`）的表層可編輯欄位與預設範例。

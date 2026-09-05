@@ -2,8 +2,8 @@ import type { WorkflowSpec, WorkflowNodeSpec, WorkflowEdgeSpec } from '../types/
 import type { CommunityNodeTemplate } from '../community/types';
 import { defaultCommunityTemplates } from '../community/catalog';
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
-const GEMINI_FALLBACK_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent';
+const GEMINI_FALLBACK_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 const STORAGE_KEY = 'methmatica_gemini_api_key';
 
 export function getStoredApiKey(): string {
@@ -49,7 +49,7 @@ export function formatCommunityCatalogForPrompt(templates: CommunityNodeTemplate
 ${fieldLines || '      (none)'}`;
   });
 
-  return `### 2. AVAILABLE COMMUNITY TEMPLATE NODES:
+  return `### 3. AVAILABLE COMMUNITY TEMPLATE NODES:
 You can instantiate community templates by specifying "type": "communityTemplateNode" and in "config" provide:
 {
   "templateId": "<templateId>",
@@ -75,7 +75,27 @@ export function buildSystemInstruction(communityTemplates?: CommunityNodeTemplat
   return `You are Methmetica AI, an expert mathematical workflow compiler.
 Your task is to convert user's mathematical or algorithmic requests into a strictly valid, runnable Directed Acyclic Graph (DAG) specified in Methmetica WorkflowSpec (schemaVersion: 2).
 
-### 1. AVAILABLE PRIMITIVE NODES (AND THEIR SURFACE EDITABLE FIELDS):
+### 1. THREE-ZONE ARCHITECTURAL PATTERN (MUST COMPLY):
+Every generated workflow MUST be clearly structured into THREE DISTINCT FUNCTIONAL ZONES:
+- 【1. 說明區 (Explanation & Knowledge Zone)】:
+  - Purpose: Provide mathematical background, theorem statements, problem definitions, or operation instructions.
+  - Primary Nodes:
+    - "textNode": Use rich Markdown and LaTeX (e.g. "$$\\Delta = b^2 - 4ac$$") explaining the underlying theory.
+    - "communityTemplateNode" (e.g. "definition-card", "method-card"): Prioritize when the workflow centers on canonical mathematical definitions or established solving methodologies.
+- 【2. 互動區 (Interactive Parameter Control Zone)】:
+  - Purpose: Provide dynamic UI controllers allowing users to adjust variables in real-time.
+  - Primary Nodes:
+    - "sliderNode": For continuous or stepped numerical parameters (e.g. coefficients $a, b, c$; radius $r$; frequency $f$; angle $\\theta$). Always configure meaningful nodeName, min, max, step, and value.
+- 【3. 節點輸入輸出定義區 (Computation, Interface & Result Zone)】:
+  - Purpose: Execute symbolic calculations, define formal workflow I/O contracts, and visualize results.
+  - Primary Nodes:
+    - "inputNode" / "outputNode": Explicit workflow interface contract ports.
+    - "calculateNode": Symbolic mathematical expression evaluations (formula).
+    - "codeNode": Multi-step algorithmic logic.
+    - "graphNode": 2D/3D visual curve plotting connected downstream.
+    - "dummyNode": For missing algorithmic sub-procedures needing recursive decomposition.
+
+### 2. AVAILABLE PRIMITIVE NODES (AND THEIR SURFACE EDITABLE FIELDS):
 Every node has surface fields that you MUST fill in "config":
 
 - "calculateNode": Mathematical expression evaluator.
@@ -145,9 +165,9 @@ Every node has surface fields that you MUST fill in "config":
       "expectedOutputs": [{ "id": "<id>", "name": "<name>" }]
     }
 
-${communitySection ? communitySection + '\n\n' : ''}### ${communitySection ? '3' : '2'}. GRAPH & CONNECTION RULES:
+${communitySection ? communitySection + '\n\n' : ''}### ${communitySection ? '4' : '3'}. GRAPH & CONNECTION RULES:
 - The graph MUST be a valid DAG (Directed Acyclic Graph). NEVER create cycles.
-- Signal flows strictly from left to right: Inputs/Sliders -> Calculations/Dummies/CommunityNodes -> Outputs/Graphs.
+- Signal flows strictly from left to right: Explanation/Inputs/Sliders -> Calculations/Dummies/CommunityNodes -> Outputs/Graphs.
 - All edge 'from' and 'to' must reference valid node ids defined in 'nodes'.
 - Port Handle Rules:
   - From sliderNode: "fromPort": "h-out"
@@ -158,8 +178,8 @@ ${communitySection ? communitySection + '\n\n' : ''}### ${communitySection ? '3'
   - To outputNode: "toPort": "in"
   - Community nodes: use the declared handles in the template catalog (e.g. "in-context", "out-summary", "in-data", "out-method").
 
-### ${communitySection ? '4' : '3'}. OUTPUT FORMAT:
-You MUST reply ONLY with a single valid JSON object strictly matching this schema:
+### ${communitySection ? '5' : '4'}. OUTPUT FORMAT:
+You MUST reply ONLY with a single valid JSON object strictly matching this schema. The nodes array MUST embody the Three-Zone pattern:
 {
   "schemaVersion": 2,
   "id": "workflow-<timestamp>",
@@ -171,27 +191,76 @@ You MUST reply ONLY with a single valid JSON object strictly matching this schem
   "outputs": [{ "id": "<id>", "name": "<name>", "dataType": "real" }],
   "nodes": [
     {
-      "id": "node-1",
-      "type": "sliderNode",
-      "name": "a",
-      "description": "參數 a",
-      "config": { "nodeName": "a", "value": 1, "min": -10, "max": 10, "step": 0.5 }
+      "id": "node-doc",
+      "type": "textNode",
+      "name": "定理說明",
+      "description": "說明區：介紹數學定理背景與公式",
+      "config": { "label": "定理說明", "text": "### 一元二次方程式判別式\\n對於 $ax^2 + bx + c = 0$，判別式為 $\\Delta = b^2 - 4ac$。\\n- $\\Delta > 0$: 兩相異實根\\n- $\\Delta = 0$: 兩重根\\n- $\\Delta < 0$: 兩共軛虛根" }
     },
     {
-      "id": "node-2",
+      "id": "node-slider-b",
+      "type": "sliderNode",
+      "name": "b",
+      "description": "互動區：一次項係數 b",
+      "config": { "nodeName": "b", "value": 4, "min": -10, "max": 10, "step": 0.5, "label": "係數 b" }
+    },
+    {
+      "id": "node-slider-a",
+      "type": "sliderNode",
+      "name": "a",
+      "description": "互動區：二次項係數 a",
+      "config": { "nodeName": "a", "value": 1, "min": -10, "max": 10, "step": 0.5, "label": "係數 a" }
+    },
+    {
+      "id": "node-slider-c",
+      "type": "sliderNode",
+      "name": "c",
+      "description": "互動區：常數項係數 c",
+      "config": { "nodeName": "c", "value": 2, "min": -10, "max": 10, "step": 0.5, "label": "係數 c" }
+    },
+    {
+      "id": "node-calc-d",
       "type": "calculateNode",
-      "name": "判別式",
-      "description": "計算二次方程式判別式",
+      "name": "判別式計算",
+      "description": "運算區：計算判別式",
       "config": { "formula": "b^2 - 4*a*c", "label": "判別式運算" }
+    },
+    {
+      "id": "node-out-d",
+      "type": "outputNode",
+      "name": "discriminant",
+      "description": "定義區：輸出最終判別式結果",
+      "config": { "nodeName": "discriminant", "variant": "real", "label": "判別式結果" }
     }
   ],
   "edges": [
     {
       "id": "edge-1",
-      "from": "node-1",
+      "from": "node-slider-b",
       "fromPort": "h-out",
-      "to": "node-2",
+      "to": "node-calc-d",
+      "toPort": "h-in-b"
+    },
+    {
+      "id": "edge-2",
+      "from": "node-slider-a",
+      "fromPort": "h-out",
+      "to": "node-calc-d",
       "toPort": "h-in-a"
+    },
+    {
+      "id": "edge-3",
+      "from": "node-slider-c",
+      "fromPort": "h-out",
+      "to": "node-calc-d",
+      "toPort": "h-in-c"
+    },
+    {
+      "id": "edge-4",
+      "from": "node-calc-d",
+      "fromPort": "h-out",
+      "to": "node-out-d",
+      "toPort": "in"
     }
   ]
 }
@@ -389,7 +458,7 @@ export async function callGeminiGenerateWorkflow(
   try {
     return await executeRequest(GEMINI_API_URL);
   } catch (err) {
-    console.warn('[AI] gemini-2.5-flash failed, trying fallback gemini-1.5-flash...', err);
+    console.warn('[AI] gemini-3.6-flash failed, trying fallback gemini-2.5-flash...', err);
     return await executeRequest(GEMINI_FALLBACK_URL);
   }
 }

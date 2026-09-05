@@ -165,6 +165,19 @@ export function convertSpecToCanvasGraph(
   nodes: AppNode[];
   edges: Edge[];
 } {
+  const specNodeMap = new Map(spec.nodes.map(n => [n.id, n]));
+  const typeOrder: Record<string, number> = {
+    textNode: 1,
+    communityTemplateNode: 2,
+    sliderNode: 3,
+    inputNode: 4,
+    calculateNode: 5,
+    codeNode: 6,
+    dummyNode: 7,
+    graphNode: 8,
+    outputNode: 9,
+  };
+
   const layers = computeNodeLayers(spec.nodes, spec.edges);
   const layerBuckets = new Map<number, string[]>();
 
@@ -172,6 +185,15 @@ export function convertSpecToCanvasGraph(
     const bucket = layerBuckets.get(layer) || [];
     bucket.push(nodeId);
     layerBuckets.set(layer, bucket);
+  });
+
+  // 依據三區功能優先權對各層節點垂直排序（說明區置頂，互動區居中，運算輸出在後）
+  layerBuckets.forEach((bucket) => {
+    bucket.sort((a, b) => {
+      const typeA = specNodeMap.get(a)?.type || '';
+      const typeB = specNodeMap.get(b)?.type || '';
+      return (typeOrder[typeA] || 50) - (typeOrder[typeB] || 50);
+    });
   });
 
   const maxLayerCount = Math.max(...Array.from(layerBuckets.values()).map(b => b.length), 1);
