@@ -221,6 +221,12 @@ function Flow() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const idleTimerRef = useRef<number | null>(null);
 
+  const handleOpenAIModal = useCallback(() => {
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    setIdleTooltip(null);
+    setIsAIModalOpen(true);
+  }, []);
+
   const handleApplyAIGraph = useCallback((newNodes: AppNode[], newEdges: Edge[], mode: 'replace' | 'append') => {
     if (mode === 'replace') {
       useStore.getState().setGraph(newNodes, newEdges);
@@ -897,7 +903,7 @@ function Flow() {
       setTimeout(() => useStore.getState().evaluateGraph(), 100);
     };
 
-    const handleOpenAI = () => setIsAIModalOpen(true);
+    const handleOpenAI = () => handleOpenAIModal();
 
     window.addEventListener('ai-implement-dummy-node', handleImplementDummy);
     window.addEventListener('open-subgraph-new-page', handleOpenSubgraphNewPage);
@@ -910,7 +916,7 @@ function Flow() {
       window.removeEventListener('load-ai-workflow-demo', handleLoadDemo);
       window.removeEventListener('open-ai-workflow-modal', handleOpenAI);
     };
-  }, []);
+  }, [handleOpenAIModal]);
 
   // [RECONNECT] Global click interceptor to ensure we don't miss clicks on handles due to event propagation limits
   useEffect(() => {
@@ -1135,7 +1141,7 @@ function Flow() {
       />
       <button
         className="nodrag"
-        onClick={() => setIsAIModalOpen(true)}
+        onClick={handleOpenAIModal}
         style={{
           position: 'fixed',
           top: 14,
@@ -1235,7 +1241,7 @@ function Flow() {
           }
 
           const target = e.target as HTMLElement;
-          if (target.classList.contains('react-flow__pane') && !paneMenu && !radialMenu && !nodeMenu) {
+          if (target.classList.contains('react-flow__pane') && !paneMenu && !radialMenu && !nodeMenu && !isAIModalOpen) {
             const { clientX, clientY } = e;
             idleTimerRef.current = setTimeout(() => setIdleTooltip({ x: clientX, y: clientY }), 1200);
           }
@@ -1596,7 +1602,7 @@ function Flow() {
         </div>
       )}
 
-      {idleTooltip && createPortal(
+      {!isAIModalOpen && idleTooltip && createPortal(
         <div className="idle-tooltip" style={{ position: 'fixed', left: idleTooltip.x + 20, top: idleTooltip.y + 20, background: 'var(--bg-node)', backdropFilter: 'blur(10px)', border: '1px solid var(--border-node)', padding: '8px 14px', borderRadius: '12px', color: 'var(--text-main)', fontSize: '0.75rem', pointerEvents: 'none', zIndex: 9999, boxShadow: 'var(--node-shadow)', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 500 }}>
           <span><span style={{ color: 'var(--accent-bright)', fontWeight: 700 }}>{t('tips.right_click')}</span> {t('tips.create_node')}</span>
           <span style={{ opacity: 0.3 }}>|</span>

@@ -206,7 +206,7 @@ export const AIWorkflowModal: React.FC<AIWorkflowModalProps> = ({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 9999,
+        zIndex: 100001,
         animation: 'fadeIn 0.2s ease',
       }}
       onClick={onClose}

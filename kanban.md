@@ -30,6 +30,11 @@
 
 ## 🧪 待測試 (Pending Test)
 
+- [ ] **AI 生成工作流彈窗與閒置右鍵提示浮層衝突修復 (Idle Tooltip vs AI Modal Conflict Fix)**：
+  - **層級與開啟互斥**：將 [`AIWorkflowModal.tsx`](file:///Users/mac/Documents/methmatica/src/components/workflow/AIWorkflowModal.tsx) 遮罩的 `z-index` 調升至 `100001`，徹底壓過一般全域浮層。
+  - **即時清理與觸發阻擋**：在 [`App.tsx`](file:///Users/mac/Documents/methmatica/src/App.tsx) 中封裝 `handleOpenAIModal`，當開啟 AI 工作流生成彈窗時，立即清除閒置計時器並將 `idleTooltip` 設為 `null`；在 `onMouseMove` 與 DOM 渲染條件中加入 `!isAIModalOpen` 雙重防護，徹底消除彈窗開啟時右鍵產生節點浮動提示的滯留問題。
+  - 0 errors 通過 `npm run build` 與 `npx eslint`。
+
 - [ ] **端點輸入 (InputNode) 輸出值同步與 CalculateNode 希臘字母變數支援修復 (InputNode Output Sync & Greek Variables Support)**：
   - **InputNode 輸出同步**：修復 [`InputNode.tsx`](file:///Users/mac/Documents/methmatica/src/nodes/core/InputNode.tsx) 在修改輸入數值時僅更新 `data.value` 的缺陷，同步寫入 `data.outputs.out` 與 `data.outputs['h-out']`，確保下游連線與子圖 Runtime 能可靠讀取即時數值。
   - **希臘字母變數解放**：重構 [`mathNormalizer.ts`](file:///Users/mac/Documents/methmatica/src/utils/mathNormalizer.ts)，將 `alpha, beta, theta, omega, phi...` 等希臘符號從常數排除名單中分離，使其能正確作為公式未知數提取，使 `calculateNode` 左側自動生成對應的輸入端口（Handle）。
