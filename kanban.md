@@ -30,6 +30,15 @@
 
 ## 🧪 待測試 (Pending Test)
 
+- [ ] **WorkflowHeader 工作流標題列淺色模式適配與樣式收斂 (WorkflowHeader Light Mode Adaptation & Theme Convergence)**：
+  - **根本原因修復**：修復 [`WorkflowHeader.tsx`](file:///Users/mac/Documents/methmatica/src/components/WorkflowHeader.tsx) 原先寫死深黑色背景 `rgba(10, 14, 12, 0.72)`、冷灰邊框 `rgba(148, 163, 184, 0.28)` 與硬編碼陰影的缺陷。在淺色模式下，文字顏色 `--text-main` 為深墨綠（`#0E2F0B`），疊加在寫死的黑底上導致對比度嚴重不足且視覺突兀。
+  - **全面收斂至系統主題變數**：
+    - 容器背景切換為 `var(--bg-node)`（深色為墨綠暗底，淺色為米白純淨底色配合 `blur(16px)` 毛玻璃效果）。
+    - 邊框切換為 `var(--border-node)`，陰影對齊 `var(--node-shadow)`，圓角由銳利的 `4px` 調整為圓潤的 `10px`。
+    - 未驗證徽章切換為 `--color-warning`、`--color-warning-bg` 與 `--color-warning-border`；節點數標籤對齊 `--bg-input` 與 `--text-sub`。
+    - 在 [`index.css`](file:///Users/mac/Documents/methmatica/src/index.css) 正式註冊 `.workflow-header-overlay` 樣式規範。
+  - 0 errors 通過 `npm run build` 與 `npx eslint`。
+
 - [ ] **AI 提示詞識別「另外做一個節點/獨立模組」與 DummyNode 連鎖觸發 (AI Prompt Semantic DummyNode Trigger for Custom Subgraphs)**：
   - **強約束觸發規則 (Trigger Conditions)**：在 [`aiClient.ts`](file:///Users/mac/Documents/methmatica/src/utils/aiClient.ts) 的系統提示詞（System Instruction）中強化 `dummyNode` 規則。明確要求模型當使用者提示詞提及「另外做一個節點」、「封裝成獨立節點/模組」、「另外做成一個模組」時，**即使公式本身非常單純（例如餘弦定理），也必須強制使用 `dummyNode`**，不可直接簡化為單個 `calculateNode`。
   - **自動連鎖製造草稿**：配合既有的方案 A 自動連鎖實作機制，只要頂層產生 `dummyNode`，系統將自動向 Gemini 發起二次請求實作子圖、生成帶有 Markdown 文件說明的製造草稿，並替換為可直接展開與求值的 `compositeWorkflowNode`。

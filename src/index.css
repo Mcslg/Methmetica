@@ -2228,6 +2228,16 @@ math-field::part(virtual-keyboard-toggle) {
 }
 .dock-btn:hover { color: var(--accent); transform: scale(1.1); }
 
+/* Workflow Header Overlay */
+.workflow-header-overlay {
+  background: var(--bg-node);
+  border: 1px solid var(--border-node);
+  box-shadow: var(--node-shadow);
+  color: var(--text-main);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
 /* React Flow Controls Custom Styling */
 .react-flow__controls {
   margin: 0 24px 24px 0 !important;

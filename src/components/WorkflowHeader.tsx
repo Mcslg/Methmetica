@@ -32,19 +32,21 @@ export function WorkflowHeader() {
         display: 'flex',
         alignItems: 'center',
         gap: 12,
-        padding: '10px 14px',
+        padding: '8px 14px',
         minWidth: 210,
         maxWidth: 440,
-        borderRadius: 4,
-        border: '1px solid rgba(148, 163, 184, 0.28)',
-        background: 'rgba(10, 14, 12, 0.72)',
-        backdropFilter: 'blur(18px)',
-        boxShadow: '0 14px 34px rgba(0,0,0,0.22)',
+        borderRadius: 10,
+        border: '1px solid var(--border-node)',
+        background: 'var(--bg-node)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        boxShadow: 'var(--node-shadow)',
         color: 'var(--text-main)',
+        transition: 'left 0.25s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease, border-color 0.2s ease',
       }}
     >
-      <div style={{ display: 'grid', gap: 3, minWidth: 0, flex: 1 }}>
-        <strong style={{ fontSize: '0.92rem', lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <div style={{ display: 'grid', gap: 2, minWidth: 0, flex: 1 }}>
+        <strong style={{ fontSize: '0.9rem', fontWeight: 600, lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-main)' }}>
           {title}
         </strong>
         <span style={{ fontSize: '0.72rem', color: 'var(--text-sub)', lineHeight: 1.4 }}>
@@ -58,13 +60,13 @@ export function WorkflowHeader() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: 'rgba(251, 191, 36, 0.14)',
-          border: '1px solid rgba(251, 191, 36, 0.38)',
-          borderRadius: '12px',
+          background: 'var(--color-warning-bg)',
+          border: '1px solid var(--color-warning-border)',
+          borderRadius: '10px',
           padding: '2px 8px',
           fontSize: '0.72rem',
           fontWeight: 700,
-          color: '#fbbf24',
+          color: 'var(--color-warning)',
           whiteSpace: 'nowrap',
         }} title="此 workflow 尚未通過社群審核">
           未驗證
@@ -76,11 +78,12 @@ export function WorkflowHeader() {
         justifyContent: 'center',
         background: 'var(--bg-input)',
         border: '1px solid var(--border-header)',
-        borderRadius: '12px',
+        borderRadius: '10px',
         padding: '2px 8px',
         fontSize: '0.75rem',
         fontWeight: 600,
-        color: 'var(--text-sub)'
+        color: 'var(--text-sub)',
+        whiteSpace: 'nowrap',
       }} title={`${nodes.length} 個節點`}>
         {nodes.length}
       </div>
