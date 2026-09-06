@@ -30,6 +30,14 @@
 
 ## 🧪 待測試 (Pending Test)
 
+- [ ] **黑客松 README 系統架構重構與環境設定規範化 (Hackathon Architecture Documentation & Setup Normalization)**：
+  - **系統架構分層重構**：在 [`README.md`](file:///Users/mac/Documents/methmatica/README.md) 中徹底移除過時的非真實草稿資訊，以真實 4 層反應式架構重寫（AI 編排層、視覺化畫布層、符號運算與求值引擎、知識沉澱與雲端同步層），並繪製清晰的層級圖與運作流程。
+  - **技術棧與依賴校準**：準確列出 React 19, TypeScript 5.9, Vite 8, @xyflow/react v12, ComputeEngine, MathLive, KaTeX, Nerdamer, Tiptap, Supabase, Google Gemini API 等實際使用套件。
+  - **真實安裝與運行指令**：將原先虛構的 `node scripts/run.js`、`OpenAI API` 與 `npm test` 移除，改為標準的 `npm install`、`npm run dev`、`npm run build`、`npm run lint`，並新增 [`.env.example`](file:///Users/mac/Documents/methmatica/.env.example) 提供環境變數範本。
+  - **AI 工作流生成測試指南**：新增專屬章節詳細指導評審如何免安裝配置 Gemini Key，並提供 3 組具代表性的 Prompt（標準三區互動探究、DummyNode 子圖連鎖製造、社群黑盒子模組引用）與驗證要點。
+  - **展示連結對齊**：填入線上實際部署網址 `https://mcslg.github.io/Methmetica/` 與原始碼倉庫。
+  - 0 errors 通過 `npm run build`。
+
 - [ ] **WorkflowHeader 工作流標題列淺色模式適配與樣式收斂 (WorkflowHeader Light Mode Adaptation & Theme Convergence)**：
   - **根本原因修復**：修復 [`WorkflowHeader.tsx`](file:///Users/mac/Documents/methmatica/src/components/WorkflowHeader.tsx) 原先寫死深黑色背景 `rgba(10, 14, 12, 0.72)`、冷灰邊框 `rgba(148, 163, 184, 0.28)` 與硬編碼陰影的缺陷。在淺色模式下，文字顏色 `--text-main` 為深墨綠（`#0E2F0B`），疊加在寫死的黑底上導致對比度嚴重不足且視覺突兀。
   - **全面收斂至系統主題變數**：
